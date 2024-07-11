@@ -12,7 +12,7 @@ build: src/setup/boot.asm $(linker_script)
 	@mkdir -p target
 	@nasm -f elf64 src/setup/boot.asm -o target/boot.o
 	@echo "Linking asm file..."
-	@ld -n -o $(kernel) -T $(linker_script)  target/boot.o
+	@ld -n -o $(kernel) -T $(linker_script) target/boot.o
 
 # create the iso file
 iso: $(grub_cfg) $(kernel)
