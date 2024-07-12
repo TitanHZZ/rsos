@@ -112,25 +112,93 @@ check_long_mode:
         mov al, "2"
         jmp error
 
+set_up_page_tables:
+    ; map first P4 entry to P3 table
+    mov eax, p3_table
+    or eax, 0b11 ; present + writable
+    mov [p4_table], eax
+
+    ; map first P3 entry to P2 table
+    mov eax, p2_table
+    or eax, 0b11 ; present + writable
+    mov [p3_table], eax
+
+    ; map each P2 entry to a huge 2MiB page
+    mov ecx, 0 ; counter variable
+
+    .map_p2_table:
+        ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
+        mov eax, 0x200000  ; 2MiB
+        mul ecx            ; start address of ecx-th page
+        or eax, 0b10000011 ; present + writable + huge
+        mov [p2_table + ecx * 8], eax ; map ecx-th entry
+
+        inc ecx            ; increase counter
+        cmp ecx, 512       ; if counter == 512, the whole P2 table is mapped
+        jne .map_p2_table  ; else map the next entry
+
+    ret
+
+enable_paging:
+    ; load P4 to cr3 register (cpu uses this to access the P4 table)
+    mov eax, p4_table
+    mov cr3, eax
+
+    ; enable PAE-flag in cr4 (Physical Address Extension)
+    mov eax, cr4
+    or eax, 1 << 5
+    mov cr4, eax
+
+    ; set the long mode bit in the EFER MSR (model specific register)
+    ; after enabling paging in the cr0 register, this will make the cpu go to the 32-bit compatibility submode
+    mov ecx, 0xC0000080
+    rdmsr
+    or eax, 1 << 8
+    wrmsr
+
+    ; enable paging in the cr0 register
+    mov eax, cr0
+    or eax, 1 << 31
+    mov cr0, eax
+
+    ret
+
 _start:
+    ; at this point, the cpu is in 32 bit protected mode with paging disabled
     mov esp, stack_top ; setup the stack pointer
 
     call check_multiboot
     call check_cpuid
     call check_long_mode
 
+    ; after this checks, we know that the bootloader used was multiboot compliant (as we expect)
+    ; and the cpu supports 64 bit long mode. No changes to the cpu state were made yet, we are still
+    ; in 32 bit protected mode with paging disabled
+
+    call set_up_page_tables
+    call enable_paging
+
+    ; at this point, the cpu is in 32-bit compatibility submode (a submode of long mode) and
+    ; we have paging enabled (using identity paging to simplify the assembly)
+
     ; print `OK` to screen
     mov dword [0xb8000], 0x2f4b2f4f
     hlt
 
+section .bss
+align 4096
+p4_table:
+    resb 4096
+p3_table:
+    resb 4096
+p2_table:
+    resb 4096
 ; The multiboot standard does not define the value of the stack pointer register
 ; (esp) and it is up to the kernel to provide a stack. This allocates 64 bytes
 ; for it, and creates a symbol at the top. The stack grows downwards on x86.
 ; The stack on x86 must be 16-byte aligned according to the System V ABI standard
 ; and de-facto extensions. The compiler will assume the stack is properly aligned
 ; and failure to align the stack will result in undefined behaviour.
-section .bss
-align 16
 stack_bottom:
-    resb 64 ; 64 B
+    resb 64
 stack_top:
