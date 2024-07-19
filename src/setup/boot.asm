@@ -181,9 +181,11 @@ _start:
     ; at this point, the cpu is in 32-bit compatibility submode (a submode of long mode) and
     ; we have paging enabled (using identity paging to simplify the assembly)
 
-    ; print `OK` to screen
-    mov dword [0xb8000], 0x2f4b2f4f
-    hlt
+    ; load the 64-bit GDT
+    lgdt [gdt64.pointer]
+
+    ; use a `far jump` to load the code selector into the cs register
+    jmp gdt64.code:_start_long_mode
 
 section .bss
 align 4096
@@ -202,3 +204,34 @@ p2_table:
 stack_bottom:
     resb 64
 stack_top:
+
+section .rodata
+gdt64:
+    dq 0 ; zero entry
+    .code: equ $ - gdt64
+        dq (1<<43) | (1<<44) | (1<<47) | (1<<53) ; code segment
+
+    .pointer:
+        dw $ - gdt64 - 1
+        dq gdt64
+
+; +-------------------------------------------------------------------------+
+; |  All the code below is 64 bit with the cpu running in 64 bit long mode  |
+; +-------------------------------------------------------------------------+
+
+section .text
+bits 64
+
+_start_long_mode:
+    ; load 0 into all data segment registers (to avoid future problems)
+    mov ax, 0
+    mov ss, ax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; write `OKAY` to the screen
+    mov rax, 0x2f592f412f4b2f4f
+    mov qword [0xb8000], rax
+    hlt
