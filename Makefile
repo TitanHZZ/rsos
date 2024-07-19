@@ -1,18 +1,37 @@
+# debug/release
+MODE ?= debug
+
 kernel        := target/kernel.bin
 grub_cfg      := src/setup/grub.cfg
 linker_script := src/setup/linker.ld
 
-.PHONY: all build iso run clean
+.PHONY: boot kernel all build iso run clean
 
 all: build iso run
 
-# build (compile and link) asm file
-build: src/setup/boot.asm $(linker_script)
-	@echo "Assembling asm file..."
+# determine the cargo command to use
+ifeq ($(MODE), release)
+    CARGO_BUILD_CMD = cargo build --release
+else
+    CARGO_BUILD_CMD = cargo build
+endif
+
+# build boot.asm
+boot: src/setup/boot.asm
+	@echo "Building boot.asm..."
 	@mkdir -p target
 	@nasm -f elf64 src/setup/boot.asm -o target/boot.o
-	@echo "Linking asm file..."
-	@ld -n -o $(kernel) -T $(linker_script) target/boot.o
+
+# compile the rsos kernel into an obj file
+kernel:
+	@echo "Building rsos kernel..."
+	$(CARGO_BUILD_CMD)
+
+# link boot and kernel
+build: boot kernel $(linker_script)
+	@echo "Linking boot with the kernel..."
+	@ld -n -o $(kernel) -T $(linker_script) \
+		target/boot.o target/x86_64-rsos/$(MODE)/librsos.a
 
 # create the iso file
 iso: $(grub_cfg) $(kernel)

@@ -222,6 +222,9 @@ gdt64:
 section .text
 bits 64
 
+; rust entry point
+extern main
+
 _start_long_mode:
     ; load 0 into all data segment registers (to avoid future problems)
     mov ax, 0
@@ -231,7 +234,5 @@ _start_long_mode:
     mov fs, ax
     mov gs, ax
 
-    ; write `OKAY` to the screen
-    mov rax, 0x2f592f412f4b2f4f
-    mov qword [0xb8000], rax
-    hlt
+    ; call rust
+    call main
