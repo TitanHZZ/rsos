@@ -1,4 +1,4 @@
-use core::fmt;
+use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
 
@@ -104,14 +104,20 @@ lazy_static! {
     });
 }
 
+#[macro_export]
 macro_rules! println {
-    ($fmt:expr) => {print!(concat!($fmt, "\n"))};
-    ($fmt:expr, $($arg:tt)*) => {print!(concat!($fmt, "\n"), $($arg)*)};
+    ($fmt:expr) => (print!(concat!($fmt, "\n")));
+    ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+#[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
-        use core::fmt::Write;
-        $crate::vga_buffer::WRITER.lock().write_fmt(format_args!($($arg)*)).unwrap();
+        $crate::vga_buffer::_print(format_args!($($arg)*));
     };
+}
+
+#[doc(hidden)]
+pub fn _print(args: fmt::Arguments) {
+    WRITER.lock().write_fmt(args).unwrap();
 }
