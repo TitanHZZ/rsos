@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+#[macro_use]
+mod vga_buffer;
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -10,15 +12,6 @@ fn panic(_info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn main() -> ! {
-    let vga_buff = 0xb8000 as *mut u8;
-    let str = b"Hello, World!";
-
-    for (i, &ch) in str.into_iter().enumerate() {
-        unsafe {
-            *vga_buff.offset(i as isize * 2) = ch;
-            *vga_buff.offset(i as isize * 2 + 1) = 0xf;
-        }
-    }
-
+    println!("Hello, World!");
     loop {}
 }
