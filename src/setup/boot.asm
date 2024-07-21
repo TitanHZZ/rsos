@@ -166,6 +166,7 @@ enable_paging:
 _start:
     ; at this point, the cpu is in 32 bit protected mode with paging disabled
     mov esp, stack_top ; setup the stack pointer
+    mov edi, ebx ; pass the multiboot boot info pointer as argument to Rust
 
     call check_multiboot
     call check_cpuid
@@ -196,13 +197,13 @@ p3_table:
 p2_table:
     resb 4096
 ; The multiboot standard does not define the value of the stack pointer register
-; (esp) and it is up to the kernel to provide a stack. This allocates 64 bytes
+; (esp) and it is up to the kernel to provide a stack. This allocates 16K bytes
 ; for it, and creates a symbol at the top. The stack grows downwards on x86.
 ; The stack on x86 must be 16-byte aligned according to the System V ABI standard
 ; and de-facto extensions. The compiler will assume the stack is properly aligned
 ; and failure to align the stack will result in undefined behaviour.
 stack_bottom:
-    resb 64
+    resb 4096 * 4 ; 16 Kb -> 4 memory pages
 stack_top:
 
 section .rodata
