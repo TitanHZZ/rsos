@@ -7,7 +7,9 @@ use core::ptr;
 
 #[repr(u32)]
 #[allow(dead_code)]
+#[derive(PartialEq, Eq)]
 pub enum TagType {
+    End = 0,
     MemInfo = 4,
     MemMap = 6,
     // TODO: finish
@@ -54,7 +56,21 @@ impl MbInfo {
         Ok(mb_info)
     }
 
-    // pub fn memory_information_tag() {}
+    pub fn basic_mem_info_tag(&self) -> Option<&MbMemInfo> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::MemInfo)
+            .map(|tag| unsafe { &*(tag as *const MbTagHeader as *const MbMemInfo) })
+    }
+
+    pub fn mem_map_tag(&self) -> Option<&MbMemInfo> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::MemMap)
+            .map(|tag| unsafe { &*(tag as *const MbTagHeader as *const MbMemInfo) })
+    }
+
+    fn tags(&self) -> MbTagIter {
+        MbTagIter::new(self.tags.as_ptr().cast())
+    }
 }
 
 pub struct MbTagHeader {
@@ -65,13 +81,38 @@ pub struct MbTagHeader {
 #[repr(C)]
 pub struct MbMemInfo {
     header: MbTagHeader,
-    mem_lower: u32,
-    mem_upper: u32,
+    pub mem_lower: u32,
+    pub mem_upper: u32,
+}
+
+#[repr(C)]
+struct MbMemMap {
+    header: MbTagHeader,
+    entry_size: u32,
+    entry_version: u32,
+    entries: [MbMemMapEntry],
+}
+
+#[repr(C)]
+struct MbMemMapEntry {
+    base_addr: u64,
+    length: u64,
+    entry_type: u32,
+    reserved: u32, // always 0
 }
 
 pub struct MbTagIter<'a> {
     pub current: *const MbTagHeader,
     _mem: PhantomData<&'a ()>, // remaining data for the tag
+}
+
+impl<'a> MbTagIter<'a> {
+    fn new(ptr: *const MbTagHeader) -> MbTagIter<'a> {
+        MbTagIter {
+            current: ptr,
+            _mem: PhantomData,
+        }
+    }
 }
 
 impl<'a> Iterator for MbTagIter<'a> {
@@ -81,40 +122,24 @@ impl<'a> Iterator for MbTagIter<'a> {
         let tag = unsafe { &*self.current };
 
         match tag.tag_type {
-            TagType::MemInfo => {
+            TagType::End => None,
+            _ => {
                 // return the current tag and get the next one
-                let ptr_offset = unsafe {
+                let ptr_offset = (tag.size as usize + 7) & !7;
+
+                self.current = unsafe {
                     self.current
                         .cast::<u8>()
-                        .byte_add(tag.size as usize)
-                        .align_offset(align_of::<u64>())
+                        .add(ptr_offset)
+                        .cast::<MbTagHeader>()
                 };
-
-                self.current = unsafe { self.current.byte_add(ptr_offset) };
 
                 Some(tag)
             }
-            _ => None,
         }
     }
 }
 
 // impl MultibootTag for MbMemInfo {
 //     const TAG_TYPE: u32 = 0;
-// }
-// #[repr(C)]
-// struct MbMemMapEntry {
-//     base_addr: u64,
-//     length: u64,
-//     entry_type: u32,
-//     reserved: u32, // always 0
-// }
-//
-// #[repr(C)]
-// struct MbMemMap {
-//     tag_type: u32,
-//     size: u32,
-//     entry_size: u32,
-//     entry_version: u32,
-//     entries: [MbMemMapEntry],
 // }

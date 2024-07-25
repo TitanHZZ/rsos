@@ -18,8 +18,11 @@ fn panic(info: &PanicInfo) -> ! {
 pub extern "C" fn main(mb_boot_info_addr: usize) -> ! {
     let mb_info = MbInfo::new(mb_boot_info_addr).expect("Invalid mb boot info ptr.");
 
-    println!("total size: {}", mb_info.header.total_size);
-    println!("reserved:   {}", mb_info.header.reserved);
+    let mem_info_tag = mb_info
+        .basic_mem_info_tag()
+        .expect("Invalid memory information tag.");
+
+    println!("{} -- {}", mem_info_tag.mem_lower, mem_info_tag.mem_upper);
 
     loop {}
 }
