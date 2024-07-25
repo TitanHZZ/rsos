@@ -2,11 +2,11 @@
 #![no_main]
 #![feature(ptr_metadata)]
 
-mod multiboot2;
+extern crate multiboot2;
 mod vga_buffer;
 
 use core::panic::PanicInfo;
-use multiboot2::MbInfo;
+use multiboot2::BootInformationHeader;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -16,13 +16,34 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: usize) -> ! {
-    let mb_info = MbInfo::new(mb_boot_info_addr).expect("Invalid mb boot info ptr.");
+    let mb_info = unsafe {
+        multiboot2::BootInformation::load(mb_boot_info_addr as *const BootInformationHeader)
+    }
+    .expect("Invalid multiboot2 boot information.");
 
-    let mem_info_tag = mb_info
-        .basic_mem_info_tag()
-        .expect("Invalid memory information tag.");
+    let mem_map_tag = mb_info
+        .memory_map_tag()
+        .expect("Memory map tag is not present.");
 
-    println!("{} -- {}", mem_info_tag.mem_lower, mem_info_tag.mem_upper);
+    for area in mem_map_tag.memory_areas() {
+        println!(
+            "    start: 0x{:x}, length: 0x{:x}",
+            area.start_address(),
+            area.size()
+        );
+    }
+
+    let elf_sections_tag = mb_info.elf_sections().expect("Elf-sections tag required");
+
+    println!("kernel sections:");
+    for section in elf_sections_tag {
+        println!(
+            "    addr: 0x{:x}, size: 0x{:x}, flags: 0x{:x}",
+            section.start_address(),
+            section.size(),
+            section.flags()
+        );
+    }
 
     loop {}
 }

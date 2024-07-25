@@ -28,14 +28,19 @@ SECTIONS
 	.text BLOCK(4K) : ALIGN(4K)
 	{
 		*(.multiboot_header)
-		*(.text)
+		*(.text .text.*) /* group together all the text sections made by the rust compiler */
 	} : rx
 
 	/* Read-only data. */
 	.rodata BLOCK(4K) : ALIGN(4K)
 	{
-		*(.rodata)
+		*(.rodata .rodata.*) /* group together all the rodata sections made by the rust compiler */
 	} : r
+
+    /* group more rust compiler sections */
+	.data.rel.ro : {
+        *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*)
+    } : r
 
 	/* Read-write data (initialized) */
 	.data BLOCK(4K) : ALIGN(4K)
