@@ -1,8 +1,10 @@
+mod simple_frame_allocator;
+pub use self::simple_frame_allocator::SimpleFrameAllocator;
+
 const PAGE_SIZE: usize = 4096;
 
-mod simple_frame_allocator;
-
 #[repr(transparent)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub struct Frame {
     idx: usize,
 }
