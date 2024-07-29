@@ -7,9 +7,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
-multiboot2 = { version = "0.20.2", default-features = false, features = [
-    "unstable",
-] }
+multiboot2 = { version = "0.20.2", default-features = false }
 spin = "0.9.8"
 
 [dependencies.lazy_static]

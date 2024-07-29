@@ -4,7 +4,7 @@ pub use self::simple_frame_allocator::SimpleFrameAllocator;
 const PAGE_SIZE: usize = 4096;
 
 #[repr(transparent)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct Frame {
     idx: usize,
 }

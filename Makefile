@@ -44,7 +44,7 @@ iso: $(grub_cfg) $(kernel)
 # run the os in qemu
 run: target/rsos.iso
 	@echo "Running rsos..."
-	@qemu-system-x86_64 -cdrom target/rsos.iso
+	@qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso
 
 clean:
 	@echo "Cleaning..."

@@ -1,5 +1,7 @@
+use core::any::Any;
+
 use super::{Frame, FrameAllocator};
-use multiboot2::MemoryArea;
+use multiboot2::{MemoryArea, MemoryAreaType};
 
 pub struct SimpleFrameAllocator<'a> {
     next_frame: Frame,
@@ -33,7 +35,7 @@ impl<'a> SimpleFrameAllocator<'a> {
 
         // check if the initial frame is already in use
         if allocator.is_frame_used() {
-            allocator.get_next_free_frame()?;
+            allocator.get_next_free_frame().ok_or(())?;
         }
 
         Ok(allocator)
@@ -47,39 +49,54 @@ impl<'a> SimpleFrameAllocator<'a> {
     /*
      * Returns the next (free or used) frame if it exists.
      */
-    fn get_next_frame(&mut self) -> Result<Frame, ()> {
-        let last_frame_curr_area =
-            Self::corresponding_frame(self.areas[self.current_area].end_address() as usize);
+    fn get_next_frame(&mut self) -> Option<Frame> {
+        let fr_after_last_in_curr_area =
+            Self::corresponding_frame(self.areas[self.current_area].end_address() as usize + 1);
 
-        // self.areas.into_iter().map(|area| {});
-        if self.next_frame == last_frame_curr_area {
+        if self.next_frame == fr_after_last_in_curr_area {
             self.current_area += 1;
+
+            while self.current_area < self.areas.len()
+                && self.areas[self.current_area].typ() != MemoryAreaType::Available
+            {
+                self.current_area += 1;
+            }
+
+            if self.current_area >= self.areas.len() {
+                return None;
+            }
+
+            // get the first frame from the next area
+            self.next_frame =
+                Self::corresponding_frame(self.areas[self.current_area].start_address() as usize);
+        } else {
+            // get the next frame from the same area
+            self.next_frame = Frame {
+                idx: self.next_frame.idx + 1,
+            };
         }
 
-        if self.current_area >= self.areas.len() {
-            return Err(());
-        }
-
-        self.next_frame =
-            Self::corresponding_frame(self.areas[self.current_area].end_address() as usize);
-
-        Ok(self.next_frame)
+        Some(self.next_frame)
     }
 
-    fn get_next_free_frame(&mut self) -> Result<Frame, ()> {
+    fn get_next_free_frame(&mut self) -> Option<Frame> {
         let mut fr = self.get_next_frame()?;
 
+        // this could be optimized to `jump` over the used sections instead of going through them
         while self.is_frame_used() {
             fr = self.get_next_frame()?;
         }
 
-        Ok(fr)
+        Some(fr)
     }
 }
 
 impl<'a> FrameAllocator for SimpleFrameAllocator<'a> {
     fn allocate_frame(&mut self) -> Option<Frame> {
-        unimplemented!();
+        let ret = Some(self.next_frame);
+        self.get_next_free_frame()?;
+
+        ret
     }
 
     fn deallocate_frame(&mut self, frame: Frame) {
