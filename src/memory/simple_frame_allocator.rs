@@ -1,5 +1,3 @@
-use core::any::Any;
-
 use super::{Frame, FrameAllocator};
 use multiboot2::{MemoryArea, MemoryAreaType};
 

@@ -7,6 +7,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+bitflags = "2.6.0"
 multiboot2 = { version = "0.20.2", default-features = false }
 spin = "0.9.8"
 

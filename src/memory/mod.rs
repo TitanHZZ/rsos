@@ -1,3 +1,4 @@
+mod paging;
 mod simple_frame_allocator;
 pub use self::simple_frame_allocator::SimpleFrameAllocator;
 

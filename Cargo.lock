@@ -105,6 +105,7 @@ dependencies = [
 name = "rsos"
 version = "0.1.0"
 dependencies = [
+ "bitflags",
  "lazy_static",
  "multiboot2",
  "spin",
