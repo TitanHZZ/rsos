@@ -1,9 +1,6 @@
 mod entry;
+mod table;
 
-use super::PAGE_SIZE;
+const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 
-const ENTRY_COUNT: usize = 512; // 2^9
-
-pub struct Page {
-    idx: usize,
-}
+pub type Page = usize; // this usize is the page index in the virtual memory

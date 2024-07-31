@@ -1,19 +1,5 @@
+use crate::memory::{Frame, PhysicalAddress};
 use bitflags::bitflags;
-
-pub struct Entry(u64);
-
-impl Entry {
-    fn is_used(&self) -> bool {
-        /*
-         * An entry equal to 0 is unused otherwise, it´s used.
-         */
-        self.0 != 0
-    }
-
-    fn set_unused(&mut self) {
-        self.0 = 0;
-    }
-}
 
 bitflags! {
     pub struct EntryFlags: u64 {
@@ -27,5 +13,54 @@ bitflags! {
         const HUGE_PAGE       = 1 << 7;  // must be 0 in P1 and P4, creates a 1GiB page in P3, creates a 2MiB page in P2
         const GLOBAL          = 1 << 8;  // page isn’t flushed from caches on address space switch (PGE bit of CR4 register must be set)
         const NO_EXECUTE      = 1 << 63; // forbid executing code on this page (the NXE bit in the EFER register must be set)
+    }
+}
+
+/*
+ * An entry in a page table is an addr with some flags.
+ * That´s why this is not an addr and instead, a u64.
+ * Also, an entry is exactly 64 bits (u64) and not usize.
+ */
+pub struct Entry(u64);
+
+impl Entry {
+    pub fn is_used(&self) -> bool {
+        /*
+         * An entry equal to 0 is unused otherwise, it´s used.
+         */
+        self.0 != 0
+    }
+
+    pub fn set_unused(&mut self) {
+        self.0 = 0;
+    }
+
+    pub fn flags(&self) -> EntryFlags {
+        EntryFlags::from_bits_truncate(self.0)
+    }
+
+    pub fn phy_addr(&self) -> Option<PhysicalAddress> {
+        if self.flags().contains(EntryFlags::PRESENT) {
+            return Some((self.0 & 0x000fffff_fffff000) as PhysicalAddress);
+        }
+
+        None
+    }
+
+    pub fn get_pointed_frame(&self) -> Option<Frame> {
+        Some(Frame::corresponding_frame(self.phy_addr()?))
+    }
+
+    pub fn set_flags(&mut self, flags: EntryFlags) {
+        self.0 = (self.0 & 0x000fffff_fffff000) | flags.bits();
+    }
+
+    pub fn set_phy_addr(&mut self, frame: Frame) {
+        self.0 = (self.0 & !0x000fffff_fffff000) | frame.start_address() as u64;
+    }
+
+    pub fn set(&mut self, frame: Frame, flags: EntryFlags) {
+        self.set_phy_addr(frame);
+        self.set_flags(flags);
     }
 }

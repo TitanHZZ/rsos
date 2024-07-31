@@ -21,14 +21,14 @@ impl<'a> SimpleFrameAllocator<'a> {
         multiboot_end: usize,
     ) -> Result<Self, ()> {
         let mut allocator = SimpleFrameAllocator {
-            next_frame: Frame { idx: 0 },
+            next_frame: Frame(0x0),
             areas: mem_areas,
             current_area: 0,
 
-            kernel_start: SimpleFrameAllocator::corresponding_frame(kernel_start),
-            kernel_end: SimpleFrameAllocator::corresponding_frame(kernel_end),
-            multiboot_start: SimpleFrameAllocator::corresponding_frame(multiboot_start),
-            multiboot_end: SimpleFrameAllocator::corresponding_frame(multiboot_end),
+            kernel_start: Frame::corresponding_frame(kernel_start),
+            kernel_end: Frame::corresponding_frame(kernel_end),
+            multiboot_start: Frame::corresponding_frame(multiboot_start),
+            multiboot_end: Frame::corresponding_frame(multiboot_end),
         };
 
         // check if the initial frame is already in use
@@ -49,7 +49,7 @@ impl<'a> SimpleFrameAllocator<'a> {
      */
     fn get_next_frame(&mut self) -> Option<Frame> {
         let fr_after_last_in_curr_area =
-            Self::corresponding_frame(self.areas[self.current_area].end_address() as usize + 1);
+            Frame::corresponding_frame(self.areas[self.current_area].end_address() as usize + 1);
 
         if self.next_frame == fr_after_last_in_curr_area {
             self.current_area += 1;
@@ -66,12 +66,10 @@ impl<'a> SimpleFrameAllocator<'a> {
 
             // get the first frame from the next area
             self.next_frame =
-                Self::corresponding_frame(self.areas[self.current_area].start_address() as usize);
+                Frame::corresponding_frame(self.areas[self.current_area].start_address() as usize);
         } else {
             // get the next frame from the same area
-            self.next_frame = Frame {
-                idx: self.next_frame.idx + 1,
-            };
+            self.next_frame = Frame(self.next_frame.0 + 1);
         }
 
         Some(self.next_frame)

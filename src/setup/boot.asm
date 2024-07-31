@@ -177,15 +177,24 @@ _start:
     ; in 32 bit protected mode with paging disabled
 
     call set_up_page_tables
+
+    ; setup recursive mapping (useful to setup more advanced paging in Rust)
+    mov eax, p4_table
+    or eax, 0b11 ; present + writable
+    mov [p4_table + 511 * 8], eax ; point the last P4 entry to the P4 table itself
+
     call enable_paging
 
     ; at this point, the cpu is in 32-bit compatibility submode (a submode of long mode) and
     ; we have paging enabled (using identity paging to simplify the assembly)
+    ; Identity Paging --> maps virtual addrs to physical addrs of same value so,
+    ; virtual addr = physical addr
+    ; at this point, only the first 1GiB is mapped with 'huge' P2 pages
 
     ; load the 64-bit GDT
     lgdt [gdt64.pointer]
 
-    ; use a `far jump` to load the code selector into the cs register
+    ; use a `far jump` to load the code selector into the cs (code selector) register
     jmp gdt64.code:_start_long_mode
 
 section .bss

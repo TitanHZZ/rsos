@@ -4,19 +4,24 @@ pub use self::simple_frame_allocator::SimpleFrameAllocator;
 
 const PAGE_SIZE: usize = 4096;
 
+pub type PhysicalAddress = usize;
+pub type VirtualAddress = usize;
+
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-pub struct Frame {
-    idx: usize,
+pub struct Frame(usize); // this usize is the frame index in the physical memory
+
+impl Frame {
+    fn corresponding_frame(addr: PhysicalAddress) -> Frame {
+        Frame(addr / PAGE_SIZE)
+    }
+
+    fn start_address(&self) -> PhysicalAddress {
+        self.0 * PAGE_SIZE
+    }
 }
 
 pub trait FrameAllocator {
     fn allocate_frame(&mut self) -> Option<Frame>;
     fn deallocate_frame(&mut self, frame: Frame);
-
-    fn corresponding_frame(phy_addr: usize) -> Frame {
-        Frame {
-            idx: phy_addr / PAGE_SIZE,
-        }
-    }
 }
