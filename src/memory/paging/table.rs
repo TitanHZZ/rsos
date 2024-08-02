@@ -1,3 +1,6 @@
+use crate::memory::{FrameAllocator, PAGE_SIZE};
+use core::marker::PhantomData;
+
 use super::{
     entry::{Entry, EntryFlags},
     ENTRY_COUNT,
@@ -7,7 +10,7 @@ use super::{
  * This is the base addr used to modify the Page Tables themselves using recursive mapping.
  * 0o177777_777_777_777_777_0000 = 0xfffffffffffff000
  */
-pub const P4: *const Table = 0o177777_777_777_777_777_0000 as *const Table;
+pub const P4: *const Table<Level4> = 0o177777_777_777_777_777_0000 as *const _;
 
 /*
  * This are the addresses that must be used to access the page tables themselves.
@@ -26,21 +29,93 @@ pub const P4: *const Table = 0o177777_777_777_777_777_0000 as *const Table;
  * and: https://wiki.osdev.org/User:Neon/Recursive_Paging
  */
 
-pub struct Table {
-    entries: [Entry; ENTRY_COUNT],
+pub trait TableLevel {}
+pub enum Level4 {}
+pub enum Level3 {}
+pub enum Level2 {}
+pub enum Level1 {}
+
+impl TableLevel for Level4 {}
+impl TableLevel for Level3 {}
+impl TableLevel for Level2 {}
+impl TableLevel for Level1 {}
+
+pub trait HierarchicalLevel: TableLevel {
+    type NextLevel: TableLevel;
 }
 
-impl Table {
-    fn next_table_addr(&self, table_index: usize) -> Option<usize> {
-        // get the flags for the entry in the `table_index` pos
-        let entry_flags = self.entries[table_index].flags();
+impl HierarchicalLevel for Level4 {
+    type NextLevel = Level3;
+}
 
+impl HierarchicalLevel for Level3 {
+    type NextLevel = Level2;
+}
+
+impl HierarchicalLevel for Level2 {
+    type NextLevel = Level1;
+}
+
+pub struct Table<L: TableLevel> {
+    pub entries: [Entry; ENTRY_COUNT],
+    _level: PhantomData<L>,
+}
+
+impl<L: TableLevel> Table<L> {
+    fn set_unused(&mut self) {
+        for entry in &mut self.entries {
+            entry.set_unused();
+        }
+    }
+}
+
+impl<L: HierarchicalLevel> Table<L> {
+    fn next_table_addr(&self, table_index: usize) -> Option<usize> {
+        // index must be between 0 and ENTRY_COUNT
+        assert!(table_index < ENTRY_COUNT);
+
+        let entry_flags = self.entries[table_index].flags();
         if entry_flags.contains(EntryFlags::PRESENT) && !entry_flags.contains(EntryFlags::HUGE_PAGE)
         {
-            let res = self as *const Table as usize;
+            let res = self as *const _ as usize;
             return Some((res << 9) | (table_index << 12));
         }
 
         None
+    }
+
+    pub fn next_table(&self, table_index: usize) -> Option<&Table<L::NextLevel>> {
+        Some(unsafe { &*(self.next_table_addr(table_index)? as *const _) })
+    }
+
+    pub fn create_next_table<A: FrameAllocator>(
+        &self,
+        table_index: usize,
+        allocator: A,
+        flags: EntryFlags,
+    ) -> &Table<L::NextLevel> {
+        // check if page table is already allocated
+        if let Some(table) = self.next_table(table_index) {
+            return table;
+        }
+
+        // this might happen if the page we are trying to allocate might involve huge pages
+        if self.entries[table_index]
+            .flags()
+            .contains(EntryFlags::HUGE_PAGE)
+        {
+            unimplemented!("Cannot allocate pages with HUGE_PAGE flag set yet!");
+        }
+
+        // page table is not yet created so allocate a new frame to hold the new page table
+        let frame = allocator
+            .allocate_frame()
+            .expect("Out of memory. Could not allocate new frame.");
+
+        // physical address needs to be page aligned
+        assert!(frame.0 % PAGE_SIZE == 0);
+
+        // set the new entry
+        self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
     }
 }

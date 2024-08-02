@@ -21,6 +21,7 @@ bitflags! {
  * That´s why this is not an addr and instead, a u64.
  * Also, an entry is exactly 64 bits (u64) and not usize.
  */
+#[derive(Clone, Copy)]
 pub struct Entry(u64);
 
 impl Entry {
@@ -47,7 +48,7 @@ impl Entry {
         None
     }
 
-    pub fn get_pointed_frame(&self) -> Option<Frame> {
+    pub fn pointed_frame(&self) -> Option<Frame> {
         Some(Frame::corresponding_frame(self.phy_addr()?))
     }
 
