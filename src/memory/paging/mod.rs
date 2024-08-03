@@ -2,8 +2,9 @@ mod entry;
 mod table;
 
 use super::{Frame, FrameAllocator, PhysicalAddress, VirtualAddress, PAGE_SIZE};
+use core::{marker::PhantomData, ptr::NonNull};
 use entry::EntryFlags;
-use table::P4;
+use table::{Level4, Table, P4};
 
 const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -58,66 +59,122 @@ impl Page {
     }
 }
 
-/*
- * Takes a virtual address and returns the respective physical address
- * if it exists (if it is mapped).
- */
-pub fn translate(virtual_addr: VirtualAddress) -> Option<PhysicalAddress> {
-    let offset = virtual_addr % PAGE_SIZE;
-    let page = Page::corresponding_page(virtual_addr);
-    let frame = translate_page(page)?;
+pub struct Paging {
+    p4: NonNull<Table<Level4>>,
 
-    Some(frame.0 * PAGE_SIZE + offset)
+    // makes this struct `own` a `Table<Level4>`
+    _marker: PhantomData<Table<Level4>>,
 }
 
-/*
- * This takes a Page and returns the respective Frame if
- * the address is mapped.
- */
-fn translate_page(page: Page) -> Option<Frame> {
-    // p3 might be needed if huge pages are involed
-    let p3 = unsafe { &*P4 }.next_table(page.p4_index());
+impl Paging {
+    /*
+     * Safety: This should be unsafe because the p4 addr will always be the same (at least for now),
+     * and that means that creating multiple `Paging` objects could result in undefined behaviour
+     * as all the `Paging` objects woulb be pointing to the same memory.
+     */
+    pub unsafe fn new() -> Self {
+        Paging {
+            // this can be unchecked as we know that the ptr is non null
+            p4: NonNull::new_unchecked(P4),
+            _marker: PhantomData,
+        }
+    }
 
-    p3.and_then(|p3| p3.next_table(page.p3_index()))
-        .and_then(|p2| p2.next_table(page.p2_index()))
-        .and_then(|p1| p1.entries[page.p1_index()].pointed_frame())
-        /*
-         * This might happen if the addr is not mapped (page does not exist) or
-         * there is a huge page involved (next_table() does not support huge pages)
-         */
-        .or_else(|| {
-            let p3_entry = p3?.entries[page.p3_index()];
-            if p3_entry.flags().contains(EntryFlags::HUGE_PAGE) {
-                // every p3 entry points to 1GiB pages, so the addr must be 1GiB aligned
-                assert!(p3_entry.phy_addr()? % (ENTRY_COUNT * ENTRY_COUNT * PAGE_SIZE) == 0);
+    fn p4(&self) -> &Table<Level4> {
+        unsafe { self.p4.as_ref() }
+    }
 
-                return Some(Frame::corresponding_frame(
-                    p3_entry.phy_addr()?
-                        + page.p2_index() * ENTRY_COUNT * PAGE_SIZE
-                        + page.p1_index() * PAGE_SIZE,
-                ));
-            }
+    fn p4_mut(&mut self) -> &mut Table<Level4> {
+        unsafe { self.p4.as_mut() }
+    }
 
-            let p2_entry = p3?.next_table(page.p3_index())?.entries[page.p2_index()];
-            if p2_entry.flags().contains(EntryFlags::HUGE_PAGE) {
-                // every p2 entry points to a 2MiB page, so the addr must be 2MiB aligned
-                assert!(p2_entry.phy_addr()? % (ENTRY_COUNT * PAGE_SIZE) == 0);
+    pub fn map_page_to_frame<A: FrameAllocator>(
+        &mut self,
+        page: Page,
+        frame: Frame,
+        frame_allocator: &mut A,
+        flags: EntryFlags,
+    ) {
+        let p4 = self.p4_mut();
+        let p3 = p4.create_next_table(page.p4_index(), frame_allocator);
+        let p2 = p3.create_next_table(page.p3_index(), frame_allocator);
+        let p1 = p2.create_next_table(page.p2_index(), frame_allocator);
 
-                return Some(Frame::corresponding_frame(
-                    p2_entry.phy_addr()? + page.p1_index() * PAGE_SIZE,
-                ));
-            }
+        // the entry must be unused
+        assert!(!p1.entries[page.p1_index()].is_used());
 
-            None
-        })
-}
+        p1.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
+    }
 
-pub fn map_page_to_frame<A: FrameAllocator>(
-    page: Page,
-    frame: Frame,
-    allocator: A,
-    flags: EntryFlags,
-) {
-    let p4 = unsafe { &*P4 };
-    let p3 = p4.create_next_table(page.p4_index());
+    pub fn map_page<A: FrameAllocator>(
+        &mut self,
+        page: Page,
+        frame_allocator: &mut A,
+        flags: EntryFlags,
+    ) {
+        // get a random (free) frame
+        let frame = frame_allocator
+            .allocate_frame()
+            .expect("Out of memory. Could not allocate new frame.");
+
+        self.map_page_to_frame(page, frame, frame_allocator, flags);
+    }
+
+    pub fn unmap_page(&self) {
+        unimplemented!("Page unmapping is not yet implemented!");
+    }
+
+    /*
+     * This takes a Page and returns the respective Frame if
+     * the address is mapped.
+     */
+    fn translate_page(&self, page: Page) -> Option<Frame> {
+        // p3 might be needed if huge pages are involed
+        let p3 = self.p4().next_table(page.p4_index());
+
+        p3.and_then(|p3| p3.next_table(page.p3_index()))
+            .and_then(|p2| p2.next_table(page.p2_index()))
+            .and_then(|p1| p1.entries[page.p1_index()].pointed_frame())
+            /*
+             * This might happen if the addr is not mapped (page does not exist) or
+             * there is a huge page involved (next_table() does not support huge pages)
+             */
+            .or_else(|| {
+                let p3_entry = p3?.entries[page.p3_index()];
+                if p3_entry.flags().contains(EntryFlags::HUGE_PAGE) {
+                    // every p3 entry points to 1GiB pages, so the addr must be 1GiB aligned
+                    assert!(p3_entry.phy_addr()? % (ENTRY_COUNT * ENTRY_COUNT * PAGE_SIZE) == 0);
+
+                    return Some(Frame::corresponding_frame(
+                        p3_entry.phy_addr()?
+                            + page.p2_index() * ENTRY_COUNT * PAGE_SIZE
+                            + page.p1_index() * PAGE_SIZE,
+                    ));
+                }
+
+                let p2_entry = p3?.next_table(page.p3_index())?.entries[page.p2_index()];
+                if p2_entry.flags().contains(EntryFlags::HUGE_PAGE) {
+                    // every p2 entry points to a 2MiB page, so the addr must be 2MiB aligned
+                    assert!(p2_entry.phy_addr()? % (ENTRY_COUNT * PAGE_SIZE) == 0);
+
+                    return Some(Frame::corresponding_frame(
+                        p2_entry.phy_addr()? + page.p1_index() * PAGE_SIZE,
+                    ));
+                }
+
+                None
+            })
+    }
+
+    /*
+     * Takes a virtual address and returns the respective physical address
+     * if it exists (if it is mapped).
+     */
+    pub fn translate(self, virtual_addr: VirtualAddress) -> Option<PhysicalAddress> {
+        let offset = virtual_addr % PAGE_SIZE;
+        let page = Page::corresponding_page(virtual_addr);
+        let frame = self.translate_page(page)?;
+
+        Some(frame.0 * PAGE_SIZE + offset)
+    }
 }

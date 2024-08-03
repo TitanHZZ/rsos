@@ -10,7 +10,7 @@ use super::{
  * This is the base addr used to modify the Page Tables themselves using recursive mapping.
  * 0o177777_777_777_777_777_0000 = 0xfffffffffffff000
  */
-pub const P4: *const Table<Level4> = 0o177777_777_777_777_777_0000 as *const _;
+pub const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
 
 /*
  * This are the addresses that must be used to access the page tables themselves.
@@ -88,34 +88,42 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &*(self.next_table_addr(table_index)? as *const _) })
     }
 
+    pub fn next_table_mut(&self, table_index: usize) -> Option<&mut Table<L::NextLevel>> {
+        Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
+    }
+
     pub fn create_next_table<A: FrameAllocator>(
-        &self,
+        &mut self,
         table_index: usize,
-        allocator: A,
-        flags: EntryFlags,
-    ) -> &Table<L::NextLevel> {
+        frame_allocator: &mut A,
+    ) -> &mut Table<L::NextLevel> {
         // check if page table is already allocated
-        if let Some(table) = self.next_table(table_index) {
-            return table;
+        if self.next_table(table_index).is_none() {
+            // this might happen if the page we are trying to allocate might
+            // involve huge pages previously allocatted
+            if self.entries[table_index]
+                .flags()
+                .contains(EntryFlags::HUGE_PAGE)
+            {
+                unimplemented!("Cannot allocate pages with HUGE_PAGE flag set yet!");
+            }
+
+            // page table is not yet created so allocate a new frame to hold the new page table
+            let frame = frame_allocator
+                .allocate_frame()
+                .expect("Out of memory. Could not allocate new frame.");
+
+            // physical address needs to be page aligned
+            assert!(frame.0 % PAGE_SIZE == 0);
+
+            // set the new entry
+            self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
+
+            // this unwrap() should never fail as we just set the entry above
+            self.next_table_mut(table_index).unwrap().set_unused();
         }
 
-        // this might happen if the page we are trying to allocate might involve huge pages
-        if self.entries[table_index]
-            .flags()
-            .contains(EntryFlags::HUGE_PAGE)
-        {
-            unimplemented!("Cannot allocate pages with HUGE_PAGE flag set yet!");
-        }
-
-        // page table is not yet created so allocate a new frame to hold the new page table
-        let frame = allocator
-            .allocate_frame()
-            .expect("Out of memory. Could not allocate new frame.");
-
-        // physical address needs to be page aligned
-        assert!(frame.0 % PAGE_SIZE == 0);
-
-        // set the new entry
-        self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
+        // at this point, we have a valid entry at `table_index` so this unwrap() is fine
+        self.next_table_mut(table_index).unwrap()
     }
 }
