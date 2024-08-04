@@ -2,6 +2,8 @@ mod entry;
 mod table;
 
 use super::{Frame, FrameAllocator, PhysicalAddress, VirtualAddress, PAGE_SIZE};
+use crate::{print, println};
+use core::arch::asm;
 use core::{marker::PhantomData, ptr::NonNull};
 use entry::EntryFlags;
 use table::{Level4, Table, P4};
@@ -59,6 +61,10 @@ impl Page {
     }
 }
 
+/*
+ * Safety: Raw pointers are not Send/Sync so `Paging` cannot be used
+ * between threads as it would cause data races.
+ */
 pub struct Paging {
     p4: NonNull<Table<Level4>>,
 
@@ -122,6 +128,15 @@ impl Paging {
 
     pub fn unmap_page(&self) {
         unimplemented!("Page unmapping is not yet implemented!");
+
+        // ASM is going to be needed to invalidate tlb entries
+        // let x: u64;
+        // unsafe {
+        //     asm!(
+        //         "mov {0}, 42",
+        //         out(reg) x,
+        //     );
+        // }
     }
 
     /*
@@ -170,11 +185,28 @@ impl Paging {
      * Takes a virtual address and returns the respective physical address
      * if it exists (if it is mapped).
      */
-    pub fn translate(self, virtual_addr: VirtualAddress) -> Option<PhysicalAddress> {
+    pub fn translate(&self, virtual_addr: VirtualAddress) -> Option<PhysicalAddress> {
         let offset = virtual_addr % PAGE_SIZE;
         let page = Page::corresponding_page(virtual_addr);
         let frame = self.translate_page(page)?;
 
         Some(frame.0 * PAGE_SIZE + offset)
     }
+}
+
+pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
+    let mut page_table = unsafe { Paging::new() };
+
+    let virt_addr = 42 * 512 * 512 * PAGE_SIZE; // 42 th entry in p3
+    let page = Page::corresponding_page(virt_addr);
+    let frame = frame_allocator.allocate_frame().expect("out of memory");
+
+    println!(
+        "None = {:?}, map to {:?}",
+        page_table.translate(virt_addr),
+        frame
+    );
+    page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty());
+    println!("Some = {:?}", page_table.translate(virt_addr));
+    println!("next free frame: {:?}", frame_allocator.allocate_frame());
 }

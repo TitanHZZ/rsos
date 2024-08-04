@@ -1,10 +1,9 @@
-use crate::memory::{FrameAllocator, PAGE_SIZE};
-use core::marker::PhantomData;
-
 use super::{
     entry::{Entry, EntryFlags},
     ENTRY_COUNT,
 };
+use crate::memory::{FrameAllocator, PAGE_SIZE};
+use core::marker::PhantomData;
 
 /*
  * This is the base addr used to modify the Page Tables themselves using recursive mapping.
@@ -114,7 +113,7 @@ impl<L: HierarchicalLevel> Table<L> {
                 .expect("Out of memory. Could not allocate new frame.");
 
             // physical address needs to be page aligned
-            assert!(frame.0 % PAGE_SIZE == 0);
+            assert!(frame.start_address() % PAGE_SIZE == 0);
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);

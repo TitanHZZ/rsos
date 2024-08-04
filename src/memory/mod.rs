@@ -1,6 +1,7 @@
 mod paging;
 mod simple_frame_allocator;
 pub use self::simple_frame_allocator::SimpleFrameAllocator;
+pub use paging::test_paging;
 
 const PAGE_SIZE: usize = 4096;
 

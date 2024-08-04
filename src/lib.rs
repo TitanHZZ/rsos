@@ -83,5 +83,17 @@ pub extern "C" fn main(mb_boot_info_addr: usize) -> ! {
         }
     }
 
+    // --------------- PAGING TESTS ---------------
+
+    let mut frame_allocator = SimpleFrameAllocator::new(
+        memory_map_tag.memory_areas(),
+        kernel_start,
+        kernel_end,
+        multiboot_start,
+        multiboot_end,
+    )
+    .expect("Could not create a simple frame allocator!");
+    memory::test_paging(&mut frame_allocator);
+
     loop {}
 }
