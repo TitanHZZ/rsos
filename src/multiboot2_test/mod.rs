@@ -1,6 +1,7 @@
 // https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
 // https://wiki.osdev.org/Multiboot
 use crate::{print, println};
+use bitflags::bitflags;
 use core::{ptr::slice_from_raw_parts, str::from_utf8};
 
 #[repr(C)]
@@ -106,42 +107,30 @@ struct VbeInfo {
     vbe_mode_info: [u8; 256],
 }
 
+// https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
+// https://refspecs.linuxfoundation.org/elf/elf.pdf
 #[repr(C)]
 struct ElfSymbols {
     header: MbTagHeader,
-    num: u16,
-    entsize: u16,
-    shndx: u16, // string table
-    reserved: u16,
+    num: u32, // number of section headers
+    entry_size: u32, // size of each section header (needs to be 64 as that is the size of every entry for ELF64)
+    string_table: u32,
+
+    /*
+     * If this was `section_headers: [ElfSectionHeader]`, it would unalign the sections by 4 bytes
+     * as thus, make the reading completly wrong.
+     * This means that the sections will all be unaligned by 4 bytes (but this is not a problem).
+     * 
+     * Perhaps this could be done with `#[repr(C, packed)]`?
+     */
     section_headers: [u8],
 }
 
 #[repr(C)]
-pub struct ElfSectionHeader {
-    inner: *const u8,
-    string_section: *const u8,
-    entry_size: u32,
-}
-
-#[repr(C)]
-struct ElfSectionInner32 {
+struct ElfSectionHeader {
     name_index: u32,
-    section_type: u32,
-    flags: u32,
-    addr: u32,
-    offset: u32,
-    size: u32,
-    link: u32,
-    info: u32,
-    addralign: u32,
-    entry_size: u32,
-}
-
-#[repr(C)]
-struct ElfSectionInner64 {
-    name_index: u32,
-    section_type: u32,
-    flags: u64,
+    section_type: ElfSectionType,
+    flags: ElfSectionFlags,
     addr: u64,
     offset: u64,
     size: u64,
@@ -151,14 +140,48 @@ struct ElfSectionInner64 {
     entry_size: u64,
 }
 
+/*
+ * Environment-specific use from 0x60000000 to 0x6FFFFFFF
+ * Processor-specific use from 0x70000000 to 0x7FFFFFFF
+ */
+#[repr(u32)]
+#[allow(dead_code)]
+#[derive(PartialEq)]
+enum ElfSectionType {
+    Unused = 0,
+    ProgramSection = 1,
+    LinkerSymbolTable = 2,
+    StringTable = 3,
+    RelaRelocation = 4,
+    SymbolHashTable = 5,
+    DynamicLinkingTable = 6,
+    Note = 7,
+    Uninitialized = 8,
+    RelRelocation = 9,
+    Reserved = 10,
+    DynamicLoaderSymbolTable = 11,
+}
+
+bitflags! {
+    /*
+     * Environment-specific use at 0x0F000000
+     * Processor-specific use at 0xF0000000
+     */
+    struct ElfSectionFlags: u64 {
+        const ELF_SECTION_WRITABLE = 0x1;
+        const ELF_SECTION_ALLOCATED = 0x2;
+        const ELF_SECTION_EXECUTABLE = 0x4;
+    }
+}
+
 // TODO: mark this as unsafe
 // TODO: remove the unwrap()s from the str creations
 pub fn mb_test(mb_boot_info_addr: usize) {
     let mb_header = unsafe { &*(mb_boot_info_addr as *const MbBootInformationHeader) };
     let size = mb_header.total_size;
 
-    println!("Boot info total size: {}", size);
-    println!("Reserved: {}", mb_header.reserved);
+    // println!("Boot info total size: {}", size);
+    // println!("Reserved: {}", mb_header.reserved);
 
     let mut tag_addr = mb_boot_info_addr + size_of::<u64>();
     let mut tag = unsafe { &*(tag_addr as *const MbTagHeader) };
@@ -176,7 +199,7 @@ pub fn mb_test(mb_boot_info_addr: usize) {
                 let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
                 let str = from_utf8(&cmd_line.string[..str_len]).unwrap();
 
-                println!("Got CmdLine tag:\n    cmdline: '{}'", str);
+                // println!("Got CmdLine tag:\n    cmdline: '{}'", str);
             }
             TagType::BootLoaderName => {
                 // construct the bootloader name tag from raw bytes
@@ -188,7 +211,7 @@ pub fn mb_test(mb_boot_info_addr: usize) {
                 let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
                 let str = from_utf8(&bootloader_name.string[..str_len]).unwrap();
 
-                println!("Got BootLoaderName tag:\n    bootloader name: '{}'", str);
+                // println!("Got BootLoaderName tag:\n    bootloader name: '{}'", str);
             }
             TagType::Modules => {
                 // construct the modules tag from raw bytes
@@ -199,21 +222,21 @@ pub fn mb_test(mb_boot_info_addr: usize) {
                 let str_len = tag.size as usize - size_of::<MbTagHeader>() - size_of::<u64>() - 1;
                 let str = from_utf8(&modules.string[..str_len]).unwrap();
 
-                println!("Got Modules tag:\n    mod_start: {}\n    mod_end: {}\n    string: '{}'", modules.mod_start, modules.mod_end, str);
+                // println!("Got Modules tag:\n    mod_start: {}\n    mod_end: {}\n    string: '{}'", modules.mod_start, modules.mod_end, str);
             }
             TagType::BasicMemoryInfo => {
                 // construct the basic mem info tag from the headet tag
                 let basic_mem_info = unsafe { &*(tag as *const MbTagHeader as *const BasicMemoryInfo) };
 
-                println!("Got BasicMemoryInfo tag:\n    mem_lower: {}\n    mem_upper: {}", basic_mem_info.mem_lower, basic_mem_info.mem_upper);
+                // println!("Got BasicMemoryInfo tag:\n    mem_lower: {}\n    mem_upper: {}", basic_mem_info.mem_lower, basic_mem_info.mem_upper);
             }
             TagType::BiosBootDevice => {
                 // construct the bios boot device tag from the header tag
                 let bios_boot_device = unsafe { &*(tag as *const MbTagHeader as *const BiosBootDevice) };
 
-                println!("Got BiosBootDevice tag:\n    biosdev: {}\n    partition: {}\n    sub_partition: {}",
-                    bios_boot_device.biosdev, bios_boot_device.partition, bios_boot_device.sub_partition
-                );
+                // println!("Got BiosBootDevice tag:\n    biosdev: {}\n    partition: {}\n    sub_partition: {}",
+                //     bios_boot_device.biosdev, bios_boot_device.partition, bios_boot_device.sub_partition
+                // );
             }
             TagType::MemoryMap => {
                 // construct the memory map tag from raw bytes
@@ -225,13 +248,13 @@ pub fn mb_test(mb_boot_info_addr: usize) {
                 // size_of::<MemoryMapEntry> == memory_map.entry_size
                 // memory_map.entry_size % 8 == 0 (is multiple of 8)
                 // enum for the entry types
-                let entry_count = (tag.size as usize - size_of::<MbTagHeader>() - size_of::<u64>()) / size_of::<MemoryMapEntry>();
+                let entry_count = (tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2) / size_of::<MemoryMapEntry>();
  
-                println!("Got MemoryMap tag:");
-                for entry_idx in 0..entry_count {
-                    let entry = &memory_map.entries[entry_idx];
-                    println!("    base_addr: {}, length: {}, type: {}, reserved: {}", entry.base_addr, entry.length, entry.entry_type, entry.reserved);
-                }
+                // println!("Got MemoryMap tag:");
+                // for entry_idx in 0..entry_count {
+                //     let entry = &memory_map.entries[entry_idx];
+                //     println!("    base_addr: {}, length: {}, type: {}, reserved: {}", entry.base_addr, entry.length, entry.entry_type, entry.reserved);
+                // }
             }
             /*
              * Not exactly sure how to print vbe_control_info and vbe_mode_info
@@ -240,14 +263,26 @@ pub fn mb_test(mb_boot_info_addr: usize) {
             TagType::VbeInfo => {
                 // construct the vbe info tag from the header tag
                 let _vbe_info = unsafe { &*(tag as * const MbTagHeader as *const VbeInfo) };
-                println!("Got VbeInfo tag!");
+
+                // println!("Got VbeInfo tag!");
             }
             TagType::ElfSymbols => {
+                // construct the elf symbols tag from raw bytes
                 let ptr = tag as *const MbTagHeader as *const u8;
                 let bytes = slice_from_raw_parts(ptr, tag.size as usize);
                 let elf_symbols = unsafe { &*(bytes as *const ElfSymbols) };
 
-                println!("Got ElfSymbols tag:\n    section count: {} {}", elf_symbols.num, elf_symbols.entsize);
+                // construct the elf sections from raw bytes
+                let section_headers_ptr: *const ElfSectionHeader = &elf_symbols.section_headers as *const [u8] as *const u8 as *const _;
+                let elf_sections = slice_from_raw_parts(section_headers_ptr, elf_symbols.num as usize);
+                let elf_sections = unsafe { &*(elf_sections as *const [ElfSectionHeader]) };
+
+                // TODO: --- FINISH THIS TODO ---
+
+                // println!("Got ElfSymbols tag:\n    num: {}", elf_symbols.num);
+                // for section in elf_sections {
+                //     println!("is unused = {}", section.section_type == ElfSectionType::Unused);
+                // }
             }
             _ => {}
         }
@@ -256,20 +291,4 @@ pub fn mb_test(mb_boot_info_addr: usize) {
         tag_addr = tag_addr + ((tag.size as usize + 7) & !7);
         tag = unsafe { &*(tag_addr as *const MbTagHeader) };
     }
-
-    // while tag.tag_type != TagType::End {
-    //     if tag.tag_type == TagType::CmdLine {
-    //         // construct the cmd line tag from raw bytes
-    //         let ptr = tag as *const MbTagHeader as *const u8;
-    //         let bytes: *const [u8] = slice_from_raw_parts(ptr, tag.size as usize);
-    //         let cmd_line = unsafe { &*(bytes as *const CmdLine) };
-    //         // calculate the real str size, convert [u8] to &str and print it
-    //         let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
-    //         let str = from_utf8(&cmd_line.string[..str_len]).unwrap();
-    //         println!("cmdline: {}", str);
-    //     }
-    //     // go to the next tag
-    //     tag_addr = tag_addr + ((tag.size as usize + 7) & !7);
-    //     tag = unsafe { &*(tag_addr as *const MbTagHeader) };
-    // }
 }

@@ -9,7 +9,7 @@ mod multiboot2_test;
 use core::panic::PanicInfo;
 use memory::{FrameAllocator, SimpleFrameAllocator};
 use multiboot2_test::mb_test;
-use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
+use multiboot2::{BootInformation, BootInformationHeader, ElfSectionType, ElfSectionsTag, MemoryAreaType, TagTrait};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -51,6 +51,11 @@ pub extern "C" fn main(mb_boot_info_addr: usize) -> ! {
     //     multiboot2::BootInformation::load(mb_boot_info_addr as *const BootInformationHeader)
     // }
     // .expect("Invalid multiboot2 boot information.");
+    // let elf_sections_tag = mb_info.elf_sections().expect("Elf-sections tag required");
+    // for a in elf_sections_tag {
+    //     // println!("is unused: {}", a.section_type() == ElfSectionType::Unused);
+    // }
+
     // let cmd_line = mb_info.command_line_tag().expect("cmd line tag is required!");
     // println!("cmdline: {}", cmd_line.cmdline().unwrap());
 
