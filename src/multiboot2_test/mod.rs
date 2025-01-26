@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use core::{ptr::slice_from_raw_parts, str::from_utf8};
 
 #[repr(C)]
+#[derive(Clone)]
 struct MbBootInformationHeader {
     total_size: u32,
     reserved: u32,
@@ -40,8 +41,8 @@ enum TagType {
     NetworkingInfo = 16,
     EfiMemoryMap = 17,
     EfiBootServicesNotTerminated = 18,
-    Efi32BitImagehandlePtr = 19,
-    Efi64BitImagehandlePtr = 20,
+    Efi32BitImageHandlePtr = 19,
+    Efi64BitImageHandlePtr = 20,
     ImageLoadBasePhysicalAdress = 21,
 }
 
@@ -174,16 +175,66 @@ bitflags! {
     }
 }
 
+#[repr(C)]
+struct ApmTable {
+    header: MbTagHeader,
+    version: u16,
+    cseg: u16,
+    offset: u32,
+    cseg_16: u16,
+    dseg: u16,
+    flags: u16,
+    cseg_len: u16,
+    cseg_16_len: u16,
+    dseg_len: u16,
+}
+
+#[repr(C)]
+struct Efi32BitSystemTablePtr {
+    header: MbTagHeader,
+    pointer: u32,
+}
+
+#[repr(C)]
+struct Efi64BitSystemTablePtr {
+    header: MbTagHeader,
+    pointer: u64,
+}
+
+#[repr(C)]
+struct EfiBootServicesNotTerminated {
+    header: MbTagHeader,
+}
+
+#[repr(C)]
+struct Efi32BitImageHandlePtr {
+    header: MbTagHeader,
+    pointer: u32,
+}
+
+#[repr(C)]
+struct Efi64BitImageHandlePtr {
+    header: MbTagHeader,
+    pointer: u64,
+}
+
+#[repr(C)]
+struct ImageLoadBasePhysicalAdress {
+    header: MbTagHeader,
+    load_base_addr: u32,
+}
+
 // TODO: mark this as unsafe
 // TODO: remove the unwrap()s from the str creations
-pub fn mb_test(mb_boot_info_addr: usize) {
+// TODO: add checks to make sure that the header tag has the correct size (where possible)
+pub fn mb_test(mb_boot_info_addr: *const u8) {
     let mb_header = unsafe { &*(mb_boot_info_addr as *const MbBootInformationHeader) };
     let size = mb_header.total_size;
 
     // println!("Boot info total size: {}", size);
     // println!("Reserved: {}", mb_header.reserved);
 
-    let mut tag_addr = mb_boot_info_addr + size_of::<u64>();
+    let mut tag_addr = unsafe { mb_boot_info_addr.offset(size_of::<u64>() as isize) };
     let mut tag = unsafe { &*(tag_addr as *const MbTagHeader) };
 
     loop {
@@ -262,7 +313,7 @@ pub fn mb_test(mb_boot_info_addr: usize) {
              */
             TagType::VbeInfo => {
                 // construct the vbe info tag from the header tag
-                let _vbe_info = unsafe { &*(tag as * const MbTagHeader as *const VbeInfo) };
+                let vbe_info = unsafe { &*(tag as * const MbTagHeader as *const VbeInfo) };
 
                 // println!("Got VbeInfo tag!");
             }
@@ -284,11 +335,125 @@ pub fn mb_test(mb_boot_info_addr: usize) {
                 //     println!("is unused = {}", section.section_type == ElfSectionType::Unused);
                 // }
             }
+            TagType::ApmTable => {
+                // construct the apm table tag from the header tag
+                let apm_table = unsafe { &*(tag as *const MbTagHeader as *const ApmTable) };
+
+                // println!("Got ApmTable tag!");
+            }
+            /*
+             * I don't think this tag will even exist in this context as the kernel is 64bit.
+             * Maybe it could be removed?
+             */
+            TagType::Efi32BitSystemTablePtr => {
+                // construct the efi 32 bit system table ptr tag from the header tag
+                let efi32_system_table_ptr = unsafe { &*(tag as *const MbTagHeader as *const Efi32BitSystemTablePtr) };
+
+                println!("Got Efi32BitSystemTablePtr tag!\n    pointer: {}", efi32_system_table_ptr.pointer);
+            }
+            TagType::Efi64BitSystemTablePtr => {
+                // construct the efi 64 bit system table ptr tag from the header tag
+                let efi64_system_table_ptr = unsafe { &*(tag as *const MbTagHeader as *const Efi64BitSystemTablePtr) };
+
+                println!("Got Efi64BitSystemTablePtr tag!\n    pointer: {}", efi64_system_table_ptr.pointer);
+            }
+            TagType::EfiBootServicesNotTerminated => {
+                // construct the efi boot services not terminated tag from the header tag
+                let _efi_boot_services_not_terminated: &EfiBootServicesNotTerminated = unsafe { &*(tag as *const MbTagHeader as *const _) };
+
+                println!("Got EfiBootServicesNotTerminated tag!\n    This means that ExitBootServices wasn't called.");
+            }
+            /*
+             * I don't think this tag will even exist in this context as the kernel is 64bit.
+             * Maybe it could be removed?
+             */
+            TagType::Efi32BitImageHandlePtr => {
+                // construct the efi 32 bit image handle ptr tag from the header tag
+                let efi_32_image_handle_ptr = unsafe { &*(tag as *const MbTagHeader as *const Efi32BitImageHandlePtr) };
+
+                println!("Got Efi32BitImageHandlePtr tag!\n    pointer: {}", efi_32_image_handle_ptr.pointer);
+            }
+            TagType::Efi64BitImageHandlePtr => {
+                // construct the efi 64 bit image handle ptr tag from the header tag
+                let efi_64_image_handle_ptr = unsafe { &*(tag as *const MbTagHeader as *const Efi64BitImageHandlePtr) };
+
+                println!("Got Efi64BitImageHandlePtr tag!\n    pointer: {}", efi_64_image_handle_ptr.pointer);
+            }
+            TagType::ImageLoadBasePhysicalAdress => {
+                // construct the image load base physical adress tag from the header tag
+                let image_load_base_physical_adress: &ImageLoadBasePhysicalAdress = unsafe { &*(tag as *const MbTagHeader as *const _) };
+
+                // println!("Got ImageLoadBasePhysicalAdress tag!\n    load base addr: {}", image_load_base_physical_adress.load_base_addr);
+            }
             _ => {}
         }
 
         // go to the next tag
-        tag_addr = tag_addr + ((tag.size as usize + 7) & !7);
+        tag_addr = unsafe { tag_addr.offset(((tag.size as usize + 7) & !7) as isize) };
         tag = unsafe { &*(tag_addr as *const MbTagHeader) };
+    }
+}
+
+///
+/// ------------------------------------------------------------------------------------------------------------ ///
+///
+
+#[repr(C)]
+struct MbBootInfo {
+    header: MbBootInformationHeader,
+
+    /*
+     * Not using NonNull<MbTagHeader> as it expects mut ptrs.
+     */
+    tags_ptr: *const MbTagHeader,
+}
+
+// TODO: make an enum with all the possible errors and return that on the Results instead of the &strs
+impl MbBootInfo {
+    pub unsafe fn new(mb_boot_info: *const u8) -> Result<Self, &'static str> {
+        // make sure that the ptr is not null
+        if mb_boot_info.is_null() {
+            return Err("`mb_boot_info` is null!");
+        }
+
+        // make sure that the pointer is aligned to 64 bits
+        if mb_boot_info.align_offset(size_of::<u64>()) == 0 {
+            return Err("`mb_boot_info` is not aligned to 64bits!");
+        }
+
+        let mb_header: &MbBootInformationHeader = &*mb_boot_info.cast();    
+        let tags_ptr: *const MbTagHeader = mb_boot_info.offset(size_of::<MbBootInformationHeader>() as isize).cast();
+
+        Ok(Self {
+            header: mb_header.clone(),
+            tags_ptr
+        })
+    }
+
+    fn tags (&self) -> MbTagIter {
+        MbTagIter::new(self.tags_ptr)
+    }
+}
+
+struct MbTagIter {
+    curr_tag_addr: *const MbTagHeader,
+}
+
+impl MbTagIter {
+    fn new(curr_tag_addr: *const MbTagHeader) -> Self {
+        // Safety: This assumes that, because this *should* come from MbBootInfo, the pointer is valid (non null, aligned and points to valid tags).
+        MbTagIter {
+            curr_tag_addr
+        }
+    }
+}
+
+impl Iterator for MbTagIter {
+    type Item = MbTagHeader;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let curr_tag: &MbBootInformationHeader = unsafe { &*(self.curr_tag_addr as *const _) };
+
+        None
     }
 }
