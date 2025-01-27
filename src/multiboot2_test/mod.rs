@@ -1,7 +1,37 @@
 // https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
 // https://wiki.osdev.org/Multiboot
+mod cmd_line;
+mod tag_iter;
+mod tag_trait;
+mod boot_loader_name;
+mod modules;
+mod basic_memory_info;
+mod bios_boot_device;
+mod memory_map;
+mod vbe_info;
+mod elf_symbols;
+mod apm_table;
+mod efi_system_table;
+mod efi_boot_services_not_terminated;
+mod efi_image_handle;
+mod image_load_base_phy_addr;
+
 use crate::{print, println};
-use bitflags::bitflags;
+use apm_table::ApmTable;
+use basic_memory_info::BasicMemoryInfo;
+use bios_boot_device::BiosBootDevice;
+use boot_loader_name::BootLoaderName;
+use cmd_line::CmdLine;
+use efi_boot_services_not_terminated::EfiBootServicesNotTerminated;
+use efi_image_handle::{Efi32BitImageHandlePtr, Efi64BitImageHandlePtr};
+use efi_system_table::{Efi32BitSystemTablePtr, Efi64BitSystemTablePtr};
+use elf_symbols::{ElfSectionHeader, ElfSymbols};
+use image_load_base_phy_addr::ImageLoadBasePhysicalAdress;
+use memory_map::{MemoryMap, MemoryMapEntry};
+use modules::Modules;
+use tag_iter::MbTagIter;
+use tag_trait::MbTag;
+use vbe_info::VbeInfo;
 use core::{ptr::slice_from_raw_parts, str::from_utf8};
 
 #[repr(C)]
@@ -13,7 +43,7 @@ struct MbBootInformationHeader {
 }
 
 #[repr(C)]
-struct MbTagHeader {
+pub(crate) struct MbTagHeader {
     tag_type: TagType,
     size: u32,
 }
@@ -46,182 +76,54 @@ enum TagType {
     ImageLoadBasePhysicalAdress = 21,
 }
 
-#[repr(C)]
-struct CmdLine {
-    header: MbTagHeader,
-    string: [u8],
-}
-
-#[repr(C)]
-struct BootLoaderName {
-    header: MbTagHeader,
-    string: [u8],
-}
-
-#[repr(C)]
-struct Modules {
-    header: MbTagHeader,
-    mod_start: u32,
-    mod_end: u32,
-    string: [u8],
-}
-
-#[repr(C)]
-struct BasicMemoryInfo {
-    header: MbTagHeader,
-    mem_lower: u32,
-    mem_upper: u32,
-}
-
-#[repr(C)]
-struct BiosBootDevice {
-    header: MbTagHeader,
-    biosdev: u32,
-    partition: u32,
-    sub_partition: u32,
-}
-
-#[repr(C)]
-struct MemoryMap {
-    header: MbTagHeader,
-    entry_size: u32,
-    entry_version: u32,
-    entries: [MemoryMapEntry],
-}
-
-#[repr(C)]
-struct MemoryMapEntry {
-    base_addr: u64,
-    length: u64,
-    entry_type: u32,
-    reserved: u32,
-}
-
-#[repr(C)]
-struct VbeInfo {
-    header: MbTagHeader,
-    vbe_mode: u16,
-    vbe_interface_seg: u16,
-    vbe_interface_off: u16,
-    vbe_interface_len: u16,
-    vbe_control_info: [u8; 512],
-    vbe_mode_info: [u8; 256],
-}
-
-// https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
-// https://refspecs.linuxfoundation.org/elf/elf.pdf
-#[repr(C)]
-struct ElfSymbols {
-    header: MbTagHeader,
-    num: u32, // number of section headers
-    entry_size: u32, // size of each section header (needs to be 64 as that is the size of every entry for ELF64)
-    string_table: u32,
-
-    /*
-     * If this was `section_headers: [ElfSectionHeader]`, it would unalign the sections by 4 bytes
-     * as thus, make the reading completly wrong.
-     * This means that the sections will all be unaligned by 4 bytes (but this is not a problem).
-     * 
-     * Perhaps this could be done with `#[repr(C, packed)]`?
-     */
-    section_headers: [u8],
-}
-
-#[repr(C)]
-struct ElfSectionHeader {
-    name_index: u32,
-    section_type: ElfSectionType,
-    flags: ElfSectionFlags,
-    addr: u64,
-    offset: u64,
-    size: u64,
-    link: u32,
-    info: u32,
-    addralign: u64,
-    entry_size: u64,
-}
-
-/*
- * Environment-specific use from 0x60000000 to 0x6FFFFFFF
- * Processor-specific use from 0x70000000 to 0x7FFFFFFF
- */
-#[repr(u32)]
-#[allow(dead_code)]
-#[derive(PartialEq)]
-enum ElfSectionType {
-    Unused = 0,
-    ProgramSection = 1,
-    LinkerSymbolTable = 2,
-    StringTable = 3,
-    RelaRelocation = 4,
-    SymbolHashTable = 5,
-    DynamicLinkingTable = 6,
-    Note = 7,
-    Uninitialized = 8,
-    RelRelocation = 9,
-    Reserved = 10,
-    DynamicLoaderSymbolTable = 11,
-}
-
-bitflags! {
-    /*
-     * Environment-specific use at 0x0F000000
-     * Processor-specific use at 0xF0000000
-     */
-    struct ElfSectionFlags: u64 {
-        const ELF_SECTION_WRITABLE = 0x1;
-        const ELF_SECTION_ALLOCATED = 0x2;
-        const ELF_SECTION_EXECUTABLE = 0x4;
+impl MbTagHeader {
+    fn cast_to<T: MbTag + ?Sized>(&self) -> &T {
+        // Safety: At this point, we take the data as being valid as it was already checked.
+        unsafe { T::from_base_tag(self) }
     }
 }
 
 #[repr(C)]
-struct ApmTable {
-    header: MbTagHeader,
-    version: u16,
-    cseg: u16,
-    offset: u32,
-    cseg_16: u16,
-    dseg: u16,
-    flags: u16,
-    cseg_len: u16,
-    cseg_16_len: u16,
-    dseg_len: u16,
+pub(crate) struct MbBootInfo {
+    header: MbBootInformationHeader,
+
+    /*
+     * Not using NonNull<MbTagHeader> as it expects mut ptrs.
+     */
+    tags_ptr: *const MbTagHeader,
 }
 
-#[repr(C)]
-struct Efi32BitSystemTablePtr {
-    header: MbTagHeader,
-    pointer: u32,
-}
+// TODO: make an enum with all the possible errors and return that on the Results instead of the &strs
+impl MbBootInfo {
+    pub unsafe fn new(mb_boot_info: *const u8) -> Result<Self, &'static str> {
+        // make sure that the ptr is not null
+        if mb_boot_info.is_null() {
+            return Err("`mb_boot_info` is null!");
+        }
 
-#[repr(C)]
-struct Efi64BitSystemTablePtr {
-    header: MbTagHeader,
-    pointer: u64,
-}
+        // make sure that the pointer is aligned to 64 bits
+        if mb_boot_info.align_offset(size_of::<u64>()) == 0 {
+            return Err("`mb_boot_info` is not aligned to 64bits!");
+        }
 
-#[repr(C)]
-struct EfiBootServicesNotTerminated {
-    header: MbTagHeader,
-}
+        let mb_header: &MbBootInformationHeader = &*mb_boot_info.cast();    
+        let tags_ptr: *const MbTagHeader = mb_boot_info.offset(size_of::<MbBootInformationHeader>() as isize).cast();
 
-#[repr(C)]
-struct Efi32BitImageHandlePtr {
-    header: MbTagHeader,
-    pointer: u32,
-}
+        Ok(Self {
+            header: mb_header.clone(),
+            tags_ptr
+        })
+    }
 
-#[repr(C)]
-struct Efi64BitImageHandlePtr {
-    header: MbTagHeader,
-    pointer: u64,
-}
+    fn tags (&self) -> MbTagIter {
+        MbTagIter::new(self.tags_ptr)
+    }
 
-#[repr(C)]
-struct ImageLoadBasePhysicalAdress {
-    header: MbTagHeader,
-    load_base_addr: u32,
+    pub fn cmd_line(&self) -> Option<&CmdLine> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::CmdLine)
+            .map(|tag| tag.cast_to::<CmdLine>())
+    }
 }
 
 // TODO: mark this as unsafe
@@ -391,69 +293,5 @@ pub fn mb_test(mb_boot_info_addr: *const u8) {
         // go to the next tag
         tag_addr = unsafe { tag_addr.offset(((tag.size as usize + 7) & !7) as isize) };
         tag = unsafe { &*(tag_addr as *const MbTagHeader) };
-    }
-}
-
-///
-/// ------------------------------------------------------------------------------------------------------------ ///
-///
-
-#[repr(C)]
-struct MbBootInfo {
-    header: MbBootInformationHeader,
-
-    /*
-     * Not using NonNull<MbTagHeader> as it expects mut ptrs.
-     */
-    tags_ptr: *const MbTagHeader,
-}
-
-// TODO: make an enum with all the possible errors and return that on the Results instead of the &strs
-impl MbBootInfo {
-    pub unsafe fn new(mb_boot_info: *const u8) -> Result<Self, &'static str> {
-        // make sure that the ptr is not null
-        if mb_boot_info.is_null() {
-            return Err("`mb_boot_info` is null!");
-        }
-
-        // make sure that the pointer is aligned to 64 bits
-        if mb_boot_info.align_offset(size_of::<u64>()) == 0 {
-            return Err("`mb_boot_info` is not aligned to 64bits!");
-        }
-
-        let mb_header: &MbBootInformationHeader = &*mb_boot_info.cast();    
-        let tags_ptr: *const MbTagHeader = mb_boot_info.offset(size_of::<MbBootInformationHeader>() as isize).cast();
-
-        Ok(Self {
-            header: mb_header.clone(),
-            tags_ptr
-        })
-    }
-
-    fn tags (&self) -> MbTagIter {
-        MbTagIter::new(self.tags_ptr)
-    }
-}
-
-struct MbTagIter {
-    curr_tag_addr: *const MbTagHeader,
-}
-
-impl MbTagIter {
-    fn new(curr_tag_addr: *const MbTagHeader) -> Self {
-        // Safety: This assumes that, because this *should* come from MbBootInfo, the pointer is valid (non null, aligned and points to valid tags).
-        MbTagIter {
-            curr_tag_addr
-        }
-    }
-}
-
-impl Iterator for MbTagIter {
-    type Item = MbTagHeader;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let curr_tag: &MbBootInformationHeader = unsafe { &*(self.curr_tag_addr as *const _) };
-
-        None
     }
 }

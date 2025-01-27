@@ -1,0 +1,4 @@
+{
+    "rust-analyzer.cargo.target": "x86_64-rsos.json",
+    "rust-analyzer.cargo.allTargets": false
+}
