@@ -79,7 +79,7 @@ enum TagType {
 impl MbTagHeader {
     fn cast_to<T: MbTag + ?Sized>(&self) -> &T {
         // Safety: At this point, we take the data as being valid as it was already checked.
-        unsafe { T::from_base_tag(self) }
+        unsafe { MbTag::from_base_tag(self) }
     }
 }
 
@@ -102,7 +102,7 @@ impl MbBootInfo {
         }
 
         // make sure that the pointer is aligned to 64 bits
-        if mb_boot_info.align_offset(size_of::<u64>()) == 0 {
+        if mb_boot_info.align_offset(size_of::<u64>()) != 0 {
             return Err("`mb_boot_info` is not aligned to 64bits!");
         }
 
@@ -124,6 +124,18 @@ impl MbBootInfo {
             .find(|tag| tag.tag_type == TagType::CmdLine)
             .map(|tag| tag.cast_to::<CmdLine>())
     }
+
+    pub fn boot_loader_name(&self) -> Option<&BootLoaderName> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::BootLoaderName)
+            .map(|tag| tag.cast_to::<BootLoaderName>())
+    }
+
+    pub fn modules(&self) -> Option<&Modules> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::Modules)
+            .map(|tag| tag.cast_to::<Modules>())
+    }
 }
 
 // TODO: mark this as unsafe
@@ -142,41 +154,35 @@ pub fn mb_test(mb_boot_info_addr: *const u8) {
     loop {
         match tag.tag_type {
             TagType::End => break,
-            TagType::CmdLine => {
-                // construct the cmd line tag from raw bytes
-                let ptr = tag as *const MbTagHeader as *const u8;
-                let bytes: *const [u8] = slice_from_raw_parts(ptr, tag.size as usize);
-                let cmd_line = unsafe { &*(bytes as *const CmdLine) };
-
-                // calculate the real str size, convert [u8] to &str and print it
-                let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
-                let str = from_utf8(&cmd_line.string[..str_len]).unwrap();
-
-                // println!("Got CmdLine tag:\n    cmdline: '{}'", str);
-            }
-            TagType::BootLoaderName => {
-                // construct the bootloader name tag from raw bytes
-                let ptr = tag as *const MbTagHeader as *const u8;
-                let bytes: *const [u8] = slice_from_raw_parts(ptr, tag.size as usize);
-                let bootloader_name = unsafe { &*(bytes as *const BootLoaderName) };
-
-                // calculate the real str size, convert [u8] to &str and print it
-                let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
-                let str = from_utf8(&bootloader_name.string[..str_len]).unwrap();
-
-                // println!("Got BootLoaderName tag:\n    bootloader name: '{}'", str);
-            }
-            TagType::Modules => {
-                // construct the modules tag from raw bytes
-                let ptr = tag as *const MbTagHeader as *const u8;
-                let bytes = slice_from_raw_parts(ptr, tag.size as usize);
-                let modules = unsafe { &*(bytes as *const Modules) };
-
-                let str_len = tag.size as usize - size_of::<MbTagHeader>() - size_of::<u64>() - 1;
-                let str = from_utf8(&modules.string[..str_len]).unwrap();
-
-                // println!("Got Modules tag:\n    mod_start: {}\n    mod_end: {}\n    string: '{}'", modules.mod_start, modules.mod_end, str);
-            }
+            // TagType::CmdLine => {
+            //     // construct the cmd line tag from raw bytes
+            //     let ptr = tag as *const MbTagHeader as *const u8;
+            //     let bytes: *const [u8] = slice_from_raw_parts(ptr, tag.size as usize);
+            //     let cmd_line = unsafe { &*(bytes as *const CmdLine) };
+            //     // calculate the real str size, convert [u8] to &str and print it
+            //     let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
+            //     let str = from_utf8(&cmd_line.string[..str_len]).unwrap();
+            //     // println!("Got CmdLine tag:\n    cmdline: '{}'", str);
+            // }
+            // TagType::BootLoaderName => {
+            //     // construct the bootloader name tag from raw bytes
+            //     let ptr = tag as *const MbTagHeader as *const u8;
+            //     let bytes: *const [u8] = slice_from_raw_parts(ptr, tag.size as usize);
+            //     let bootloader_name = unsafe { &*(bytes as *const BootLoaderName) };
+            //     // calculate the real str size, convert [u8] to &str and print it
+            //     let str_len = tag.size as usize - size_of::<MbTagHeader>() - 1;
+            //     let str = from_utf8(&bootloader_name.string[..str_len]).unwrap();
+            //     // println!("Got BootLoaderName tag:\n    bootloader name: '{}'", str);
+            // }
+            // TagType::Modules => {
+            //     // construct the modules tag from raw bytes
+            //     let ptr = tag as *const MbTagHeader as *const u8;
+            //     let bytes = slice_from_raw_parts(ptr, tag.size as usize);
+            //     let modules = unsafe { &*(bytes as *const Modules) };
+            //     let str_len = tag.size as usize - size_of::<MbTagHeader>() - size_of::<u64>() - 1;
+            //     let str = from_utf8(&modules.string[..str_len]).unwrap();
+            //     // println!("Got Modules tag:\n    mod_start: {}\n    mod_end: {}\n    string: '{}'", modules.mod_start, modules.mod_end, str);
+            // }
             TagType::BasicMemoryInfo => {
                 // construct the basic mem info tag from the headet tag
                 let basic_mem_info = unsafe { &*(tag as *const MbTagHeader as *const BasicMemoryInfo) };

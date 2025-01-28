@@ -1,15 +1,13 @@
 #![no_std]
 #![no_main]
 
-// extern crate multiboot2;
-mod memory;
+// mod memory;
+mod multiboot2;
 mod vga_buffer;
-mod multiboot2_test;
 
 use core::panic::PanicInfo;
-use memory::{FrameAllocator, SimpleFrameAllocator};
-use multiboot2_test::{mb_test, MbBootInfo};
-use multiboot2::{BootInformation, BootInformationHeader, ElfSectionType, ElfSectionsTag, MemoryAreaType, TagTrait};
+use multiboot2::MbBootInfo;
+// use memory::{FrameAllocator, SimpleFrameAllocator};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -43,10 +41,20 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
-    // mb_test(mb_boot_info_addr);
+    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.unwrap();
 
-    let a = unsafe { MbBootInfo::new(mb_boot_info_addr) }.unwrap();
-    let b = a.cmd_line().unwrap();
+    // cmd line
+    let cmd_line = mb_info.cmd_line().unwrap();
+    println!("cmd line: '{}'", cmd_line.string().unwrap());
+
+    // boot loader name
+    let bln = mb_info.boot_loader_name().unwrap();
+    println!("boot loader name: '{}'", bln.string().unwrap());
+
+    // modules
+    // let modules = mb_info.modules().unwrap();
+    // println!("modules: {}", modules.string().unwrap());
+
 
     // let mb_info = unsafe {
     //     multiboot2::BootInformation::load(mb_boot_info_addr as *const BootInformationHeader)
