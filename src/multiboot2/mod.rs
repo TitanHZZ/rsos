@@ -136,6 +136,24 @@ impl MbBootInfo {
             .find(|tag| tag.tag_type == TagType::Modules)
             .map(|tag| tag.cast_to::<Modules>())
     }
+
+    pub fn basic_memory_info(&self) -> Option<&BasicMemoryInfo> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::BasicMemoryInfo)
+            .map(|tag| tag.cast_to::<BasicMemoryInfo>())
+    }
+
+    pub fn bios_boot_device(&self) -> Option<&BiosBootDevice> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::BiosBootDevice)
+            .map(|tag| tag.cast_to::<BiosBootDevice>())
+    }
+
+    pub fn memory_map(&self) -> Option<&MemoryMap> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::MemoryMap)
+            .map(|tag| tag.cast_to::<MemoryMap>())
+    }
 }
 
 // TODO: mark this as unsafe
@@ -183,38 +201,34 @@ pub fn mb_test(mb_boot_info_addr: *const u8) {
             //     let str = from_utf8(&modules.string[..str_len]).unwrap();
             //     // println!("Got Modules tag:\n    mod_start: {}\n    mod_end: {}\n    string: '{}'", modules.mod_start, modules.mod_end, str);
             // }
-            TagType::BasicMemoryInfo => {
-                // construct the basic mem info tag from the headet tag
-                let basic_mem_info = unsafe { &*(tag as *const MbTagHeader as *const BasicMemoryInfo) };
-
-                // println!("Got BasicMemoryInfo tag:\n    mem_lower: {}\n    mem_upper: {}", basic_mem_info.mem_lower, basic_mem_info.mem_upper);
-            }
-            TagType::BiosBootDevice => {
-                // construct the bios boot device tag from the header tag
-                let bios_boot_device = unsafe { &*(tag as *const MbTagHeader as *const BiosBootDevice) };
-
-                // println!("Got BiosBootDevice tag:\n    biosdev: {}\n    partition: {}\n    sub_partition: {}",
-                //     bios_boot_device.biosdev, bios_boot_device.partition, bios_boot_device.sub_partition
-                // );
-            }
-            TagType::MemoryMap => {
-                // construct the memory map tag from raw bytes
-                let ptr = tag as *const MbTagHeader as *const u8;
-                let bytes = slice_from_raw_parts(ptr, tag.size as usize);
-                let memory_map = unsafe { &*(bytes as *const MemoryMap) };
-
-                // TODO: make sure that:
-                // size_of::<MemoryMapEntry> == memory_map.entry_size
-                // memory_map.entry_size % 8 == 0 (is multiple of 8)
-                // enum for the entry types
-                let entry_count = (tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2) / size_of::<MemoryMapEntry>();
- 
-                // println!("Got MemoryMap tag:");
-                // for entry_idx in 0..entry_count {
-                //     let entry = &memory_map.entries[entry_idx];
-                //     println!("    base_addr: {}, length: {}, type: {}, reserved: {}", entry.base_addr, entry.length, entry.entry_type, entry.reserved);
-                // }
-            }
+            // TagType::BasicMemoryInfo => {
+            //     // construct the basic mem info tag from the headet tag
+            //     let basic_mem_info = unsafe { &*(tag as *const MbTagHeader as *const BasicMemoryInfo) };
+            //     // println!("Got BasicMemoryInfo tag:\n    mem_lower: {}\n    mem_upper: {}", basic_mem_info.mem_lower, basic_mem_info.mem_upper);
+            // }
+            // TagType::BiosBootDevice => {
+            //     // construct the bios boot device tag from the header tag
+            //     let bios_boot_device = unsafe { &*(tag as *const MbTagHeader as *const BiosBootDevice) };
+            //     // println!("Got BiosBootDevice tag:\n    biosdev: {}\n    partition: {}\n    sub_partition: {}",
+            //     //     bios_boot_device.biosdev, bios_boot_device.partition, bios_boot_device.sub_partition
+            //     // );
+            // }
+            // TagType::MemoryMap => {
+            //     // construct the memory map tag from raw bytes
+            //     let ptr = tag as *const MbTagHeader as *const u8;
+            //     let bytes = slice_from_raw_parts(ptr, tag.size as usize);
+            //     let memory_map = unsafe { &*(bytes as *const MemoryMap) };
+            //     // TODO: make sure that:
+            //     // size_of::<MemoryMapEntry> == memory_map.entry_size
+            //     // memory_map.entry_size % 8 == 0 (is multiple of 8)
+            //     // enum for the entry types
+            //     let entry_count = (tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2) / size_of::<MemoryMapEntry>();
+            //     // println!("Got MemoryMap tag:");
+            //     // for entry_idx in 0..entry_count {
+            //     //     let entry = &memory_map.entries[entry_idx];
+            //     //     println!("    base_addr: {}, length: {}, type: {}, reserved: {}", entry.base_addr, entry.length, entry.entry_type, entry.reserved);
+            //     // }
+            // }
             /*
              * Not exactly sure how to print vbe_control_info and vbe_mode_info
              * Also, EFI systems (including this one) should not have this tag AFAIK
