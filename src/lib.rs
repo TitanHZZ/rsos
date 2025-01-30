@@ -71,6 +71,10 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         println!("    base_addr: {}, len: {}, type: {:?}, reserved: {}", e.base_addr, e.length, e.entry_type(), e.reserved);
     }
 
+    // vbe info
+    let vbei = mb_info.vbe_info().unwrap();
+    // println!("vbe info: {}", vbei.vbe_interface_off);
+
     // let mb_info = unsafe {
     //     multiboot2::BootInformation::load(mb_boot_info_addr as *const BootInformationHeader)
     // }

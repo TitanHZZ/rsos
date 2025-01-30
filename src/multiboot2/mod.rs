@@ -154,6 +154,18 @@ impl MbBootInfo {
             .find(|tag| tag.tag_type == TagType::MemoryMap)
             .map(|tag| tag.cast_to::<MemoryMap>())
     }
+
+    pub fn vbe_info(&self) -> Option<&VbeInfo> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::VbeInfo)
+            .map(|tag| tag.cast_to::<VbeInfo>())
+    }
+
+    pub fn elf_symbols(&self) -> Option<&ElfSymbols> {
+        self.tags()
+            .find(|tag| tag.tag_type == TagType::ElfSymbols)
+            .map(|tag| tag.cast_to::<ElfSymbols>())
+    }
 }
 
 // TODO: mark this as unsafe
@@ -229,34 +241,29 @@ pub fn mb_test(mb_boot_info_addr: *const u8) {
             //     //     println!("    base_addr: {}, length: {}, type: {}, reserved: {}", entry.base_addr, entry.length, entry.entry_type, entry.reserved);
             //     // }
             // }
-            /*
-             * Not exactly sure how to print vbe_control_info and vbe_mode_info
-             * Also, EFI systems (including this one) should not have this tag AFAIK
-             */
-            TagType::VbeInfo => {
-                // construct the vbe info tag from the header tag
-                let vbe_info = unsafe { &*(tag as * const MbTagHeader as *const VbeInfo) };
-
-                // println!("Got VbeInfo tag!");
-            }
-            TagType::ElfSymbols => {
-                // construct the elf symbols tag from raw bytes
-                let ptr = tag as *const MbTagHeader as *const u8;
-                let bytes = slice_from_raw_parts(ptr, tag.size as usize);
-                let elf_symbols = unsafe { &*(bytes as *const ElfSymbols) };
-
-                // construct the elf sections from raw bytes
-                let section_headers_ptr: *const ElfSectionHeader = &elf_symbols.section_headers as *const [u8] as *const u8 as *const _;
-                let elf_sections = slice_from_raw_parts(section_headers_ptr, elf_symbols.num as usize);
-                let elf_sections = unsafe { &*(elf_sections as *const [ElfSectionHeader]) };
-
-                // TODO: --- FINISH THIS TODO ---
-
-                // println!("Got ElfSymbols tag:\n    num: {}", elf_symbols.num);
-                // for section in elf_sections {
-                //     println!("is unused = {}", section.section_type == ElfSectionType::Unused);
-                // }
-            }
+            // /*
+            //  * Not exactly sure how to print vbe_control_info and vbe_mode_info
+            //  * Also, EFI systems (including this one) should not have this tag AFAIK
+            //  */
+            // TagType::VbeInfo => {
+            //     // construct the vbe info tag from the header tag
+            //     let vbe_info = unsafe { &*(tag as * const MbTagHeader as *const VbeInfo) };
+            //     // println!("Got VbeInfo tag!");
+            // }
+            // TagType::ElfSymbols => {
+            //     // construct the elf symbols tag from raw bytes
+            //     let ptr = tag as *const MbTagHeader as *const u8;
+            //     let bytes = slice_from_raw_parts(ptr, tag.size as usize);
+            //     let elf_symbols = unsafe { &*(bytes as *const ElfSymbols) };
+            //     // construct the elf sections from raw bytes
+            //     let section_headers_ptr: *const ElfSectionHeader = &elf_symbols.section_headers as *const [u8] as *const u8 as *const _;
+            //     let elf_sections = slice_from_raw_parts(section_headers_ptr, elf_symbols.num as usize);
+            //     let elf_sections = unsafe { &*(elf_sections as *const [ElfSectionHeader]) };
+            //     // println!("Got ElfSymbols tag:\n    num: {}", elf_symbols.num);
+            //     // for section in elf_sections {
+            //     //     println!("is unused = {}", section.section_type == ElfSectionType::Unused);
+            //     // }
+            // }
             TagType::ApmTable => {
                 // construct the apm table tag from the header tag
                 let apm_table = unsafe { &*(tag as *const MbTagHeader as *const ApmTable) };

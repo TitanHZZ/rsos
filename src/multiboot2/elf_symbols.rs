@@ -1,9 +1,11 @@
-use super::MbTagHeader;
-use bitflags::bitflags;
-
 // https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
 // https://refspecs.linuxfoundation.org/elf/elf.pdf
+use super::{tag_trait::MbTag, MbTagHeader};
+use core::ptr::slice_from_raw_parts;
+use bitflags::bitflags;
+
 #[repr(C)]
+#[derive(ptr_meta::Pointee)]
 pub(crate) struct ElfSymbols {
     header: MbTagHeader,
     pub(crate) num: u32, // number of section headers
@@ -17,11 +19,11 @@ pub(crate) struct ElfSymbols {
      * 
      * Perhaps this could be done with `#[repr(C, packed)]`?
      */
-    pub(crate) section_headers: [u8],
+    section_headers: [u8],
 }
 
 #[repr(C)]
-pub(crate) struct ElfSectionHeader {
+struct ElfSectionHeader {
     name_index: u32,
     section_type: ElfSectionType,
     flags: ElfSectionFlags,
@@ -32,6 +34,11 @@ pub(crate) struct ElfSectionHeader {
     info: u32,
     addralign: u64,
     entry_size: u64,
+}
+
+pub(crate) struct ElfSection<'a> {
+    section_header: &'a ElfSectionHeader,
+    string_table: &'a ElfSectionHeader,
 }
 
 /*
@@ -65,5 +72,54 @@ bitflags! {
         const ELF_SECTION_WRITABLE = 0x1;
         const ELF_SECTION_ALLOCATED = 0x2;
         const ELF_SECTION_EXECUTABLE = 0x4;
+    }
+}
+
+impl ElfSymbols {
+    // Safety: This assumes that the memory is valid as it *should* only be created by the bootloader and thus,
+    // it assumes correct bootloader behavior.
+    pub(crate) fn sections(&self) -> ElfSymbolsIter {
+        // construct the elf sections from raw bytes
+        let section_headers_ptr: *const ElfSectionHeader = &self.section_headers as *const [u8] as *const u8 as *const _;
+        let sections = slice_from_raw_parts(section_headers_ptr, self.num as usize);
+        let sections = unsafe { &*(sections as *const [ElfSectionHeader]) };
+
+        ElfSymbolsIter {
+            sections,
+            curr_section_idx: 0,
+            string_table: &sections[self.string_table as usize],
+        }
+    }
+}
+
+impl MbTag for ElfSymbols {
+    fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata {
+        base_tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 3
+    }
+}
+
+impl<'a> ElfSection<'a> {
+    pub(crate) fn name(&self) {
+    }
+}
+
+pub(crate) struct ElfSymbolsIter<'a> {
+    sections: &'a [ElfSectionHeader],
+    curr_section_idx: usize,
+    string_table: &'a ElfSectionHeader,
+}
+
+impl<'a> Iterator for ElfSymbolsIter<'a> {
+    type Item = &'a ElfSection<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr_section_idx >= self.sections.len() {
+            return None;
+        }
+
+        // go to the next section and return the current one
+        self.curr_section_idx += 1;
+        // return Some(&self.sections[self.curr_section_idx - 1]);
+        None
     }
 }
