@@ -1,4 +1,4 @@
-use super::{tag_trait::MbTag, MbTagHeader};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 pub(crate) struct BasicMemoryInfo {
@@ -8,6 +8,8 @@ pub(crate) struct BasicMemoryInfo {
 }
 
 impl MbTag for BasicMemoryInfo {
+    const TAG_TYPE: TagType = TagType::BasicMemoryInfo;
+
     fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
         ()
     }

@@ -1,4 +1,4 @@
-use super::{tag_trait::MbTag, MbTagHeader};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
@@ -22,7 +22,10 @@ impl CmdLine {
 }
 
 impl MbTag for CmdLine {
+    const TAG_TYPE: TagType = TagType::CmdLine;
+
     fn dst_size(base_tag: &MbTagHeader) -> usize {
         base_tag.size as usize - size_of::<MbTagHeader>()
     }
+    
 }

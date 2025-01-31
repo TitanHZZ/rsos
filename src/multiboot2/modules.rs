@@ -1,4 +1,4 @@
-use super::{tag_trait::MbTag, MbTagHeader};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
@@ -24,6 +24,8 @@ impl Modules {
 }
 
 impl MbTag for Modules {
+    const TAG_TYPE: TagType = TagType::Modules;
+
     fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata {
         base_tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2
     }

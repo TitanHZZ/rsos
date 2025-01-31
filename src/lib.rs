@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
-// mod memory;
 mod multiboot2;
 mod vga_buffer;
+// mod memory;
 
 use core::panic::PanicInfo;
 use multiboot2::MbBootInfo;
@@ -41,39 +41,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.unwrap();
-
-    // cmd line
-    let cmd_line = mb_info.cmd_line().unwrap();
-    println!("cmd line: '{}'", cmd_line.string().unwrap());
-
-    // boot loader name
-    let bln = mb_info.boot_loader_name().unwrap();
-    println!("boot loader name: '{}'", bln.string().unwrap());
-
-    // modules
-    let modules = mb_info.modules();
-    // println!("modules: {}", modules.unwrap().string().unwrap());
-
-    // basic mem info
-    let bmi = mb_info.basic_memory_info().unwrap();
-    println!("basic mem info: {} {}", bmi.mem_lower, bmi.mem_upper);
-
-    // bios boot device
-    let bbd = mb_info.bios_boot_device().unwrap();
-    println!("bios boot device: {}", bbd.partition);
-
-    // memory map
-    let mm = mb_info.memory_map().unwrap();
-    let mm_entries = mm.entries().unwrap();
-    println!("memory map: entry_size: {}, entry_version: {}", mm.entry_size, mm.entry_version);
-    for e in mm_entries {
-        println!("    base_addr: {}, len: {}, type: {:?}, reserved: {}", e.base_addr, e.length, e.entry_type(), e.reserved);
-    }
-
-    // vbe info
-    let vbei = mb_info.vbe_info().unwrap();
-    // println!("vbe info: {}", vbei.vbe_interface_off);
+    let _mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.unwrap();
 
     // let mb_info = unsafe {
     //     multiboot2::BootInformation::load(mb_boot_info_addr as *const BootInformationHeader)

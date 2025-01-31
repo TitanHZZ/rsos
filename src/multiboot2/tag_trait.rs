@@ -1,7 +1,9 @@
-use super::MbTagHeader;
+use super::{MbTagHeader, TagType};
 use ptr_meta::Pointee;
 
 pub(crate) trait MbTag: Pointee {
+    const TAG_TYPE: TagType;
+
     // each tag must implement a valid dst_size()
     fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata;
 

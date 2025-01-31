@@ -1,4 +1,4 @@
-use super::{tag_trait::MbTag, MbTagHeader};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::marker::PhantomData;
 
 #[repr(C)]
@@ -22,7 +22,6 @@ pub(crate) struct MemoryMapEntry {
 
 #[repr(u32)]
 #[derive(Debug)]
-#[allow(dead_code)]
 pub(crate) enum MemoryMapEntryType {
     AvailableRAM,
     ACPIInformation,
@@ -60,6 +59,8 @@ impl<'a> MemoryMap<'a> {
 }
 
 impl<'a> MbTag for MemoryMap<'a> {
+    const TAG_TYPE: TagType = TagType::MemoryMap;
+
     fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata {
         base_tag.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2
     }

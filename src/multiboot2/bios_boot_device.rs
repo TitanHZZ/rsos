@@ -1,4 +1,4 @@
-use super::{tag_trait::MbTag, MbTagHeader};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 pub(crate) struct BiosBootDevice {
@@ -9,6 +9,8 @@ pub(crate) struct BiosBootDevice {
 }
 
 impl MbTag for BiosBootDevice {
+    const TAG_TYPE: TagType = TagType::BiosBootDevice;
+
     fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
         ()
     }
