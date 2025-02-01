@@ -166,6 +166,7 @@ impl<'a> ElfSection<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct ElfSymbolsIter<'a> {
     sections: &'a [ElfSectionHeader],
     curr_section_idx: usize,

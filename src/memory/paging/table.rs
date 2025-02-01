@@ -1,7 +1,4 @@
-use super::{
-    entry::{Entry, EntryFlags},
-    ENTRY_COUNT,
-};
+use super::{entry::{Entry, EntryFlags}, ENTRY_COUNT};
 use crate::memory::{FrameAllocator, PAGE_SIZE};
 use core::marker::PhantomData;
 

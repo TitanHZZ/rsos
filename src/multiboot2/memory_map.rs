@@ -21,7 +21,7 @@ pub(crate) struct MemoryMapEntry {
 }
 
 #[repr(u32)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum MemoryMapEntryType {
     AvailableRAM,
     ACPIInformation,
@@ -66,6 +66,7 @@ impl<'a> MbTag for MemoryMap<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct MemoryMapEntryIter<'a> {
     entries: &'a [MemoryMapEntry],
     curr_mem_entry_idx: usize,
