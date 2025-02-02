@@ -1,74 +1,70 @@
+use crate::multiboot2::{MemoryArea, MemoryAreaType};
 use super::{Frame, FrameAllocator};
-use multiboot2::{MemoryArea, MemoryAreaType};
 
 pub struct SimpleFrameAllocator<'a> {
-    next_frame: Frame,
+    // areas and the respective frames
     areas: &'a [MemoryArea],
     current_area: usize,
+    next_frame: Frame,
 
-    kernel_start: Frame,
-    kernel_end: Frame,
-    multiboot_start: Frame,
-    multiboot_end: Frame,
+    // memory ranges that we need to avoid using so we don't override important memory
+    k_start: Frame,
+    k_end: Frame,
+    mb_start: Frame,
+    mb_end: Frame,
 }
 
 impl<'a> SimpleFrameAllocator<'a> {
-    pub fn new(
-        mem_areas: &'a [MemoryArea],
-        kernel_start: usize,
-        kernel_end: usize,
-        multiboot_start: usize,
-        multiboot_end: usize,
-    ) -> Result<Self, ()> {
+    pub fn new(areas: &'a [MemoryArea], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Option<Self> {
         let mut allocator = SimpleFrameAllocator {
-            next_frame: Frame(0x0),
-            areas: mem_areas,
+            areas,
             current_area: 0,
+            next_frame: Frame(0x0),
 
-            kernel_start: Frame::corresponding_frame(kernel_start),
-            kernel_end: Frame::corresponding_frame(kernel_end),
-            multiboot_start: Frame::corresponding_frame(multiboot_start),
-            multiboot_end: Frame::corresponding_frame(multiboot_end),
+            k_start: Frame::from_phy_addr(k_start),
+            k_end: Frame::from_phy_addr(k_end),
+            mb_start: Frame::from_phy_addr(mb_start),
+            mb_end: Frame::from_phy_addr(mb_end),
         };
 
-        // check if the initial frame is already in use
+        // make sure thet the allocator starts with a free frame
         if allocator.is_frame_used() {
-            allocator.get_next_free_frame().ok_or(())?;
+            allocator.get_next_free_frame()?;
         }
 
-        Ok(allocator)
+        Some(allocator)
     }
 
     fn is_frame_used(&self) -> bool {
-        (self.next_frame >= self.kernel_start && self.next_frame <= self.kernel_end)
-            || (self.next_frame >= self.multiboot_start && self.next_frame <= self.multiboot_end)
+        (self.next_frame >= self.k_start && self.next_frame <= self.k_end)
+            || (self.next_frame >= self.mb_start && self.next_frame <= self.mb_end)
     }
 
     /*
      * Returns the next (free or used) frame if it exists.
+     * This is an abstraction over the areas. With this, the frames may be seen as positions in a list.
      */
     fn get_next_frame(&mut self) -> Option<Frame> {
-        let fr_after_last_in_curr_area =
-            Frame::corresponding_frame(self.areas[self.current_area].end_address() as usize + 1);
+        let fr_after_last_in_curr_area = Frame::from_phy_addr(self.areas[self.current_area].end_address() as usize + 1);
 
+        // check if the next frame is pointing outside the current area
         if self.next_frame == fr_after_last_in_curr_area {
             self.current_area += 1;
 
-            while self.current_area < self.areas.len()
-                && self.areas[self.current_area].typ() != MemoryAreaType::Available
-            {
+            // get to the next area with available ram
+            while self.current_area < self.areas.len() && self.areas[self.current_area].typ() != MemoryAreaType::Available {
                 self.current_area += 1;
             }
 
+            // no more areas to use (ran out of usable memory)
             if self.current_area >= self.areas.len() {
                 return None;
             }
 
             // get the first frame from the next area
-            self.next_frame =
-                Frame::corresponding_frame(self.areas[self.current_area].start_address() as usize);
+            self.next_frame = Frame::from_phy_addr(self.areas[self.current_area].start_address() as usize);
         } else {
-            // get the next frame from the same area
+            // get the next frame from the same (current) area
             self.next_frame = Frame(self.next_frame.0 + 1);
         }
 
@@ -78,7 +74,6 @@ impl<'a> SimpleFrameAllocator<'a> {
     fn get_next_free_frame(&mut self) -> Option<Frame> {
         let mut fr = self.get_next_frame()?;
 
-        // this could be optimized to `jump` over the used sections instead of going through them
         while self.is_frame_used() {
             fr = self.get_next_frame()?;
         }

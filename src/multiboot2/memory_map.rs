@@ -1,5 +1,5 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
-use core::marker::PhantomData;
+use core::{array::IntoIter, marker::PhantomData};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
@@ -48,13 +48,24 @@ pub(crate) enum MemoryMapError {
 }
 
 impl<'a> MemoryMap<'a> {
-    pub(crate) fn entries(&self) -> Result<MemoryMapEntryIter, MemoryMapError> {
+    // pub(crate) fn entries(&self) -> Result<MemoryMapEntryIter, MemoryMapError> {
+    //     // make sure that the dat in the tag is consistent
+    //     if self.entry_size as usize != size_of::<MemoryMapEntry>() {
+    //         return Err(MemoryMapError::EntriesInvalidSize);
+    //     }
+    //     Ok(MemoryMapEntryIter {
+    //         entries: &self.entries,
+    //         curr_mem_entry_idx: 0,
+    //     })
+    // }
+
+    pub(crate) fn entries(&self) -> Result<&[MemoryMapEntry], MemoryMapError> {
         // make sure that the dat in the tag is consistent
         if self.entry_size as usize != size_of::<MemoryMapEntry>() {
             return Err(MemoryMapError::EntriesInvalidSize);
         }
 
-        Ok(MemoryMapEntryIter::new(self))
+        Ok(&self.entries)
     }
 }
 
@@ -66,30 +77,23 @@ impl<'a> MbTag for MemoryMap<'a> {
     }
 }
 
+#[repr(transparent)]
+pub(crate) struct MemoryMapEntries<'a>(&'a [MemoryMapEntry]);
+
+impl<'a> MemoryMapEntries<'a> {
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct MemoryMapEntryIter<'a> {
     entries: &'a [MemoryMapEntry],
     curr_mem_entry_idx: usize,
-    entry_count: usize,
-}
-
-impl<'a> MemoryMapEntryIter<'a> {
-    fn new(memory_map: &'a MemoryMap) -> Self {
-        let entry_count = (memory_map.header.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2) / size_of::<MemoryMapEntry>();
-
-        MemoryMapEntryIter {
-            entries: &memory_map.entries,
-            curr_mem_entry_idx: 0,
-            entry_count,
-        }
-    }
 }
 
 impl<'a> Iterator for MemoryMapEntryIter<'a> {
     type Item = &'a MemoryMapEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.curr_mem_entry_idx >= self.entry_count {
+        if self.curr_mem_entry_idx >= self.entries.len() {
             return None;
         }
 

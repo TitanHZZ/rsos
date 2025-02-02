@@ -1,5 +1,5 @@
+mod simple_frame_allocator;
 // mod paging;
-// mod simple_frame_allocator;
 // pub use self::simple_frame_allocator::SimpleFrameAllocator;
 // pub use paging::test_paging;
 
@@ -13,11 +13,11 @@ pub type VirtualAddress = usize;
 pub struct Frame(usize); // this usize is the frame index in the physical memory
 
 impl Frame {
-    fn corresponding_frame(addr: PhysicalAddress) -> Frame {
+    fn from_phy_addr(addr: PhysicalAddress) -> Frame {
         Frame(addr / PAGE_SIZE)
     }
 
-    fn start_address(&self) -> PhysicalAddress {
+    fn start_addr(&self) -> PhysicalAddress {
         self.0 * PAGE_SIZE
     }
 }
