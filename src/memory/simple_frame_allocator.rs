@@ -1,9 +1,9 @@
-use crate::multiboot2::{MemoryArea, MemoryAreaType};
+use crate::multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType};
 use super::{Frame, FrameAllocator};
 
 pub struct SimpleFrameAllocator<'a> {
     // areas and the respective frames
-    areas: &'a [MemoryArea],
+    areas: &'a [MemoryMapEntry],
     current_area: usize,
     next_frame: Frame,
 
@@ -15,7 +15,7 @@ pub struct SimpleFrameAllocator<'a> {
 }
 
 impl<'a> SimpleFrameAllocator<'a> {
-    pub fn new(areas: &'a [MemoryArea], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Option<Self> {
+    pub fn new(areas: &'a [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Option<Self> {
         let mut allocator = SimpleFrameAllocator {
             areas,
             current_area: 0,
@@ -45,14 +45,15 @@ impl<'a> SimpleFrameAllocator<'a> {
      * This is an abstraction over the areas. With this, the frames may be seen as positions in a list.
      */
     fn get_next_frame(&mut self) -> Option<Frame> {
-        let fr_after_last_in_curr_area = Frame::from_phy_addr(self.areas[self.current_area].end_address() as usize + 1);
+        let curr_area = &self.areas[self.current_area];
+        let fr_after_last_in_curr_area= Frame::from_phy_addr((curr_area.base_addr + curr_area.length) as _);
 
         // check if the next frame is pointing outside the current area
         if self.next_frame == fr_after_last_in_curr_area {
             self.current_area += 1;
 
             // get to the next area with available ram
-            while self.current_area < self.areas.len() && self.areas[self.current_area].typ() != MemoryAreaType::Available {
+            while self.current_area < self.areas.len() && self.areas[self.current_area].entry_type() != MemoryMapEntryType::AvailableRAM {
                 self.current_area += 1;
             }
 
@@ -62,7 +63,7 @@ impl<'a> SimpleFrameAllocator<'a> {
             }
 
             // get the first frame from the next area
-            self.next_frame = Frame::from_phy_addr(self.areas[self.current_area].start_address() as usize);
+            self.next_frame = Frame::from_phy_addr(self.areas[self.current_area].base_addr as usize);
         } else {
             // get the next frame from the same (current) area
             self.next_frame = Frame(self.next_frame.0 + 1);
@@ -91,6 +92,8 @@ impl<'a> FrameAllocator for SimpleFrameAllocator<'a> {
     }
 
     fn deallocate_frame(&mut self, frame: Frame) {
+        // for this, we will need some way to store a record of which frames are free and which ones are not
+        // this may even require allocation (just a guess)
         unimplemented!();
     }
 }

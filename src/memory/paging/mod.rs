@@ -2,11 +2,11 @@ mod entry;
 mod table;
 
 use super::{Frame, FrameAllocator, PhysicalAddress, VirtualAddress, PAGE_SIZE};
-use crate::{print, println};
-use core::arch::asm;
 use core::{marker::PhantomData, ptr::NonNull};
 use entry::EntryFlags;
 use table::{Level4, Table, P4};
+use crate::{print, println};
+// use core::arch::asm;
 
 const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -23,7 +23,7 @@ pub struct Page(usize); // this usize is the page index in the virtual memory
  *  p1_idx   -> 219  (0xdeadbeef >> 12 & 0o777)
  *  page_idx -> 239  (0xdeadbeef & 0o777)
  *
- * To calculate this same page table indexes but with the page index instead:
+ * To calculate the table indexes but with the page index instead:
  * idx:
  *  p4_idx   -> 0    (912091 >> (39 - 12) & 0o777)
  *  p3_idx   -> 3    (912091 >> (30 - 12) & 0o777)
@@ -33,7 +33,7 @@ pub struct Page(usize); // this usize is the page index in the virtual memory
  * We need to subtract 12 because the page index is 4096 (4KiB) times smaller than the original addr.
  */
 impl Page {
-    fn corresponding_page(addr: VirtualAddress) -> Page {
+    fn from_virt_addr(addr: VirtualAddress) -> Page {
         // in x86_64, the top 16 bits of a virtual addr must be sign extension bits
         // if they are not, its an invalid addr
         assert!(
@@ -62,8 +62,7 @@ impl Page {
 }
 
 /*
- * Safety: Raw pointers are not Send/Sync so `Paging` cannot be used
- * between threads as it would cause data races.
+ * Safety: Raw pointers are not Send/Sync so `Paging` cannot be used between threads as it would cause data races.
  */
 pub struct Paging {
     p4: NonNull<Table<Level4>>,
@@ -76,7 +75,7 @@ impl Paging {
     /*
      * Safety: This should be unsafe because the p4 addr will always be the same (at least for now),
      * and that means that creating multiple `Paging` objects could result in undefined behaviour
-     * as all the `Paging` objects woulb be pointing to the same memory.
+     * as all the `Paging` objects woulb be pointing to the same memory (and own it).
      */
     pub unsafe fn new() -> Self {
         Paging {
@@ -94,13 +93,7 @@ impl Paging {
         unsafe { self.p4.as_mut() }
     }
 
-    pub fn map_page_to_frame<A: FrameAllocator>(
-        &mut self,
-        page: Page,
-        frame: Frame,
-        frame_allocator: &mut A,
-        flags: EntryFlags,
-    ) {
+    pub fn map_page_to_frame<A: FrameAllocator>( &mut self, page: Page, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) {
         let p4 = self.p4_mut();
         let p3 = p4.create_next_table(page.p4_index(), frame_allocator);
         let p2 = p3.create_next_table(page.p3_index(), frame_allocator);
@@ -112,16 +105,9 @@ impl Paging {
         p1.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
     }
 
-    pub fn map_page<A: FrameAllocator>(
-        &mut self,
-        page: Page,
-        frame_allocator: &mut A,
-        flags: EntryFlags,
-    ) {
+    pub fn map_page<A: FrameAllocator>( &mut self, page: Page, frame_allocator: &mut A, flags: EntryFlags) {
         // get a random (free) frame
-        let frame = frame_allocator
-            .allocate_frame()
-            .expect("Out of memory. Could not allocate new frame.");
+        let frame = frame_allocator.allocate_frame().expect("Out of memory. Could not allocate new frame.");
 
         self.map_page_to_frame(page, frame, frame_allocator, flags);
     }
@@ -140,8 +126,7 @@ impl Paging {
     }
 
     /*
-     * This takes a Page and returns the respective Frame if
-     * the address is mapped.
+     * This takes a Page and returns the respective Frame if the address is mapped.
      */
     fn translate_page(&self, page: Page) -> Option<Frame> {
         // p3 might be needed if huge pages are involed
@@ -160,7 +145,7 @@ impl Paging {
                     // every p3 entry points to 1GiB pages, so the addr must be 1GiB aligned
                     assert!(p3_entry.phy_addr()? % (ENTRY_COUNT * ENTRY_COUNT * PAGE_SIZE) == 0);
 
-                    return Some(Frame::corresponding_frame(
+                    return Some(Frame::from_phy_addr(
                         p3_entry.phy_addr()?
                             + page.p2_index() * ENTRY_COUNT * PAGE_SIZE
                             + page.p1_index() * PAGE_SIZE,
@@ -172,9 +157,7 @@ impl Paging {
                     // every p2 entry points to a 2MiB page, so the addr must be 2MiB aligned
                     assert!(p2_entry.phy_addr()? % (ENTRY_COUNT * PAGE_SIZE) == 0);
 
-                    return Some(Frame::corresponding_frame(
-                        p2_entry.phy_addr()? + page.p1_index() * PAGE_SIZE,
-                    ));
+                    return Some(Frame::from_phy_addr(p2_entry.phy_addr()? + page.p1_index() * PAGE_SIZE));
                 }
 
                 None
@@ -182,15 +165,14 @@ impl Paging {
     }
 
     /*
-     * Takes a virtual address and returns the respective physical address
-     * if it exists (if it is mapped).
+     * Takes a virtual address and returns the respective physical address if it exists (if it is mapped).
      */
     pub fn translate(&self, virtual_addr: VirtualAddress) -> Option<PhysicalAddress> {
         let offset = virtual_addr % PAGE_SIZE;
-        let page = Page::corresponding_page(virtual_addr);
+        let page = Page::from_virt_addr(virtual_addr);
         let frame = self.translate_page(page)?;
 
-        Some(frame.0 * PAGE_SIZE + offset)
+        Some(frame.addr() + offset)
     }
 }
 
@@ -198,7 +180,7 @@ pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
     let mut page_table = unsafe { Paging::new() };
 
     let virt_addr = 42 * 512 * 512 * PAGE_SIZE; // 42 th entry in p3
-    let page = Page::corresponding_page(virt_addr);
+    let page = Page::from_virt_addr(virt_addr);
     let frame = frame_allocator.allocate_frame().expect("out of memory");
 
     println!(

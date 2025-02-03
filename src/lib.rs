@@ -29,7 +29,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
         );
     }
 
-    let total_memory: u64 = mem_map_entries
+    let total_memory: u64 = mem_map_entries.into_iter()
         .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
         .map(|entry| entry.length)
         .sum();

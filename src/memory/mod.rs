@@ -1,7 +1,5 @@
 mod simple_frame_allocator;
-// mod paging;
-// pub use self::simple_frame_allocator::SimpleFrameAllocator;
-// pub use paging::test_paging;
+mod paging;
 
 const PAGE_SIZE: usize = 4096;
 
@@ -17,7 +15,7 @@ impl Frame {
         Frame(addr / PAGE_SIZE)
     }
 
-    fn start_addr(&self) -> PhysicalAddress {
+    fn addr(&self) -> PhysicalAddress {
         self.0 * PAGE_SIZE
     }
 }

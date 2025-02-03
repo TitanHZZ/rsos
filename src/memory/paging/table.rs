@@ -3,12 +3,10 @@ use crate::memory::{FrameAllocator, PAGE_SIZE};
 use core::marker::PhantomData;
 
 /*
- * This is the base addr used to modify the Page Tables themselves using recursive mapping.
+ * This is the base addr used to modify the Page Tables themselves using recursive mapping:
  * 0o177777_777_777_777_777_0000 = 0xfffffffffffff000
- */
-pub const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
-
-/*
+ * 0o177777 is just the extension to 64 bits
+ *
  * This are the addresses that must be used to access the page tables themselves.
  * +-------+-------------------------------+-------------------------------------+
  * | Table | Address                       | Indexes                             |
@@ -21,9 +19,11 @@ pub const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
  * next_table_address = (table_address << 9) | (index << 12)
  * The `_0000` at the end of the addrs means that they are page table aligned and
  * may be used as indexes to read/write from/to a page table.
- * For more information: https://os.phil-opp.com/page-tables/#mapping-page-tables
- * and: https://wiki.osdev.org/User:Neon/Recursive_Paging
+ * For more information:
+ *  - https://os.phil-opp.com/page-tables/#mapping-page-tables
+ *  - https://wiki.osdev.org/User:Neon/Recursive_Paging
  */
+pub const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
 
 pub trait TableLevel {}
 pub enum Level4 {}
@@ -71,10 +71,9 @@ impl<L: HierarchicalLevel> Table<L> {
         assert!(table_index < ENTRY_COUNT);
 
         let entry_flags = self.entries[table_index].flags();
-        if entry_flags.contains(EntryFlags::PRESENT) && !entry_flags.contains(EntryFlags::HUGE_PAGE)
-        {
+        if entry_flags.contains(EntryFlags::PRESENT) && !entry_flags.contains(EntryFlags::HUGE_PAGE) {
             let res = self as *const _ as usize;
-            return Some((res << 9) | (table_index << 12));
+            return Some((res << 9) | (table_index << 12)); // see comment at the top
         }
 
         None
@@ -88,29 +87,20 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
     }
 
-    pub fn create_next_table<A: FrameAllocator>(
-        &mut self,
-        table_index: usize,
-        frame_allocator: &mut A,
-    ) -> &mut Table<L::NextLevel> {
+    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &mut A) -> &mut Table<L::NextLevel> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // this might happen if the page we are trying to allocate might
             // involve huge pages previously allocatted
-            if self.entries[table_index]
-                .flags()
-                .contains(EntryFlags::HUGE_PAGE)
-            {
+            if self.entries[table_index].flags().contains(EntryFlags::HUGE_PAGE) {
                 unimplemented!("Cannot allocate pages with HUGE_PAGE flag set yet!");
             }
 
             // page table is not yet created so allocate a new frame to hold the new page table
-            let frame = frame_allocator
-                .allocate_frame()
-                .expect("Out of memory. Could not allocate new frame.");
+            let frame = frame_allocator.allocate_frame().expect("Out of memory. Could not allocate new frame.");
 
             // physical address needs to be page aligned
-            assert!(frame.start_address() % PAGE_SIZE == 0);
+            assert!(frame.addr() % PAGE_SIZE == 0);
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);

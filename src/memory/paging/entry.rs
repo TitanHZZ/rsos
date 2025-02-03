@@ -26,9 +26,7 @@ pub struct Entry(u64);
 
 impl Entry {
     pub fn is_used(&self) -> bool {
-        /*
-         * An entry equal to 0 is unused otherwise, it´s used.
-         */
+        // an entry equal to 0 is unused otherwise, it´s used
         self.0 != 0
     }
 
@@ -49,7 +47,7 @@ impl Entry {
     }
 
     pub fn pointed_frame(&self) -> Option<Frame> {
-        Some(Frame::corresponding_frame(self.phy_addr()?))
+        Some(Frame::from_phy_addr(self.phy_addr()?))
     }
 
     pub fn set_flags(&mut self, flags: EntryFlags) {
@@ -57,7 +55,7 @@ impl Entry {
     }
 
     pub fn set_phy_addr(&mut self, frame: Frame) {
-        self.0 = (self.0 & !0x000fffff_fffff000) | frame.start_address() as u64;
+        self.0 = (self.0 & !0x000fffff_fffff000) | frame.addr() as u64;
     }
 
     pub fn set(&mut self, frame: Frame, flags: EntryFlags) {

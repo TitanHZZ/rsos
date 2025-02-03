@@ -1,5 +1,5 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
-use core::{array::IntoIter, marker::PhantomData};
+use core::{marker::PhantomData, ptr::{addr_of, slice_from_raw_parts}};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
@@ -48,24 +48,18 @@ pub(crate) enum MemoryMapError {
 }
 
 impl<'a> MemoryMap<'a> {
-    // pub(crate) fn entries(&self) -> Result<MemoryMapEntryIter, MemoryMapError> {
-    //     // make sure that the dat in the tag is consistent
-    //     if self.entry_size as usize != size_of::<MemoryMapEntry>() {
-    //         return Err(MemoryMapError::EntriesInvalidSize);
-    //     }
-    //     Ok(MemoryMapEntryIter {
-    //         entries: &self.entries,
-    //         curr_mem_entry_idx: 0,
-    //     })
-    // }
-
-    pub(crate) fn entries(&self) -> Result<&[MemoryMapEntry], MemoryMapError> {
-        // make sure that the dat in the tag is consistent
+    pub(crate) fn entries(&self) -> Result<MemoryMapEntries, MemoryMapError> {
+        // make sure that the data in the tag is consistent
         if self.entry_size as usize != size_of::<MemoryMapEntry>() {
             return Err(MemoryMapError::EntriesInvalidSize);
         }
 
-        Ok(&self.entries)
+        // build the slice ref with the correct metadata
+        let entry_count = (self.header.size as usize - size_of::<MbTagHeader>() - size_of::<u32>() * 2) / size_of::<MemoryMapEntry>();
+        let ptr = addr_of!(self.entries) as *const MemoryMapEntry;
+        let entries = unsafe { &*slice_from_raw_parts(ptr, entry_count) };
+
+        Ok(MemoryMapEntries(entries))
     }
 }
 
@@ -77,10 +71,21 @@ impl<'a> MbTag for MemoryMap<'a> {
     }
 }
 
+// wrapper to be able to implement IntoIterator and still have access to the slice
 #[repr(transparent)]
+#[derive(Clone, Copy)]
 pub(crate) struct MemoryMapEntries<'a>(&'a [MemoryMapEntry]);
 
-impl<'a> MemoryMapEntries<'a> {
+impl<'a> IntoIterator for MemoryMapEntries<'a> {
+    type Item = &'a MemoryMapEntry;
+    type IntoIter = MemoryMapEntryIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        MemoryMapEntryIter {
+            entries: self.0,
+            curr_mem_entry_idx: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]

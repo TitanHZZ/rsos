@@ -112,6 +112,7 @@ check_long_mode:
         mov al, "2"
         jmp error
 
+; this sets up identity paging
 set_up_page_tables:
     ; map first P4 entry to P3 table
     mov eax, p3_table
@@ -123,10 +124,34 @@ set_up_page_tables:
     or eax, 0b11 ; present + writable
     mov [p3_table], eax
 
-    ; map each P2 entry to a huge 2MiB page
+    ; map each P2 entry to a P1 table
     mov ecx, 0 ; counter variable
 
     .map_p2_table:
+        ; map each ecx-th P2 entry to a P1 table
+        lea eax, [p1_tables + ecx * 8]
+        shl eax, 9   ; eax => p1_tables + ecx * 4096
+        or eax, 0b11 ; present + writable
+        mov [p2_table + ecx * 8], eax
+
+        ; map each edx-th P1 entry to a standard 4KB frame
+        mov edx, 0; counter variable
+
+        .map_p1_table:
+            ; get the addr of the ecx-th P1 table
+            lea eax, [p1_tables + ecx * 8]
+            shl eax, 9   ; eax => p1_tables + ecx * 4096
+            mov ebx, eax ; ebx => p1_tables + ecx * 4096
+
+            ; get the addr of the frame to be mapped (ecx * 512 + 4096 + edx * 4096)
+
+            mov [ebx + edx * 8], eax
+
+
+
+
+
+
         ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
         mov eax, 0x200000  ; 2MiB
         mul ecx            ; start address of ecx-th page
@@ -205,6 +230,8 @@ p3_table:
     resb 4096
 p2_table:
     resb 4096
+p1_tables:
+    resb 4096 * 512
 ; The multiboot standard does not define the value of the stack pointer register
 ; (esp) and it is up to the kernel to provide a stack. This allocates 16K bytes
 ; for it, and creates a symbol at the top. The stack grows downwards on x86.
