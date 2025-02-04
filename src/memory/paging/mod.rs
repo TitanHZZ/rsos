@@ -2,11 +2,10 @@ mod entry;
 mod table;
 
 use super::{Frame, FrameAllocator, PhysicalAddress, VirtualAddress, PAGE_SIZE};
-use core::{marker::PhantomData, ptr::NonNull};
+use crate::{print, println};
+use core::{marker::PhantomData, ptr::NonNull, arch::asm};
 use entry::EntryFlags;
 use table::{Level4, Table, P4};
-use crate::{print, println};
-// use core::arch::asm;
 
 const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -34,14 +33,13 @@ pub struct Page(usize); // this usize is the page index in the virtual memory
  */
 impl Page {
     fn from_virt_addr(addr: VirtualAddress) -> Page {
-        // in x86_64, the top 16 bits of a virtual addr must be sign extension bits
-        // if they are not, its an invalid addr
-        assert!(
-            addr < 0x0000_8000_0000_0000 || addr >= 0xffff_8000_0000_0000,
-            "Invalid virtual address: 0x{:x}",
-            addr
-        );
+        // in x86_64, the top 16 bits of a virtual addr must be sign extension bits. if they are not, its an invalid addr
+        assert!(addr < 0x0000_8000_0000_0000 || addr >= 0xffff_8000_0000_0000, "Invalid virtual address: 0x{:x}", addr);
         Page(addr / PAGE_SIZE)
+    }
+
+    fn addr(&self) -> VirtualAddress {
+        self.0 * PAGE_SIZE
     }
 
     fn p4_index(&self) -> usize {
@@ -93,75 +91,67 @@ impl Paging {
         unsafe { self.p4.as_mut() }
     }
 
-    pub fn map_page_to_frame<A: FrameAllocator>( &mut self, page: Page, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) {
+    pub fn map_page_to_frame<A: FrameAllocator>(&mut self, page: Page, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) {
         let p4 = self.p4_mut();
         let p3 = p4.create_next_table(page.p4_index(), frame_allocator);
         let p2 = p3.create_next_table(page.p3_index(), frame_allocator);
         let p1 = p2.create_next_table(page.p2_index(), frame_allocator);
 
         // the entry must be unused
-        assert!(!p1.entries[page.p1_index()].is_used());
+        debug_assert!(!p1.entries[page.p1_index()].is_used());
 
         p1.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
     }
 
-    pub fn map_page<A: FrameAllocator>( &mut self, page: Page, frame_allocator: &mut A, flags: EntryFlags) {
+    pub fn map_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &mut A, flags: EntryFlags) {
         // get a random (free) frame
         let frame = frame_allocator.allocate_frame().expect("Out of memory. Could not allocate new frame.");
-
         self.map_page_to_frame(page, frame, frame_allocator, flags);
     }
 
-    pub fn unmap_page(&self) {
-        unimplemented!("Page unmapping is not yet implemented!");
+    pub fn map<A: FrameAllocator>(&mut self, virtual_addr: VirtualAddress, frame_allocator: &mut A, flags: EntryFlags) {
+        let page = Page::from_virt_addr(virtual_addr);
+        self.map_page(page, frame_allocator, flags);
+    }
 
-        // ASM is going to be needed to invalidate tlb entries
-        // let x: u64;
-        // unsafe {
-        //     asm!(
-        //         "mov {0}, 42",
-        //         out(reg) x,
-        //     );
-        // }
+    /*
+     * This will unmap a page and the respective frame.
+     * If an invalidd page is given, it will simply be ignored as there is nothing to unmap.
+     */
+    // TODO: - free P1, P2 and P3 if they get empty
+    //       - deallocate the frame
+    pub fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &mut A) {
+        // set the entry in p1 as unused and free the respective frame
+        self.p4_mut().next_table(page.p4_index())
+            .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
+            .and_then(|p2: _| p2.next_table_mut(page.p2_index()))
+            .and_then(|p1: _| {
+                let entry = &mut p1.entries[page.p1_index()];
+                let frame = entry.pointed_frame();
+                entry.set_unused();
+
+                frame
+            }).and_then(|frame| {
+                // deallocate the frame
+                // frame_allocator.deallocate_frame(frame);
+
+                Some(()) // `and_then()` requires an Option to be returned
+            });
+
+        // invalidate the TLB entry
+        unsafe {
+            asm!("invlpg [{}]", in(reg) page.addr() as u64, options(nostack, preserves_flags));
+        }
     }
 
     /*
      * This takes a Page and returns the respective Frame if the address is mapped.
      */
     fn translate_page(&self, page: Page) -> Option<Frame> {
-        // p3 might be needed if huge pages are involed
-        let p3 = self.p4().next_table(page.p4_index());
-
-        p3.and_then(|p3| p3.next_table(page.p3_index()))
+        self.p4().next_table(page.p4_index())
+            .and_then(|p3| p3.next_table(page.p3_index()))
             .and_then(|p2| p2.next_table(page.p2_index()))
             .and_then(|p1| p1.entries[page.p1_index()].pointed_frame())
-            /*
-             * This might happen if the addr is not mapped (page does not exist) or
-             * there is a huge page involved (next_table() does not support huge pages)
-             */
-            .or_else(|| {
-                let p3_entry = p3?.entries[page.p3_index()];
-                if p3_entry.flags().contains(EntryFlags::HUGE_PAGE) {
-                    // every p3 entry points to 1GiB pages, so the addr must be 1GiB aligned
-                    assert!(p3_entry.phy_addr()? % (ENTRY_COUNT * ENTRY_COUNT * PAGE_SIZE) == 0);
-
-                    return Some(Frame::from_phy_addr(
-                        p3_entry.phy_addr()?
-                            + page.p2_index() * ENTRY_COUNT * PAGE_SIZE
-                            + page.p1_index() * PAGE_SIZE,
-                    ));
-                }
-
-                let p2_entry = p3?.next_table(page.p3_index())?.entries[page.p2_index()];
-                if p2_entry.flags().contains(EntryFlags::HUGE_PAGE) {
-                    // every p2 entry points to a 2MiB page, so the addr must be 2MiB aligned
-                    assert!(p2_entry.phy_addr()? % (ENTRY_COUNT * PAGE_SIZE) == 0);
-
-                    return Some(Frame::from_phy_addr(p2_entry.phy_addr()? + page.p1_index() * PAGE_SIZE));
-                }
-
-                None
-            })
     }
 
     /*
@@ -183,12 +173,15 @@ pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
     let page = Page::from_virt_addr(virt_addr);
     let frame = frame_allocator.allocate_frame().expect("out of memory");
 
-    println!(
-        "None = {:?}, map to {:?}",
-        page_table.translate(virt_addr),
-        frame
-    );
+    println!("None = {:?}, map to {:?}", page_table.translate(virt_addr), frame);
     page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty());
     println!("Some = {:?}", page_table.translate(virt_addr));
     println!("next free frame: {:?}", frame_allocator.allocate_frame());
+
+    println!("-------------------");
+
+    println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).addr() as *const u64) });
+    page_table.unmap_page(Page::from_virt_addr(virt_addr), frame_allocator);
+    // println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).addr() as *const u64) });
+    println!("None = {:?}", page_table.translate(virt_addr));
 }

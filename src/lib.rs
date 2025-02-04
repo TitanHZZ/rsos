@@ -7,7 +7,7 @@ mod memory;
 
 use core::panic::PanicInfo;
 use multiboot2::{elf_symbols::ElfSymbols, memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo};
-// use memory::{FrameAllocator, SimpleFrameAllocator};
+use memory::{simple_frame_allocator::SimpleFrameAllocator, paging::test_paging};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -45,8 +45,8 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data.");
     print_mem_status(&mb_info);
 
-    let mem_map = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present");
-    let elf_symbols = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
+    let mem_map = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present.");
+    let elf_symbols = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present.");
     let elf_sections = elf_symbols.sections().expect("Elf sections are invalid.");
 
     let k_start = elf_sections
@@ -62,47 +62,13 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_start = mb_boot_info_addr as usize;
     let mb_end = mb_start + mb_info.size() as usize;
 
-    // let memory_map_tag = mb_info.memory_map_tag().expect("Memory map tag required");
-    // let elf_sections_tag = mb_info.elf_sections().expect("Elf-sections tag required");
-    // let kernel_start = elf_sections_tag
-    //     .clone()
-    //     .map(|s| s.start_address())
-    //     .min()
-    //     .unwrap() as usize;
-    // let kernel_end = elf_sections_tag
-    //     .clone()
-    //     .map(|s| s.start_address() + s.size())
-    //     .max()
-    //     .unwrap() as usize;
-    // let multiboot_start = mb_boot_info_addr;
-    // let multiboot_end = multiboot_start + (mb_info.total_size() as usize);
+    // --------------- PAGING TESTS ---------------
 
-    // let mut simple_frame_allocator = SimpleFrameAllocator::new(
-    //     memory_map_tag.memory_areas(),
-    //     kernel_start,
-    //     kernel_end,
-    //     multiboot_start,
-    //     multiboot_end,
-    // )
-    // .expect("Could not create a simple frame allocator!");
-    // for i in 0.. {
-    //     if let None = simple_frame_allocator.allocate_frame() {
-    //         println!("Allocated {} frames with simple frame allocator", i);
-    //         break;
-    //     }
-    // }
+    let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
+    let mut frame_allocator = SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end)
+        .expect("Could not create a simple frame allocator!");
 
-    // // --------------- PAGING TESTS ---------------
-
-    // let mut frame_allocator = SimpleFrameAllocator::new(
-    //     memory_map_tag.memory_areas(),
-    //     kernel_start,
-    //     kernel_end,
-    //     multiboot_start,
-    //     multiboot_end,
-    // )
-    // .expect("Could not create a simple frame allocator!");
-    // memory::test_paging(&mut frame_allocator);
+    test_paging(&mut frame_allocator);
 
     loop {}
 }

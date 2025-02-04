@@ -74,7 +74,7 @@ impl<'a> MbTag for MemoryMap<'a> {
 // wrapper to be able to implement IntoIterator and still have access to the slice
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub(crate) struct MemoryMapEntries<'a>(&'a [MemoryMapEntry]);
+pub(crate) struct MemoryMapEntries<'a>(pub(crate) &'a [MemoryMapEntry]);
 
 impl<'a> IntoIterator for MemoryMapEntries<'a> {
     type Item = &'a MemoryMapEntry;

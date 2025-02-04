@@ -1,6 +1,6 @@
 use super::{entry::{Entry, EntryFlags}, ENTRY_COUNT};
 use crate::memory::{FrameAllocator, PAGE_SIZE};
-use core::marker::PhantomData;
+use core::{marker::PhantomData, ptr::addr_of};
 
 /*
  * This is the base addr used to modify the Page Tables themselves using recursive mapping:
@@ -68,12 +68,14 @@ impl<L: TableLevel> Table<L> {
 impl<L: HierarchicalLevel> Table<L> {
     fn next_table_addr(&self, table_index: usize) -> Option<usize> {
         // index must be between 0 and ENTRY_COUNT
-        assert!(table_index < ENTRY_COUNT);
+        if table_index >= ENTRY_COUNT {
+            return None;
+        }
 
         let entry_flags = self.entries[table_index].flags();
         if entry_flags.contains(EntryFlags::PRESENT) && !entry_flags.contains(EntryFlags::HUGE_PAGE) {
-            let res = self as *const _ as usize;
-            return Some((res << 9) | (table_index << 12)); // see comment at the top
+            let addr = self as *const _ as usize;
+            return Some((addr << 9) | (table_index << 12)); // see comment at the top
         }
 
         None
@@ -87,25 +89,22 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
     }
 
+    /*
+     * This function will always create a standard 4KB page as huge pages are not supported.
+     */
     pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &mut A) -> &mut Table<L::NextLevel> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
-            // this might happen if the page we are trying to allocate might
-            // involve huge pages previously allocatted
-            if self.entries[table_index].flags().contains(EntryFlags::HUGE_PAGE) {
-                unimplemented!("Cannot allocate pages with HUGE_PAGE flag set yet!");
-            }
-
             // page table is not yet created so allocate a new frame to hold the new page table
             let frame = frame_allocator.allocate_frame().expect("Out of memory. Could not allocate new frame.");
 
             // physical address needs to be page aligned
-            assert!(frame.addr() % PAGE_SIZE == 0);
+            debug_assert!(frame.addr() % PAGE_SIZE == 0);
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
-            // this unwrap() should never fail as we just set the entry above
+            // this unwrap() *should* never fail as we just set the entry above
             self.next_table_mut(table_index).unwrap().set_unused();
         }
 

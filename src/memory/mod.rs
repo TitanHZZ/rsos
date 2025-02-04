@@ -1,5 +1,5 @@
-mod simple_frame_allocator;
-mod paging;
+pub mod simple_frame_allocator;
+pub mod paging;
 
 const PAGE_SIZE: usize = 4096;
 

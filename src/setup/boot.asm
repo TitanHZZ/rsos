@@ -135,7 +135,7 @@ set_up_page_tables:
         mov [p2_table + ecx * 8], eax
 
         ; map each edx-th P1 entry to a standard 4KB frame
-        mov edx, 0; counter variable
+        mov edx, 0 ; counter variable
 
         .map_p1_table:
             ; get the addr of the ecx-th P1 table
@@ -143,24 +143,21 @@ set_up_page_tables:
             shl eax, 9   ; eax => p1_tables + ecx * 4096
             mov ebx, eax ; ebx => p1_tables + ecx * 4096
 
-            ; get the addr of the frame to be mapped (ecx * 512 + 4096 + edx * 4096)
-
+            ; get the addr of the frame to be mapped (ecx * 512 * 4096 + edx * 4096)
+            mov     eax, ecx ; eax => ecx
+            shl     eax, 9   ; eax => ecx * 512
+            add     eax, edx ; eax => ecx * 512 + edx
+            shl     eax, 12  ; eax => (ecx * 512 + edx) * 4096
+            or eax, 0b11     ; present + writable
             mov [ebx + edx * 8], eax
 
+            inc edx           ; increase counter
+            cmp edx, 512      ; if counter == 512, the whole P1 table is mapped
+            jne .map_p1_table ; else map the next entry
 
-
-
-
-
-        ; map ecx-th P2 entry to a huge page that starts at address 2MiB*ecx
-        mov eax, 0x200000  ; 2MiB
-        mul ecx            ; start address of ecx-th page
-        or eax, 0b10000011 ; present + writable + huge
-        mov [p2_table + ecx * 8], eax ; map ecx-th entry
-
-        inc ecx            ; increase counter
-        cmp ecx, 512       ; if counter == 512, the whole P2 table is mapped
-        jne .map_p2_table  ; else map the next entry
+        inc ecx           ; increase counter
+        cmp ecx, 512      ; if counter == 512, the whole P2 table is mapped
+        jne .map_p2_table ; else map the next entry
 
     ret
 
