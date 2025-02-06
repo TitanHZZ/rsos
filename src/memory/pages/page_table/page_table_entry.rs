@@ -1,4 +1,4 @@
-use crate::memory::{Frame, PhysicalAddress};
+use crate::memory::{frames::Frame, PhysicalAddress};
 use bitflags::bitflags;
 
 bitflags! {

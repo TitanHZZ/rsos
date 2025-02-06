@@ -1,6 +1,10 @@
-use super::{entry::{Entry, EntryFlags}, ENTRY_COUNT};
-use crate::memory::{FrameAllocator, PAGE_SIZE};
-use core::{marker::PhantomData, ptr::addr_of};
+pub mod page_table_entry;
+
+use crate::memory::{frames::FrameAllocator, MemoryError, FRAME_PAGE_SIZE};
+use page_table_entry::{Entry, EntryFlags};
+use core::marker::PhantomData;
+
+const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 
 /*
  * This is the base addr used to modify the Page Tables themselves using recursive mapping:
@@ -92,14 +96,14 @@ impl<L: HierarchicalLevel> Table<L> {
     /*
      * This function will always create a standard 4KB page as huge pages are not supported.
      */
-    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &mut A) -> &mut Table<L::NextLevel> {
+    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &mut A) -> Result<&mut Table<L::NextLevel>, MemoryError> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // page table is not yet created so allocate a new frame to hold the new page table
-            let frame = frame_allocator.allocate_frame().expect("Out of memory. Could not allocate new frame.");
+            let frame = frame_allocator.allocate_frame()?;
 
-            // physical address needs to be page aligned
-            debug_assert!(frame.addr() % PAGE_SIZE == 0);
+            // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
+            debug_assert!(frame.addr() % FRAME_PAGE_SIZE == 0);
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
@@ -108,7 +112,7 @@ impl<L: HierarchicalLevel> Table<L> {
             self.next_table_mut(table_index).unwrap().set_unused();
         }
 
-        // at this point, we have a valid entry at `table_index` so this unwrap() is fine
-        self.next_table_mut(table_index).unwrap()
+        // at this point, we *should* have a valid entry at `table_index` so this unwrap() *should* be fine
+        Ok(self.next_table_mut(table_index).unwrap())
     }
 }

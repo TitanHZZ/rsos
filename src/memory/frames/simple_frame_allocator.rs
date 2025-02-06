@@ -1,4 +1,4 @@
-use crate::multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType};
+use crate::{memory::MemoryError, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
 use super::{Frame, FrameAllocator};
 
 pub struct SimpleFrameAllocator<'a> {
@@ -15,7 +15,7 @@ pub struct SimpleFrameAllocator<'a> {
 }
 
 impl<'a> SimpleFrameAllocator<'a> {
-    pub fn new(areas: &'a [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Option<Self> {
+    pub fn new(areas: &'a [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<Self, MemoryError> {
         let mut allocator = SimpleFrameAllocator {
             areas,
             current_area: 0,
@@ -32,7 +32,7 @@ impl<'a> SimpleFrameAllocator<'a> {
             allocator.get_next_free_frame()?;
         }
 
-        Some(allocator)
+        Ok(allocator)
     }
 
     fn is_frame_used(&self) -> bool {
@@ -44,7 +44,7 @@ impl<'a> SimpleFrameAllocator<'a> {
      * Returns the next (free or used) frame if it exists.
      * This is an abstraction over the areas. With this, the frames may be seen as positions in a list.
      */
-    fn get_next_frame(&mut self) -> Option<Frame> {
+    fn get_next_frame(&mut self) -> Result<Frame, MemoryError> {
         let curr_area = &self.areas[self.current_area];
         let fr_after_last_in_curr_area= Frame::from_phy_addr((curr_area.base_addr + curr_area.length) as _);
 
@@ -59,7 +59,7 @@ impl<'a> SimpleFrameAllocator<'a> {
 
             // no more areas to use (ran out of usable memory)
             if self.current_area >= self.areas.len() {
-                return None;
+                return Err(MemoryError::NotEnoughPhyMemory);
             }
 
             // get the first frame from the next area
@@ -69,23 +69,23 @@ impl<'a> SimpleFrameAllocator<'a> {
             self.next_frame = Frame(self.next_frame.0 + 1);
         }
 
-        Some(self.next_frame)
+        Ok(self.next_frame)
     }
 
-    fn get_next_free_frame(&mut self) -> Option<Frame> {
+    fn get_next_free_frame(&mut self) -> Result<Frame, MemoryError> {
         let mut fr = self.get_next_frame()?;
 
         while self.is_frame_used() {
             fr = self.get_next_frame()?;
         }
 
-        Some(fr)
+        Ok(fr)
     }
 }
 
 impl<'a> FrameAllocator for SimpleFrameAllocator<'a> {
-    fn allocate_frame(&mut self) -> Option<Frame> {
-        let ret = Some(self.next_frame);
+    fn allocate_frame(&mut self) -> Result<Frame, MemoryError> {
+        let ret = Ok(self.next_frame);
         self.get_next_free_frame()?;
 
         ret
