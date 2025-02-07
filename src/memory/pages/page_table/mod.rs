@@ -4,7 +4,7 @@ use crate::memory::{frames::FrameAllocator, MemoryError, FRAME_PAGE_SIZE};
 use page_table_entry::{Entry, EntryFlags};
 use core::marker::PhantomData;
 
-const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
+pub const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 4096
 
 /*
  * This is the base addr used to modify the Page Tables themselves using recursive mapping:
@@ -62,7 +62,7 @@ pub struct Table<L: TableLevel> {
 }
 
 impl<L: TableLevel> Table<L> {
-    fn set_unused(&mut self) {
+    pub fn set_unused(&mut self) {
         for entry in &mut self.entries {
             entry.set_unused();
         }

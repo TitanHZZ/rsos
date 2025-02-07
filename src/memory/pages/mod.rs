@@ -4,6 +4,7 @@ pub mod paging;
 use super::{MemoryError, VirtualAddress};
 use crate::memory::FRAME_PAGE_SIZE;
 
+#[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
 
 /* ----------------- SOME NOTES ON PAGE TABLE INDEX CALCULATION -----------------

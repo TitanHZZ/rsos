@@ -64,10 +64,10 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // --------------- PAGING TESTS ---------------
 
-    // let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
-    // let mut frame_allocator = SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end)
-    //     .expect("Could not create a simple frame allocator!");
-    // test_paging(&mut frame_allocator);
+    let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
+    let mut frame_allocator: _ = SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
+
+    test_paging(&mut frame_allocator);
 
     loop {}
 }
