@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(lazy_get)]
 
 mod multiboot2;
 mod vga_buffer;
@@ -22,7 +23,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
     println!("Memory areas:");
     for entry in mem_map_entries {
         println!(
-            "    start: 0x{:x}, length: {:.2} MB, type: {:?}",
+            "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
             entry.base_addr,
             entry.length as f64 / 1024.0 / 1024.0,
             entry.entry_type()

@@ -27,7 +27,7 @@ pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
     let frame = frame_allocator.allocate_frame().expect("out of memory");
 
     println!("None = {:?}, map to {:?}", page_table.translate(virt_addr), frame);
-    page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty());
+    page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty()).unwrap();
     println!("Some = {:?}", page_table.translate(virt_addr));
     println!("next free frame: {:?}", frame_allocator.allocate_frame());
 
