@@ -1,4 +1,4 @@
-mod inactive_paging_context;
+pub mod inactive_paging_context;
 
 use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
@@ -37,6 +37,9 @@ impl ActivePagingContext {
         unsafe { self.p4.as_mut() }
     }
 
+    /*
+     * Maps a specific Page to a specific Frame.
+     */
     pub fn map_page_to_frame<A: FrameAllocator>(&mut self, page: Page, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
         let p4 = self.p4_mut();
         let p3 = p4.create_next_table(page.p4_index(), frame_allocator)?;
@@ -50,15 +53,28 @@ impl ActivePagingContext {
         Ok(())
     }
 
+    /*
+     * Maps a specific Page to a (random) Frame.
+     */
     pub fn map_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
         let frame = frame_allocator.allocate_frame()?;
         return self.map_page_to_frame(page, frame, frame_allocator, flags);
     }
 
+    /*
+     * Maps the Page containing the `virtual_addr` to a (random) Frame.
+     */
     pub fn map<A: FrameAllocator>(&mut self, virtual_addr: VirtualAddress, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
         let page = Page::from_virt_addr(virtual_addr)?;
         return self.map_page(page, frame_allocator, flags);
+    }
+
+    /*
+     * Maps a Frame to a Page with same addr (identity mapping).
+     */
+    pub fn identity_map<A: FrameAllocator>(&mut self, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
+        self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
     }
 
     /*
@@ -122,7 +138,7 @@ impl ActivePagingContext {
     // TODO: disallow a recursive update_inactive_context() call as it does not work
     pub fn update_inactive_context<F, A>(&mut self, inactive_context: &InactivePagingContext, frame_allocator: &mut A, f: F) -> Result<(), MemoryError>
     where
-        F: FnOnce(&mut ActivePagingContext),
+        F: FnOnce(&mut ActivePagingContext, &mut A) -> Result<(), MemoryError>,
         A: FrameAllocator
     {
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
@@ -138,15 +154,15 @@ impl ActivePagingContext {
         // we need them pointing to the inactive context (hardware translations would still work)
         CR3::invalidate_all();
 
-        f(self);
+        f(self, frame_allocator)?;
 
         // restore the active paging context recusive mapping
         let table = unsafe { &mut *(p4_page.addr() as usize as *mut Table<Level4>) };
         table.entries[ENTRY_COUNT - 1].set_phy_addr(p4_frame);
-        self.unmap_page(p4_page, frame_allocator);
 
-        // restore the cr3 register (automatically invalidates all tlb entries)
-        CR3::set(p4_frame.addr());
+        // invalidate the entries so that the recursive mapping works again (we don't use cached addrs)
+        CR3::invalidate_all();
+        self.unmap_page(p4_page, frame_allocator);
 
         Ok(())
     }

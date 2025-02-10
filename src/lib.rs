@@ -6,8 +6,8 @@ mod multiboot2;
 mod vga_buffer;
 mod memory;
 
+use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use multiboot2::{elf_symbols::ElfSymbols, memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo};
-use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, test_paging};
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -66,9 +66,16 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // --------------- PAGING TESTS ---------------
 
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
-    let mut frame_allocator: _ = SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
+    let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
 
-    test_paging(&mut frame_allocator);
+    // memory::test_paging(frame_allocator);
+
+    // --------------- KERNEL REMAP TESTS ---------------
+
+    let active_paging = unsafe { &mut ActivePagingContext::new() };
+    let inactive_paging = &InactivePagingContext::new(active_paging, frame_allocator).unwrap();
+
+    memory::kernel_remap(active_paging, inactive_paging, elf_sections, frame_allocator).unwrap();
 
     loop {}
 }

@@ -57,17 +57,17 @@ pub(crate) enum ElfSectionType {
     RelRelocation,
     Reserved,
     DynamicLoaderSymbolTable,
-    Unknown, // this enum does not cover the entire u32 range
+    Unknown,                  // this enum does not cover the entire u32 range
     EnvironmentSpecific(u32), // from 0x60000000 to 0x6FFFFFFF
-    ProcessorSpecific(u32), // from 0x70000000 to 0x7FFFFFFF
+    ProcessorSpecific(u32),   // from 0x70000000 to 0x7FFFFFFF
 }
 
 bitflags! {
     #[derive(Debug)]
     pub(crate) struct ElfSectionFlags: u64 {
-        const ELF_SECTION_WRITABLE   = 0x00000001;
-        const ELF_SECTION_ALLOCATED  = 0x00000002;
-        const ELF_SECTION_EXECUTABLE = 0x00000004;
+        const ELF_SECTION_WRITABLE   = 0x00000001; // section contains data that is writable
+        const ELF_SECTION_ALLOCATED  = 0x00000002; // section is in memory during execution
+        const ELF_SECTION_EXECUTABLE = 0x00000004; // section contains executable code
         const ENVIRONMENT_SPECIFIC   = 0x0F000000;
         const PROCESSOR_SPECIFIC     = 0xF0000000;
     }

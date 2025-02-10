@@ -23,29 +23,30 @@ SECTIONS
 	. = 2M;
 
 	/* First put the multiboot 2 header, as it is required to be put very early
-	   in the image or the bootloader won't recognize the file format.
-	   Next we'll put the .text section. */
+	   in the image or the bootloader won't recognize the file format,
+	   and the, group all text (code) sections */
 	.text BLOCK(4K) : ALIGN(4K)
 	{
 		*(.multiboot_header)
 		*(.text .text.*) /* group together all the text sections made by the rust compiler */
 	} : rx
 
-	/* Read-only data. */
+	/* Read-only data */
 	.rodata BLOCK(4K) : ALIGN(4K)
 	{
 		*(.rodata .rodata.*) /* group together all the rodata sections made by the rust compiler */
 	} : r
 
     /* group more rust compiler sections */
-	.data.rel.ro : {
+	.data.rel.ro BLOCK(4K) : ALIGN(4K)
+	{
         *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*)
     } : r
 
 	/* Read-write data (initialized) */
 	.data BLOCK(4K) : ALIGN(4K)
 	{
-		*(.data)
+		*(.data .data.*)
 	} : rw
 
 	/* Read-write data (uninitialized) and stack */
@@ -54,6 +55,30 @@ SECTIONS
 		*(COMMON)
 		*(.bss)
 	} : rw
+
+	/* Global Offset Table */
+	.got BLOCK(4K) : ALIGN(4K)
+	{
+		*(.got)
+	}
+
+	/* Procedure Linkage Table */
+	.got.plt BLOCK(4K) : ALIGN(4K)
+	{
+		*(.got.plt)
+	}
+
+	/* Exception Frames */
+	.eh_frame BLOCK(4K) : ALIGN(4K)
+	{
+		*(.eh_frame .eh_frame.*)
+	}
+
+	/* Debug GDB Scripts */
+	.debug_gdb_scripts BLOCK(4K) : ALIGN(4K)
+	{
+		*(.debug_gdb_scripts)
+	}
 
 	/* The compiler may produce other sections, by default it will put them in
 	   a segment with the same name.*/
