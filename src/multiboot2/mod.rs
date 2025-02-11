@@ -19,6 +19,8 @@ pub mod image_load_base_phy_addr;
 use tag_iter::MbTagIter;
 use tag_trait::MbTag;
 
+use crate::{memory::PhysicalAddress, println, print};
+
 #[repr(C)]
 #[derive(Clone)]
 struct MbBootInformationHeader {
@@ -116,5 +118,9 @@ impl MbBootInfo {
         self.tags()
             .find(|tag| tag.tag_type == T::TAG_TYPE)
             .map(|tag| tag.cast_to::<T>())
+    }
+
+    pub fn addr(&self) -> PhysicalAddress {
+        self.tags_ptr as usize - size_of::<MbBootInformationHeader>()
     }
 }

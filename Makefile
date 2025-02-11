@@ -30,8 +30,7 @@ kernel:
 # link boot and kernel
 build: boot kernel $(linker_script)
 	@echo "Linking boot with the kernel..."
-	@ld -n -o $(kernel) -T $(linker_script) \
-		target/boot.o target/x86_64-rsos/$(MODE)/librsos.a
+	@ld -n -o $(kernel) -T $(linker_script) target/boot.o target/x86_64-rsos/$(MODE)/librsos.a
 
 # create the iso file
 iso: $(grub_cfg) $(kernel)

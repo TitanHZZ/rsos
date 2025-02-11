@@ -69,13 +69,16 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
 
     // memory::test_paging(frame_allocator);
-
+    
     // --------------- KERNEL REMAP TESTS ---------------
-
+    
     let active_paging = unsafe { &mut ActivePagingContext::new() };
-    let inactive_paging = &InactivePagingContext::new(active_paging, frame_allocator).unwrap();
-
-    memory::kernel_remap(active_paging, inactive_paging, elf_sections, frame_allocator).unwrap();
+    let inactive_paging = &mut InactivePagingContext::new(active_paging, frame_allocator).unwrap();
+    
+    memory::kernel_remap(active_paging, inactive_paging, elf_sections, frame_allocator, &mb_info).unwrap();
+    active_paging.switch(inactive_paging);
+    
+    println!("BRUH");
 
     loop {}
 }

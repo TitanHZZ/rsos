@@ -1,4 +1,4 @@
-use crate::memory::{frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page}, MemoryError};
+use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page}, MemoryError};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -26,6 +26,13 @@ impl InactivePagingContext {
 
         active_paging.unmap_page(p4_page, frame_allocator);
         Ok(InactivePagingContext { p4_frame })
+    }
+
+    pub(super) fn switch_with_cr3(&mut self) {
+        // swap the values in CR3 and InactivePagingContext
+        let p4_frame_backup = self.p4_frame;
+        self.p4_frame = Frame::from_phy_addr(CR3::get());
+        CR3::set(p4_frame_backup.addr());
     }
 
     pub fn p4_frame(&self) -> Frame {

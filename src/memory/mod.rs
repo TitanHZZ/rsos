@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page};
-use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, print, println};
+use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -18,8 +18,9 @@ pub enum MemoryError {
     NotEnoughPhyMemory,        // a frame allocator ran out of memory
 }
 
-// TODO: use the correct entry flags for appropriate page permissions
-pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &mut A) -> Result<(), MemoryError>
+// TODO: change the assert for a MemoryError
+pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &mut A,
+    mb_info: &MbBootInfo) -> Result<(), MemoryError>
 where
     A: FrameAllocator
 {
@@ -30,19 +31,35 @@ where
                 continue;
             }
 
-            // get section addr range
+            // get section addr range (from first byte of first frame to last byte of last frame)
             let start_addr = elf_section.addr();
-            let end_addr = start_addr + elf_section.size() - 1;
+            let end_addr = start_addr + elf_section.size() as usize;
+            let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
 
-            // this is assert!() and not debug_assert!() because we need to make sure that no matter the compiler or the linker,
-            // we always get FRAME_PAGE_SIZE aligned kernel sections
-            assert!(start_addr % FRAME_PAGE_SIZE as u64 == 0, "The kernel sections are not {} aligned.", FRAME_PAGE_SIZE);
+            // we need to make sure that no matter the compiler or the linker, we always get FRAME_PAGE_SIZE aligned kernel sections
+            assert!(start_addr % FRAME_PAGE_SIZE == 0, "The kernel sections are not {} aligned.", FRAME_PAGE_SIZE);
 
             // identity map every section
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
-                let frame = Frame::from_phy_addr(addr as _);
-                active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+                let frame = Frame::from_phy_addr(addr);
+                let flags = EntryFlags::from_elf_section_flags(elf_section.flags());
+                active_ctx.identity_map(frame, frame_allocator, flags)?;
             }
+        }
+
+        // identity map the vga buffer
+        let vga_buff_frame = Frame::from_phy_addr(0xb8000);
+        let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
+        active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
+
+        // identity map the multiboot2 info (from first byte of first frame to last byte of last frame, even if misaligned)
+        let start_addr = mb_info.addr() & !(FRAME_PAGE_SIZE - 1);
+        let end_addr = mb_info.addr() + mb_info.size() as usize;
+        let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
+
+        for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
+            let frame = Frame::from_phy_addr(addr);
+            active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }
 
         Ok(())

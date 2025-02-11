@@ -1,7 +1,8 @@
-use crate::memory::{frames::Frame, PhysicalAddress};
+use crate::{memory::{frames::Frame, PhysicalAddress}, multiboot2::elf_symbols::ElfSectionFlags};
 use bitflags::bitflags;
 
 bitflags! {
+    #[derive(Clone, Copy)]
     pub struct EntryFlags: u64 {
         const PRESENT         = 1 << 0;  // the page is currently in memory
         const WRITABLE        = 1 << 1;  // it’s allowed to write to this page
@@ -61,5 +62,25 @@ impl Entry {
     pub fn set(&mut self, frame: Frame, flags: EntryFlags) {
         self.set_phy_addr(frame);
         self.set_flags(flags);
+    }
+}
+
+impl EntryFlags {
+    pub fn from_elf_section_flags(section_flags: ElfSectionFlags) -> Self {
+        let mut flags = EntryFlags::empty();
+
+        if section_flags.contains(ElfSectionFlags::ELF_SECTION_WRITABLE) {
+            flags |= EntryFlags::WRITABLE;
+        }
+
+        if section_flags.contains(ElfSectionFlags::ELF_SECTION_ALLOCATED) {
+            flags |= EntryFlags::PRESENT;
+        }
+
+        if !section_flags.contains(ElfSectionFlags::ELF_SECTION_EXECUTABLE) {
+            flags |= EntryFlags::NO_EXECUTE;
+        }
+
+        flags
     }
 }

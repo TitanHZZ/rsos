@@ -1,5 +1,7 @@
 // https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
 // https://refspecs.linuxfoundation.org/elf/elf.pdf
+use crate::memory::PhysicalAddress;
+
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::ptr::slice_from_raw_parts;
 use bitflags::bitflags;
@@ -153,8 +155,8 @@ impl<'a> ElfSection<'a> {
         ElfSectionFlags::from_bits_truncate(self.header.flags)
     }
 
-    pub(crate) fn addr(&self) -> u64 {
-        self.header.addr
+    pub(crate) fn addr(&self) -> PhysicalAddress {
+        self.header.addr as _
     }
 
     pub(crate) fn size(&self) -> u64 {

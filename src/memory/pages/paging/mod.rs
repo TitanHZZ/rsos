@@ -166,4 +166,16 @@ impl ActivePagingContext {
 
         Ok(())
     }
+
+    /*
+     * The, current, active paging context will become inactive
+     * and the inactive one, will become active.
+     */
+    pub fn switch(&mut self, inactive_context: &mut InactivePagingContext) {
+        // the ActivePagingContext does not need to be modified as it only uses a recursive addr,
+        // so it will work with whatever addr is in CR3
+
+        // swap the values in CR3 and InactivePagingContext (also clears the TLB)
+        inactive_context.switch_with_cr3();
+    }
 }
