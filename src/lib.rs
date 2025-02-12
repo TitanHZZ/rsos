@@ -6,8 +6,8 @@ mod multiboot2;
 mod vga_buffer;
 mod memory;
 
-use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use multiboot2::{elf_symbols::ElfSymbols, memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo};
+use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}};
+use multiboot2::{elf_symbols::ElfSymbols, memory_map::MemoryMap, MbBootInfo};
 use core::panic::PanicInfo;
 
 #[panic_handler]
@@ -16,68 +16,71 @@ fn panic(info: &PanicInfo) -> ! {
     loop {}
 }
 
-fn print_mem_status(mb_info: &MbBootInfo) {
-    let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
-    let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
+// fn print_mem_status(mb_info: &MbBootInfo) {
+//     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
+//     let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
+//     println!("Memory areas:");
+//     for entry in mem_map_entries {
+//         println!(
+//             "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
+//             entry.base_addr,
+//             entry.length as f64 / 1024.0 / 1024.0,
+//             entry.entry_type()
+//         );
+//     }
+//     let total_memory: u64 = mem_map_entries.into_iter()
+//         .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
+//         .map(|entry| entry.length)
+//         .sum();
+//     println!(
+//         "Total (available) memory: {} bytes ({:.2} GB)",
+//         total_memory,
+//         total_memory as f64 / 1024.0 / 1024.0 / 1024.0
+//     );
+// }
 
-    println!("Memory areas:");
-    for entry in mem_map_entries {
-        println!(
-            "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
-            entry.base_addr,
-            entry.length as f64 / 1024.0 / 1024.0,
-            entry.entry_type()
-        );
-    }
-
-    let total_memory: u64 = mem_map_entries.into_iter()
-        .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
-        .map(|entry| entry.length)
-        .sum();
-    println!(
-        "Total (available) memory: {} bytes ({:.2} GB)",
-        total_memory,
-        total_memory as f64 / 1024.0 / 1024.0 / 1024.0
-    );
-}
-
+// TODO: look into stack probes
+// TODO: remove unnecessary unwraps()
+// TODO: double check the section permissions on the linker script
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+    // at this point, the cpu is running in 64 bit long mode
+    // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data.");
-    print_mem_status(&mb_info);
 
+    // get the necessary mb2 tags and data
     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present.");
     let elf_symbols = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present.");
     let elf_sections = elf_symbols.sections().expect("Elf sections are invalid.");
 
-    let k_start = elf_sections
-        .map(|s| s.addr())
-        .min()
-        .expect("Elf sections is empty.") as usize;
-
-    let k_end = elf_sections
-        .map(|s| s.addr())
-        .min()
-        .expect("Elf sections is empty.") as usize;
+    let k_start = elf_sections.map(|s: _| s.addr()).min().expect("Elf sections is empty.");
+    let k_end   = elf_sections.map(|s: _| s.addr()).max().expect("Elf sections is empty.");
 
     let mb_start = mb_boot_info_addr as usize;
-    let mb_end = mb_start + mb_info.size() as usize;
+    let mb_end   = mb_start + mb_info.size() as usize;
 
-    // --------------- PAGING TESTS ---------------
-
+    // set up a basic frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
     let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
 
-    // memory::test_paging(frame_allocator);
-    
-    // --------------- KERNEL REMAP TESTS ---------------
-    
+    // get the current paging context and create a new (empty) one
     let active_paging = unsafe { &mut ActivePagingContext::new() };
-    let inactive_paging = &mut InactivePagingContext::new(active_paging, frame_allocator).unwrap();
-    
-    memory::kernel_remap(active_paging, inactive_paging, elf_sections, frame_allocator, &mb_info).unwrap();
-    active_paging.switch(inactive_paging);
-    
+    { // this scope makes sure that the inactive context does not get used again
+        let inactive_paging = &mut InactivePagingContext::new(active_paging, frame_allocator).unwrap();
+
+        // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
+        memory::kernel_remap(active_paging, inactive_paging, elf_sections, frame_allocator, &mb_info).unwrap();
+        active_paging.switch(inactive_paging);
+
+        // the unwrap is fine as we know that the addr is valid
+        active_paging.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), frame_allocator);
+    }
+
+    // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
+    // the paging context created during the asm bootstrapping is now being used as stack for the kernel
+    // except for the p4 table that is being used as a guard page
+    // because of this, we now have just over 2MiB of stack
+
     println!("BRUH");
 
     loop {}

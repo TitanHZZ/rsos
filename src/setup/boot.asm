@@ -171,16 +171,18 @@ enable_paging:
     or eax, 1 << 5
     mov cr4, eax
 
-    ; set the long mode bit in the EFER MSR (model specific register)
+    ; set the EFER MSR (model specific register)
     ; after enabling paging in the cr0 register, this will make the cpu go to the 32-bit compatibility submode
     mov ecx, 0xC0000080
     rdmsr
-    or eax, 1 << 8
+    or eax, 1 << 8  ; long mode
+    or eax, 1 << 11 ; NXE (enable the no execute bit)
     wrmsr
 
-    ; enable paging in the cr0 register
+    ; set up the cr0 register
     mov eax, cr0
-    or eax, 1 << 31
+    or eax, 1 << 31 ; enable paging
+    or eax, 1 << 16 ; enable the write protect bit
     mov cr0, eax
 
     ret

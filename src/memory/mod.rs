@@ -15,10 +15,14 @@ pub type VirtualAddress = usize;
 #[derive(Debug)]
 pub enum MemoryError {
     PageInvalidVirtualAddress, // tried creating a page with an invalid x86_64 addr
+    MisalignedKernelSection,   // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
     NotEnoughPhyMemory,        // a frame allocator ran out of memory
 }
 
-// TODO: change the assert for a MemoryError
+/*
+ * Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
+ * If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
+ */
 pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &mut A,
     mb_info: &MbBootInfo) -> Result<(), MemoryError>
 where
@@ -36,8 +40,10 @@ where
             let end_addr = start_addr + elf_section.size() as usize;
             let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
 
-            // we need to make sure that no matter the compiler or the linker, we always get FRAME_PAGE_SIZE aligned kernel sections
-            assert!(start_addr % FRAME_PAGE_SIZE == 0, "The kernel sections are not {} aligned.", FRAME_PAGE_SIZE);
+            // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
+            if start_addr % FRAME_PAGE_SIZE != 0 {
+                return Err(MemoryError::MisalignedKernelSection);
+            }
 
             // identity map every section
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
