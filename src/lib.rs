@@ -9,10 +9,11 @@ mod memory;
 use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}};
 use multiboot2::{elf_symbols::ElfSymbols, memory_map::MemoryMap, MbBootInfo};
 use core::panic::PanicInfo;
+use vga_buffer::Color;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+    // println!("{}", info);
     loop {}
 }
 
@@ -80,6 +81,21 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
+
+    // [FAILED]
+    print!(Color::White,    Color::Black, "[");
+    print!(Color::LightRed, Color::Black, "FAILED");
+    println!(Color::White,  Color::Black, "] {}", "Something went wrong.");
+
+    // [ WARN ]
+    print!(Color::White,   Color::Black, "[");
+    print!(Color::Yellow,  Color::Black, " WARN ");
+    println!(Color::White, Color::Black, "] {}", "Something might be wrong.");
+
+    // [  OK  ]
+    print!(Color::White,      Color::Black, "[");
+    print!(Color::LightGreen, Color::Black, "  OK  ");
+    println!(Color::White,    Color::Black, "] {}", "Something is ok.");
 
     println!("BRUH");
 

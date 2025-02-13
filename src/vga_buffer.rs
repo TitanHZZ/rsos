@@ -1,4 +1,4 @@
-use core::{cell::LazyCell, fmt::{self, Write}, ptr::copy};
+use core::{cell::LazyCell, fmt, ptr::copy};
 use spin::Mutex;
 
 const BUFFER_HEIGHT: usize = 25;
@@ -8,22 +8,22 @@ const TAB_SIZE: usize = 4;
 #[repr(u8)]
 #[allow(dead_code)]
 pub enum Color {
-    Black      = 0x0,
-    Blue       = 0x1,
-    Green      = 0x2,
-    Cyan       = 0x3,
-    Red        = 0x4,
-    Magenta    = 0x5,
-    Brown      = 0x6,
-    Gray       = 0x8,
-    Pink       = 0xd,
-    Yellow     = 0xe,
-    White      = 0xf,
-    LightGray  = 0x7,
-    LightBlue  = 0x9,
-    LightGreen = 0xa,
-    LightCyan  = 0xb,
-    LightRed   = 0xc,
+    Black        = 0x0,
+    Blue         = 0x1,
+    Green        = 0x2,
+    Cyan         = 0x3,
+    Red          = 0x4,
+    Magenta      = 0x5,
+    Brown        = 0x6,
+    LightGray    = 0x7,
+    DarkGray     = 0x8,
+    LightBlue    = 0x9,
+    LightGreen   = 0xa,
+    LightCyan    = 0xb,
+    LightRed     = 0xc,
+    LightMagenta = 0xd,
+    Yellow       = 0xe,
+    White        = 0xf,
 }
 
 #[repr(transparent)]
@@ -106,6 +106,10 @@ impl Writer {
             self.write_chr(chr);
         }
     }
+
+    pub fn set_colors(&mut self, foreground: Color, background: Color) {
+        self.color_code = ColorCode::new(foreground, background);
+    }
 }
 
 impl fmt::Write for Writer {
@@ -126,18 +130,44 @@ pub static WRITER: Mutex<LazyCell<Writer>> = Mutex::new(LazyCell::new(|| Writer 
 
 #[macro_export]
 macro_rules! println {
-    ($fmt:expr) => (print!(concat!($fmt, "\n")));
-    ($fmt:expr, $($arg:tt)*) => (print!(concat!($fmt, "\n"), $($arg)*));
+    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => (print!($fg, $bg, concat!($fmt, "\n"), $($arg)*));
+    ( $fg:path, $bg:path, $fmt:expr ) => (print!($fg, $bg, concat!($fmt, "\n")));
+    ( $fmt:expr, $($arg:tt)* ) => (print!(concat!($fmt, "\n"), $($arg)*));
+    ( $fmt:expr ) => (print!(concat!($fmt, "\n")));
 }
 
 #[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => {
-        $crate::vga_buffer::_print(format_args!($($arg)*));
-    };
-}
+macro_rules! print {    
+    // colored print with args
+    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{
+        use crate::vga_buffer::{WRITER, Writer};
+        use core::{cell::LazyCell, fmt::Write};
 
-#[doc(hidden)]
-pub fn _print(args: fmt::Arguments) {
-    LazyCell::force_mut(&mut *WRITER.lock()).write_fmt(args).unwrap();
+        // lock drops when the scope ends
+        let lazy_cell: &mut LazyCell<Writer> = &mut *WRITER.lock();
+        let writer: &mut Writer = LazyCell::force_mut(lazy_cell);
+
+        writer.set_colors($fg, $bg);
+        writer.write_fmt(format_args!($fmt, $($arg)*)).unwrap();
+
+        // restore the default colors
+        writer.set_colors(Color::White, Color::Black);
+    }};
+
+    // colored print without args
+    ( $fg:path, $bg:path, $fmt:expr ) => {
+        print!($fg, $bg, concat!($fmt, "{}"), "");
+    };
+
+    // conventional print with args
+    ( $fmt:expr, $($arg:tt)* ) => {{
+        use crate::Color;
+        print!(Color::White, Color::Black, $fmt, $($arg)*);
+    }};
+
+    // conventional print without args
+    ( $fmt:expr ) => {{
+        use crate::Color;
+        print!(Color::White, Color::Black, concat!($fmt, "{}"), "");
+    }};
 }

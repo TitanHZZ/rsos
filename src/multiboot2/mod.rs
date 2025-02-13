@@ -19,7 +19,7 @@ pub mod image_load_base_phy_addr;
 use tag_iter::MbTagIter;
 use tag_trait::MbTag;
 
-use crate::{memory::PhysicalAddress, println, print};
+use crate::memory::PhysicalAddress;
 
 #[repr(C)]
 #[derive(Clone)]
