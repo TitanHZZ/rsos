@@ -2,9 +2,12 @@
 #![no_main]
 #![feature(lazy_get)]
 
+extern crate alloc;
+
 mod multiboot2;
 mod vga_buffer;
 mod memory;
+mod logger;
 
 use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}};
 use multiboot2::{elf_symbols::ElfSymbols, memory_map::MemoryMap, MbBootInfo};
@@ -13,7 +16,8 @@ use vga_buffer::Color;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    // println!("{}", info);
+    log!(failed, "Kernel Panic occurred!");
+    println!("{}", info);
     loop {}
 }
 
@@ -41,12 +45,13 @@ fn panic(info: &PanicInfo) -> ! {
 // }
 
 // TODO: look into stack probes
-// TODO: remove unnecessary unwraps()
+// TODO: ignore unloaded kernel sections in the frame allocator
 // TODO: double check the section permissions on the linker script
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
+    log!(ok, "Rust kernel code started.");
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data.");
 
     // get the necessary mb2 tags and data
@@ -65,6 +70,7 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
 
     // get the current paging context and create a new (empty) one
+    log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     let active_paging = unsafe { &mut ActivePagingContext::new() };
     { // this scope makes sure that the inactive context does not get used again
         let inactive_paging = &mut InactivePagingContext::new(active_paging, frame_allocator).unwrap();
@@ -82,22 +88,8 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
-    // [FAILED]
-    print!(Color::White,    Color::Black, "[");
-    print!(Color::LightRed, Color::Black, "FAILED");
-    println!(Color::White,  Color::Black, "] {}", "Something went wrong.");
-
-    // [ WARN ]
-    print!(Color::White,   Color::Black, "[");
-    print!(Color::Yellow,  Color::Black, " WARN ");
-    println!(Color::White, Color::Black, "] {}", "Something might be wrong.");
-
-    // [  OK  ]
-    print!(Color::White,      Color::Black, "[");
-    print!(Color::LightGreen, Color::Black, "  OK  ");
-    println!(Color::White,    Color::Black, "] {}", "Something is ok.");
-
-    println!("BRUH");
+    log!(ok, "Kernel remapping completed.");
+    log!(ok, "Stack guard page created.");
 
     loop {}
 }

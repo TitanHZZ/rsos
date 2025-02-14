@@ -102,9 +102,6 @@ impl<L: HierarchicalLevel> Table<L> {
             // page table is not yet created so allocate a new frame to hold the new page table
             let frame = frame_allocator.allocate_frame()?;
 
-            // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
-            debug_assert!(frame.addr() % FRAME_PAGE_SIZE == 0);
-
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 

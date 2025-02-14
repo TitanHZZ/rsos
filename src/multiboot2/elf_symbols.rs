@@ -115,7 +115,8 @@ impl MbTag for ElfSymbols {
 impl<'a> ElfSection<'a> {
     // Safety: The caller must ensure that the data is valid as this assumes so. This *should* not be a problem
     // as this should only be called by the iter and we assume correct bootloader behavior.
-    pub(crate) fn name(&self) -> Result<&str, ElfSectionError> {
+    // The string *should* never leave memory, so it's lifetime is static as it lasts for the entire duration of the program.
+    pub(crate) fn name(&self) -> Result<&'static str, ElfSectionError> {
         let strings_ptr = self.string_table.addr as *const u8;
         if strings_ptr.is_null() {
             return Err(ElfSectionError::StringSectionNotLoaded);

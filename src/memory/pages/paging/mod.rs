@@ -47,7 +47,9 @@ impl ActivePagingContext {
         let p1 = p2.create_next_table(page.p2_index(), frame_allocator)?;
 
         // the entry must be unused
-        debug_assert!(!p1.entries[page.p1_index()].is_used());
+        if p1.entries[page.p1_index()].is_used() {
+            return Err(MemoryError::MappingUsedTableEntry);
+        }
 
         p1.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
         Ok(())

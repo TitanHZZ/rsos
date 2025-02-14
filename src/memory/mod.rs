@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page};
-use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
+use crate::{multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -15,8 +15,10 @@ pub type VirtualAddress = usize;
 #[derive(Debug)]
 pub enum MemoryError {
     PageInvalidVirtualAddress, // tried creating a page with an invalid x86_64 addr
-    MisalignedKernelSection,   // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
     NotEnoughPhyMemory,        // a frame allocator ran out of memory
+    MisalignedKernelSection(Result<&'static str, ElfSectionError>), // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
+    MappingUsedTableEntry,     // the user is trying to map to a used page table entry
+    FrameInvalidAllocatorAddr, // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
 }
 
 /*
@@ -42,7 +44,7 @@ where
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
             if start_addr % FRAME_PAGE_SIZE != 0 {
-                return Err(MemoryError::MisalignedKernelSection);
+                return Err(MemoryError::MisalignedKernelSection(elf_section.name()));
             }
 
             // identity map every section

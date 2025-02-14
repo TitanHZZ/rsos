@@ -137,7 +137,7 @@ macro_rules! println {
 }
 
 #[macro_export]
-macro_rules! print {    
+macro_rules! print {
     // colored print with args
     ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{
         use crate::vga_buffer::{WRITER, Writer};

@@ -1,4 +1,4 @@
-use crate::{memory::MemoryError, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
+use crate::{memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
 use super::{Frame, FrameAllocator};
 
 pub struct SimpleFrameAllocator<'a> {
@@ -85,10 +85,15 @@ impl<'a> SimpleFrameAllocator<'a> {
 
 impl<'a> FrameAllocator for SimpleFrameAllocator<'a> {
     fn allocate_frame(&mut self) -> Result<Frame, MemoryError> {
-        let ret = Ok(self.next_frame);
+        let frame = Ok(self.next_frame)?;
         self.get_next_free_frame()?;
 
-        ret
+        // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
+        if frame.addr() % FRAME_PAGE_SIZE != 0 {
+            return Err(MemoryError::FrameInvalidAllocatorAddr);
+        }
+
+        Ok(frame)
     }
 
     fn deallocate_frame(&mut self, frame: Frame) {

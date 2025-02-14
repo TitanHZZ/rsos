@@ -53,7 +53,7 @@ SECTIONS
 	.bss BLOCK(4K) : ALIGN(4K)
 	{
 		*(COMMON)
-		*(.bss)
+		*(.bss .bss.*)
 	} : rw
 
 	/* Global Offset Table */
