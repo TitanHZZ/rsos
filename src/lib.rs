@@ -10,7 +10,7 @@ mod memory;
 mod logger;
 
 use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}};
-use multiboot2::{elf_symbols::ElfSymbols, memory_map::MemoryMap, MbBootInfo};
+use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}, memory_map::MemoryMap, MbBootInfo};
 use core::panic::PanicInfo;
 use vga_buffer::Color;
 
@@ -45,7 +45,6 @@ fn panic(info: &PanicInfo) -> ! {
 // }
 
 // TODO: look into stack probes
-// TODO: ignore unloaded kernel sections in the frame allocator
 // TODO: double check the section permissions on the linker script
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
@@ -59,8 +58,11 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let elf_symbols = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present.");
     let elf_sections = elf_symbols.sections().expect("Elf sections are invalid.");
 
-    let k_start = elf_sections.map(|s: _| s.addr()).min().expect("Elf sections is empty.");
-    let k_end   = elf_sections.map(|s: _| s.addr()).max().expect("Elf sections is empty.");
+    let k_start = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
+        .map(|s: _| s.addr()).min().expect("Elf sections is empty.");
+
+    let k_end   = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
+        .map(|s: _| s.addr()).max().expect("Elf sections is empty.");
 
     let mb_start = mb_boot_info_addr as usize;
     let mb_end   = mb_start + mb_info.size() as usize;
