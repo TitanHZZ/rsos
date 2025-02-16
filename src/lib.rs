@@ -46,6 +46,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
+// TODO: the frame allocator ignores the first frame for some reason
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
@@ -90,8 +91,35 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
+    println!("kernel range: {:#x} -- {:#x}", k_start, k_end);
+
     log!(ok, "Kernel remapping completed.");
     log!(ok, "Stack guard page created.");
 
     loop {}
 }
+
+/*
+ * Current physical memory layout:
+ * 
+ * +--------------------+ (higher addresses)
+ * |      Unused        |
+ * +--------------------+ 0x512000
+ * |                    |
+ * |      Kernel        |
+ * |                    |
+ * +--------------------+ 0x200000
+ * +--------------------+ 0x1FFFFF
+ * |                    |
+ * |   Multiboot Info   |
+ * |                    |
+ * +--------------------+ 0x1FF000
+ * |      Unused        |
+ * +--------------------+ 0x0B8FFF
+ * |                    |
+ * |    VGA Buffer      |
+ * |                    |
+ * +--------------------+ 0x0B8000
+ * |      Unused        |
+ * +--------------------+ 0x000000
+*/

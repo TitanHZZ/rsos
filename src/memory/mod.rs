@@ -65,6 +65,9 @@ where
         let end_addr = mb_info.addr() + mb_info.size() as usize;
         let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
 
+        println!("mb2 info range: {:#x} -- {:#x}", start_addr, end_addr);
+        println!("vga buffer range: {:#x} -- {:#x}", 0xb8000, 0xb8000 + FRAME_PAGE_SIZE - 1);
+
         for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
