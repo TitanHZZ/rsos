@@ -9,7 +9,7 @@ mod vga_buffer;
 mod memory;
 mod logger;
 
-use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}};
+use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}, FRAME_PAGE_SIZE};
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}, memory_map::MemoryMap, MbBootInfo};
 use core::panic::PanicInfo;
 use vga_buffer::Color;
@@ -46,7 +46,6 @@ fn panic(info: &PanicInfo) -> ! {
 
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
-// TODO: the frame allocator ignores the first frame for some reason
 #[no_mangle]
 pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
@@ -63,7 +62,7 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         .map(|s: _| s.addr()).min().expect("Elf sections is empty.");
 
     let k_end   = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
-        .map(|s: _| s.addr()).max().expect("Elf sections is empty.");
+        .map(|s: _| s.addr()).max().expect("Elf sections is empty.") + FRAME_PAGE_SIZE - 1;
 
     let mb_start = mb_boot_info_addr as usize;
     let mb_end   = mb_start + mb_info.size() as usize;
@@ -71,6 +70,8 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // set up a basic frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
     let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
+
+    println!("kernel range: {:#x} -- {:#x}", k_start, k_end);
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -91,8 +92,6 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
-    println!("kernel range: {:#x} -- {:#x}", k_start, k_end);
-
     log!(ok, "Kernel remapping completed.");
     log!(ok, "Stack guard page created.");
 
@@ -104,22 +103,21 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
  * 
  * +--------------------+ (higher addresses)
  * |      Unused        |
- * +--------------------+ 0x512000
+ * +--------------------+ 0x513000
  * |                    |
  * |      Kernel        |
  * |                    |
  * +--------------------+ 0x200000
- * +--------------------+ 0x1FFFFF
  * |                    |
  * |   Multiboot Info   |
  * |                    |
  * +--------------------+ 0x1FF000
  * |      Unused        |
- * +--------------------+ 0x0B8FFF
+ * +--------------------+ 0x0B9000
  * |                    |
  * |    VGA Buffer      |
  * |                    |
  * +--------------------+ 0x0B8000
  * |      Unused        |
  * +--------------------+ 0x000000
-*/
+ */

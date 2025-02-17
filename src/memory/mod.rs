@@ -7,7 +7,7 @@ use crate::{multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbo
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
-const FRAME_PAGE_SIZE: usize = 4096;
+pub const FRAME_PAGE_SIZE: usize = 4096;
 
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
