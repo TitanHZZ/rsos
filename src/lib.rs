@@ -9,8 +9,9 @@ mod vga_buffer;
 mod memory;
 mod logger;
 
-use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::{paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page}, FRAME_PAGE_SIZE};
+use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}, memory_map::MemoryMap, MbBootInfo};
+use memory::{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::SIMPLE_PAGE_ALLOCATOR}};
 use core::panic::PanicInfo;
 use vga_buffer::Color;
 
@@ -92,6 +93,12 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
+    // initialize the page allocator
+    // TODO: get the correct value for the page allocator
+    unsafe  {
+        SIMPLE_PAGE_ALLOCATOR.init(0, 0);
+    }
+
     log!(ok, "Kernel remapping completed.");
     log!(ok, "Stack guard page created.");
 
@@ -99,7 +106,7 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 }
 
 /*
- * Current physical memory layout:
+ * Current physical memory layout (NOT UP TO DATE):
  * 
  * +--------------------+ (higher addresses)
  * |      Unused        |

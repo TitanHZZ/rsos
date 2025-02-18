@@ -18,9 +18,11 @@ SECTIONS
 	   will be able to relocate itself to run from such a loader-selected
 	   address, in order to give the loader freedom in selecting a span of
 	   memory which is verified to be available by the firmware, in order to
-	   work around this issue. This does not use that feature, so 2M was
-	   chosen as a safer option than the traditional 1M. */
-	. = 2M;
+	   work around this issue. This does not use that feature, so 4M was
+	   chosen as a safer option than the traditional 1M or even 2M as i was
+	   having issues where grub was placing the Multiboot2 struct inside the
+	   kernel's text section. */
+	. = 4M;
 
 	/* First put the multiboot 2 header, as it is required to be put very early
 	   in the image or the bootloader won't recognize the file format,

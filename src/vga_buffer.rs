@@ -120,7 +120,7 @@ impl fmt::Write for Writer {
 }
 
 // spin locks are not the best but they work and we have no concept of blocking or even threads
-// in this OS to use a better alternative (maybe use LazyLock or something like that?? maybe use once_cell crate??)
+// in this OS to use a better alternative (maybe use once_cell crate??)
 pub static WRITER: Mutex<LazyCell<Writer>> = Mutex::new(LazyCell::new(|| Writer {
     column: 0,
     row: 0,
