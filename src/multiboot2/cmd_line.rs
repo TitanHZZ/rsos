@@ -27,5 +27,4 @@ impl MbTag for CmdLine {
     fn dst_size(base_tag: &MbTagHeader) -> usize {
         base_tag.size as usize - size_of::<MbTagHeader>()
     }
-    
 }

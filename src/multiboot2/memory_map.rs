@@ -1,14 +1,13 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
-use core::{marker::PhantomData, ptr::{addr_of, slice_from_raw_parts}};
+use core::ptr::{addr_of, slice_from_raw_parts};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
-pub(crate) struct MemoryMap<'a> {
+pub(crate) struct MemoryMap {
     header: MbTagHeader,
     pub(crate) entry_size: u32,
     pub(crate) entry_version: u32,
 
-    _mem: PhantomData<&'a ()>, // capture the entries lifetime
     entries: [MemoryMapEntry],
 }
 
@@ -47,7 +46,7 @@ pub(crate) enum MemoryMapError {
     EntriesInvalidSize,
 }
 
-impl<'a> MemoryMap<'a> {
+impl MemoryMap {
     pub(crate) fn entries(&self) -> Result<MemoryMapEntries, MemoryMapError> {
         // make sure that the data in the tag is consistent
         if self.entry_size as usize != size_of::<MemoryMapEntry>() {
@@ -63,7 +62,7 @@ impl<'a> MemoryMap<'a> {
     }
 }
 
-impl<'a> MbTag for MemoryMap<'a> {
+impl MbTag for MemoryMap {
     const TAG_TYPE: TagType = TagType::MemoryMap;
 
     fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata {
@@ -74,11 +73,11 @@ impl<'a> MbTag for MemoryMap<'a> {
 // wrapper to be able to implement IntoIterator and still have access to the slice
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub(crate) struct MemoryMapEntries<'a>(pub(crate) &'a [MemoryMapEntry]);
+pub(crate) struct MemoryMapEntries(pub(crate) &'static [MemoryMapEntry]);
 
-impl<'a> IntoIterator for MemoryMapEntries<'a> {
-    type Item = &'a MemoryMapEntry;
-    type IntoIter = MemoryMapEntryIter<'a>;
+impl IntoIterator for MemoryMapEntries {
+    type Item = &'static MemoryMapEntry;
+    type IntoIter = MemoryMapEntryIter;
 
     fn into_iter(self) -> Self::IntoIter {
         MemoryMapEntryIter {
@@ -89,13 +88,13 @@ impl<'a> IntoIterator for MemoryMapEntries<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MemoryMapEntryIter<'a> {
-    entries: &'a [MemoryMapEntry],
+pub(crate) struct MemoryMapEntryIter{
+    entries: &'static [MemoryMapEntry],
     curr_mem_entry_idx: usize,
 }
 
-impl<'a> Iterator for MemoryMapEntryIter<'a> {
-    type Item = &'a MemoryMapEntry;
+impl Iterator for MemoryMapEntryIter {
+    type Item = &'static MemoryMapEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.curr_mem_entry_idx >= self.entries.len() {

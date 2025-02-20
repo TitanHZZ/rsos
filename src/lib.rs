@@ -11,8 +11,8 @@ mod logger;
 
 use memory::{frames::simple_frame_allocator::SimpleFrameAllocator, pages::paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}, memory_map::MemoryMap, MbBootInfo};
-use memory::{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::SIMPLE_PAGE_ALLOCATOR}};
-use core::panic::PanicInfo;
+use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::PAGE_ALLOCATOR}}, AddrOps};
+use core::{cmp::max, panic::PanicInfo};
 use vga_buffer::Color;
 
 #[panic_handler]
@@ -45,6 +45,7 @@ fn panic(info: &PanicInfo) -> ! {
 //     );
 // }
 
+// TODO: build tests
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
 #[no_mangle]
@@ -72,8 +73,6 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
     let frame_allocator: _ = &mut SimpleFrameAllocator::new(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("");
 
-    println!("kernel range: {:#x} -- {:#x}", k_start, k_end);
-
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     let active_paging = unsafe { &mut ActivePagingContext::new() };
@@ -93,14 +92,19 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
-    // initialize the page allocator
-    // TODO: get the correct value for the page allocator
-    unsafe  {
-        SIMPLE_PAGE_ALLOCATOR.init(0, 0);
-    }
-
     log!(ok, "Kernel remapping completed.");
     log!(ok, "Stack guard page created.");
+
+    let mb2_end = mb_info.addr() + mb_info.size() as usize - 1;
+    let mb2_end = mb2_end.align_up(FRAME_PAGE_SIZE) - 1;
+
+    // initialize the page allocator
+    unsafe {
+        // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
+        // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
+        // and thus, we can start the kernel heap at the biggest of the 2
+        PAGE_ALLOCATOR.init(max(k_end, mb2_end) + 1, 100 * 1024, frame_allocator);
+    }
 
     loop {}
 }

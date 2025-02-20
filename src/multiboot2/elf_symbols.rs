@@ -39,9 +39,9 @@ struct ElfSectionHeader {
     entry_size: u64,
 }
 
-pub(crate) struct ElfSection<'a> {
-    header: &'a ElfSectionHeader,
-    string_table: &'a ElfSectionHeader,
+pub(crate) struct ElfSection {
+    header: &'static ElfSectionHeader,
+    string_table: &'static ElfSectionHeader,
 }
 
 #[repr(u32)]
@@ -112,11 +112,11 @@ impl MbTag for ElfSymbols {
     }
 }
 
-impl<'a> ElfSection<'a> {
+impl ElfSection {
     // Safety: The caller must ensure that the data is valid as this assumes so. This *should* not be a problem
     // as this should only be called by the iter and we assume correct bootloader behavior.
     // The string *should* never leave memory, so it's lifetime is static as it lasts for the entire duration of the program.
-    pub(crate) fn name(&self) -> Result<&'static str, ElfSectionError> {
+    pub(crate) fn name(&self) -> Result<&str, ElfSectionError> {
         let strings_ptr = self.string_table.addr as *const u8;
         if strings_ptr.is_null() {
             return Err(ElfSectionError::StringSectionNotLoaded);
@@ -170,14 +170,14 @@ impl<'a> ElfSection<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ElfSymbolsIter<'a> {
-    sections: &'a [ElfSectionHeader],
+pub(crate) struct ElfSymbolsIter {
+    sections: &'static [ElfSectionHeader],
     curr_section_idx: usize,
-    string_table: &'a ElfSectionHeader,
+    string_table: &'static ElfSectionHeader,
 }
 
-impl<'a> Iterator for ElfSymbolsIter<'a> {
-    type Item = ElfSection<'a>;
+impl Iterator for ElfSymbolsIter {
+    type Item = ElfSection;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.curr_section_idx >= self.sections.len() {

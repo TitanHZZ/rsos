@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page};
-use crate::{multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
+use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -12,11 +12,30 @@ pub const FRAME_PAGE_SIZE: usize = 4096;
 pub type PhysicalAddress = usize;
 pub type VirtualAddress = usize;
 
+pub trait AddrOps {
+    fn align_down(&self, align: usize) -> usize;
+
+    fn align_up(&self, align: usize) -> usize;
+}
+
+// this implements AddrsOps for both VirtualAddress and PhysicalAddress
+impl AddrOps for usize {
+    fn align_down(&self, align: usize) -> usize {
+        debug_assert!(align.is_power_of_two());
+        *self & !(align - 1)
+    }
+
+    fn align_up(&self, align: usize) -> usize {
+        debug_assert!(align.is_power_of_two());
+        (*self + align - 1) & !(align - 1)
+    }
+}
+
 #[derive(Debug)]
 pub enum MemoryError {
     PageInvalidVirtualAddress, // tried creating a page with an invalid x86_64 addr
     NotEnoughPhyMemory,        // a frame allocator ran out of memory
-    MisalignedKernelSection(Result<&'static str, ElfSectionError>), // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
+    MisalignedKernelSection,   // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
     MappingUsedTableEntry,     // the user is trying to map to a used page table entry
     FrameInvalidAllocatorAddr, // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
 }
@@ -39,12 +58,12 @@ where
 
             // get section addr range (from first byte of first frame to last byte of last frame)
             let start_addr = elf_section.addr();
-            let end_addr = start_addr + elf_section.size() as usize;
-            let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
+            let end_addr = start_addr + elf_section.size() as usize - 1;
+            let end_addr = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
             if start_addr % FRAME_PAGE_SIZE != 0 {
-                return Err(MemoryError::MisalignedKernelSection(elf_section.name()));
+                return Err(MemoryError::MisalignedKernelSection);
             }
 
             // identity map every section
@@ -61,12 +80,9 @@ where
         active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
 
         // identity map the multiboot2 info (from first byte of first frame to last byte of last frame, even if misaligned)
-        let start_addr = mb_info.addr() & !(FRAME_PAGE_SIZE - 1);
-        let end_addr = mb_info.addr() + mb_info.size() as usize;
-        let end_addr = ((end_addr + (FRAME_PAGE_SIZE - 1)) & !(FRAME_PAGE_SIZE - 1)) - 1;
-
-        println!("mb2 info range: {:#x} -- {:#x}", start_addr, end_addr);
-        println!("vga buffer range: {:#x} -- {:#x}", 0xb8000, 0xb8000 + FRAME_PAGE_SIZE - 1);
+        let start_addr = mb_info.addr().align_down(FRAME_PAGE_SIZE);
+        let end_addr = mb_info.addr() + mb_info.size() as usize - 1;
+        let end_addr = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
 
         for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);

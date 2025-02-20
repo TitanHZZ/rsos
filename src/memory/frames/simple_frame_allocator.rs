@@ -1,30 +1,32 @@
 use crate::{memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
 use super::{Frame, FrameAllocator};
 
-pub struct SimpleFrameAllocator<'a> {
+pub struct SimpleFrameAllocator {
     // areas and the respective frames
-    areas: &'a [MemoryMapEntry],
+    areas: &'static [MemoryMapEntry],
     current_area: usize,
     next_frame: Frame,
 
     // memory ranges that we need to avoid using so we don't override important memory
-    k_start: Frame,
-    k_end: Frame,
+    k_start : Frame,
+    k_end   : Frame,
     mb_start: Frame,
-    mb_end: Frame,
+    mb_end  : Frame,
 }
 
-impl<'a> SimpleFrameAllocator<'a> {
-    pub fn new(areas: &'a [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<Self, MemoryError> {
+// pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator::
+
+impl SimpleFrameAllocator {
+    pub fn new(areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<Self, MemoryError> {
         let mut allocator = SimpleFrameAllocator {
             areas,
             current_area: 0,
             next_frame: Frame(0x0),
 
-            k_start: Frame::from_phy_addr(k_start),
-            k_end: Frame::from_phy_addr(k_end),
+            k_start : Frame::from_phy_addr(k_start),
+            k_end   : Frame::from_phy_addr(k_end),
             mb_start: Frame::from_phy_addr(mb_start),
-            mb_end: Frame::from_phy_addr(mb_end),
+            mb_end  : Frame::from_phy_addr(mb_end),
         };
 
         // make sure thet the allocator starts with a free frame
@@ -83,7 +85,7 @@ impl<'a> SimpleFrameAllocator<'a> {
     }
 }
 
-impl<'a> FrameAllocator for SimpleFrameAllocator<'a> {
+impl FrameAllocator for SimpleFrameAllocator {
     fn allocate_frame(&mut self) -> Result<Frame, MemoryError> {
         let frame = Ok(self.next_frame)?;
         self.get_next_free_frame()?;
