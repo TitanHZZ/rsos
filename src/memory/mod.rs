@@ -44,7 +44,7 @@ pub enum MemoryError {
  * Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
  * If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
  */
-pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &mut A,
+pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &A,
     mb_info: &MbBootInfo) -> Result<(), MemoryError>
 where
     A: FrameAllocator

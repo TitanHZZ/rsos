@@ -1,9 +1,10 @@
 use crate::{memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
 use super::{Frame, FrameAllocator};
+use spin::Mutex;
 
-pub struct SimpleFrameAllocator {
+struct SimpleFrameAllocatorInner {
     // areas and the respective frames
-    areas: &'static [MemoryMapEntry],
+    areas: Option<&'static [MemoryMapEntry]>,
     current_area: usize,
     next_frame: Frame,
 
@@ -14,29 +15,65 @@ pub struct SimpleFrameAllocator {
     mb_end  : Frame,
 }
 
-// pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator::
+pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
+
+pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
+    areas: None,
+    current_area: 0,
+    next_frame: Frame(0x0),
+
+    k_start : Frame(0x0),
+    k_end   : Frame(0x0),
+    mb_start: Frame(0x0),
+    mb_end  : Frame(0x0),
+}));
 
 impl SimpleFrameAllocator {
-    pub fn new(areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<Self, MemoryError> {
-        let mut allocator = SimpleFrameAllocator {
-            areas,
-            current_area: 0,
-            next_frame: Frame(0x0),
+    /*
+     * Safety: init() can only be called once or the allocator might get into an inconsistent state.
+     * However, it must be called as the allocator expects it.
+     */
+    pub unsafe fn init(&self, areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<(), MemoryError> {
+        let allocator = &mut *self.0.lock();
 
-            k_start : Frame::from_phy_addr(k_start),
-            k_end   : Frame::from_phy_addr(k_end),
-            mb_start: Frame::from_phy_addr(mb_start),
-            mb_end  : Frame::from_phy_addr(mb_end),
-        };
+        allocator.areas    = Some(areas);
+        allocator.k_start  = Frame(k_start);
+        allocator.k_end    = Frame(k_end);
+        allocator.mb_start = Frame(mb_start);
+        allocator.mb_end   = Frame(mb_end);
 
         // make sure thet the allocator starts with a free frame
         if allocator.is_frame_used() {
             allocator.get_next_free_frame()?;
         }
 
-        Ok(allocator)
+        Ok(())
+    }
+}
+
+impl FrameAllocator for SimpleFrameAllocator {
+    fn allocate_frame(&self) -> Result<Frame, MemoryError> {
+        let allocator = &mut *self.0.lock();
+
+        let frame = Ok(allocator.next_frame)?;
+        allocator.get_next_free_frame()?;
+
+        // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
+        if frame.addr() % FRAME_PAGE_SIZE != 0 {
+            return Err(MemoryError::FrameInvalidAllocatorAddr);
+        }
+
+        Ok(frame)
     }
 
+    fn deallocate_frame(&self, frame: Frame) {
+        // for this, we will need some way to store a record of which frames are free and which ones are not
+        // this may even require allocation (just a guess)
+        unimplemented!();
+    }
+}
+
+impl SimpleFrameAllocatorInner {
     fn is_frame_used(&self) -> bool {
         (self.next_frame >= self.k_start && self.next_frame <= self.k_end)
             || (self.next_frame >= self.mb_start && self.next_frame <= self.mb_end)
@@ -47,7 +84,8 @@ impl SimpleFrameAllocator {
      * This is an abstraction over the areas. With this, the frames may be seen as positions in a list.
      */
     fn get_next_frame(&mut self) -> Result<Frame, MemoryError> {
-        let curr_area = &self.areas[self.current_area];
+        let areas = self.areas.unwrap();
+        let curr_area = &areas[self.current_area];
         let fr_after_last_in_curr_area= Frame::from_phy_addr((curr_area.base_addr + curr_area.length) as _);
 
         // check if the next frame is pointing outside the current area
@@ -55,17 +93,17 @@ impl SimpleFrameAllocator {
             self.current_area += 1;
 
             // get to the next area with available ram
-            while self.current_area < self.areas.len() && self.areas[self.current_area].entry_type() != MemoryMapEntryType::AvailableRAM {
+            while self.current_area < areas.len() && areas[self.current_area].entry_type() != MemoryMapEntryType::AvailableRAM {
                 self.current_area += 1;
             }
 
             // no more areas to use (ran out of usable memory)
-            if self.current_area >= self.areas.len() {
+            if self.current_area >= areas.len() {
                 return Err(MemoryError::NotEnoughPhyMemory);
             }
 
             // get the first frame from the next area
-            self.next_frame = Frame::from_phy_addr(self.areas[self.current_area].base_addr as usize);
+            self.next_frame = Frame::from_phy_addr(areas[self.current_area].base_addr as usize);
         } else {
             // get the next frame from the same (current) area
             self.next_frame = Frame(self.next_frame.0 + 1);
@@ -82,25 +120,5 @@ impl SimpleFrameAllocator {
         }
 
         Ok(fr)
-    }
-}
-
-impl FrameAllocator for SimpleFrameAllocator {
-    fn allocate_frame(&mut self) -> Result<Frame, MemoryError> {
-        let frame = Ok(self.next_frame)?;
-        self.get_next_free_frame()?;
-
-        // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
-        if frame.addr() % FRAME_PAGE_SIZE != 0 {
-            return Err(MemoryError::FrameInvalidAllocatorAddr);
-        }
-
-        Ok(frame)
-    }
-
-    fn deallocate_frame(&mut self, frame: Frame) {
-        // for this, we will need some way to store a record of which frames are free and which ones are not
-        // this may even require allocation (just a guess)
-        unimplemented!();
     }
 }

@@ -16,7 +16,7 @@ impl Frame {
     }
 }
 
-pub trait FrameAllocator {
-    fn allocate_frame(&mut self) -> Result<Frame, MemoryError>;
-    fn deallocate_frame(&mut self, frame: Frame);
+pub trait FrameAllocator: Send + Sync {
+    fn allocate_frame(&self) -> Result<Frame, MemoryError>;
+    fn deallocate_frame(&self, frame: Frame);
 }
