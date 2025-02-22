@@ -4,31 +4,22 @@ use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, Phys
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
+use spin::Mutex;
 
 /*
  * Safety: Raw pointers are not Send/Sync so `Paging` cannot be used between threads as it would cause data races.
  */
-pub struct ActivePagingContext {
+// TODO: make this Send/Sync
+struct ActivePagingContextInner {
     p4: NonNull<Table<Level4>>,
 
     // makes this struct `own` a `Table<Level4>`
     _marker: PhantomData<Table<Level4>>,
 }
 
-impl ActivePagingContext {
-    /*
-     * Safety: This should be unsafe because the p4 addr will always be the same (at least for now),
-     * and that means that creating multiple `Paging` objects could result in undefined behaviour
-     * as all the `Paging` objects woulb be pointing to the same memory (and own it).
-     */
-    pub unsafe fn new() -> Self {
-        ActivePagingContext {
-            // this can be unchecked as we know that the ptr is non null
-            p4: NonNull::new_unchecked(P4),
-            _marker: PhantomData,
-        }
-    }
+unsafe impl Send for ActivePagingContextInner {}
 
+impl ActivePagingContextInner {
     fn p4(&self) -> &Table<Level4> {
         unsafe { self.p4.as_ref() }
     }
@@ -36,12 +27,37 @@ impl ActivePagingContext {
     fn p4_mut(&mut self) -> &mut Table<Level4> {
         unsafe { self.p4.as_mut() }
     }
+}
+
+pub struct ActivePagingContext(Mutex<ActivePagingContextInner>);
+
+pub static ACTIVE_PAGING_CTX: ActivePagingContext = ActivePagingContext(Mutex::new(ActivePagingContextInner {
+    // this can be unchecked as we know that the ptr is non null
+    p4: unsafe { NonNull::new_unchecked(P4) },
+    _marker: PhantomData,
+}));
+
+impl ActivePagingContext {
+    // /*
+    //  * Safety: This should be unsafe because the p4 addr will always be the same (at least for now),
+    //  * and that means that creating multiple `Paging` objects could result in undefined behaviour
+    //  * as all the `Paging` objects would be pointing to the same memory (and own it).
+    //  */
+    // pub unsafe fn new() -> Self {
+    //     ActivePagingContext {
+    //         // this can be unchecked as we know that the ptr is non null
+    //         p4: NonNull::new_unchecked(P4),
+    //         _marker: PhantomData,
+    //     }
+    // }
 
     /*
      * Maps a specific Page to a specific Frame.
      */
-    pub fn map_page_to_frame<A: FrameAllocator>(&mut self, page: Page, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
-        let p4 = self.p4_mut();
+    pub fn map_page_to_frame<A: FrameAllocator>(&self, page: Page, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+        let apc = &mut *self.0.lock();
+
+        let p4 = apc.p4_mut();
         let p3 = p4.create_next_table(page.p4_index(), frame_allocator)?;
         let p2 = p3.create_next_table(page.p3_index(), frame_allocator)?;
         let p1 = p2.create_next_table(page.p2_index(), frame_allocator)?;
@@ -58,7 +74,7 @@ impl ActivePagingContext {
     /*
      * Maps a specific Page to a (random) Frame.
      */
-    pub fn map_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
         let frame = frame_allocator.allocate_frame()?;
         return self.map_page_to_frame(page, frame, frame_allocator, flags);
@@ -67,7 +83,7 @@ impl ActivePagingContext {
     /*
      * Maps the Page containing the `virtual_addr` to a (random) Frame.
      */
-    pub fn map<A: FrameAllocator>(&mut self, virtual_addr: VirtualAddress, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map<A: FrameAllocator>(&self, virtual_addr: VirtualAddress, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         let page = Page::from_virt_addr(virtual_addr)?;
         return self.map_page(page, frame_allocator, flags);
     }
@@ -75,7 +91,7 @@ impl ActivePagingContext {
     /*
      * Maps a Frame to a Page with same addr (identity mapping).
      */
-    pub fn identity_map<A: FrameAllocator>(&mut self, frame: Frame, frame_allocator: &mut A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn identity_map<A: FrameAllocator>(&self, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
     }
 
@@ -85,9 +101,11 @@ impl ActivePagingContext {
      */
     // TODO: - free P1, P2 and P3 if they get empty
     //       - deallocate the frame
-    pub fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &mut A) {
+    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A) {
+        let apc = &mut *self.0.lock();
+
         // set the entry in p1 as unused and free the respective frame
-        self.p4_mut().next_table(page.p4_index())
+        apc.p4_mut().next_table(page.p4_index())
             .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
             .and_then(|p2: _| p2.next_table_mut(page.p2_index()))
             .and_then(|p1: _| {
@@ -111,7 +129,9 @@ impl ActivePagingContext {
      * This takes a Page and returns the respective Frame if the address is mapped.
      */
     fn translate_page(&self, page: Page) -> Option<Frame> {
-        self.p4().next_table(page.p4_index())
+        let apc = &*self.0.lock();
+
+        apc.p4().next_table(page.p4_index())
             .and_then(|p3| p3.next_table(page.p3_index()))
             .and_then(|p2| p2.next_table(page.p2_index()))
             .and_then(|p1| p1.entries[page.p1_index()].pointed_frame())
@@ -138,18 +158,20 @@ impl ActivePagingContext {
      * caller makes sure that the inactive paging context is in a valid state before being switched to.
      */
     // TODO: disallow a recursive update_inactive_context() call as it does not work
-    pub fn update_inactive_context<F, A>(&mut self, inactive_context: &InactivePagingContext, frame_allocator: &mut A, f: F) -> Result<(), MemoryError>
+    pub fn update_inactive_context<F, A>(&self, inactive_context: &InactivePagingContext, frame_allocator: &A, f: F) -> Result<(), MemoryError>
     where
-        F: FnOnce(&mut ActivePagingContext, &mut A) -> Result<(), MemoryError>,
+        F: FnOnce(&ActivePagingContext, &A) -> Result<(), MemoryError>,
         A: FrameAllocator
     {
+        // let apc = &mut *self.0.lock();
+
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
         let p4_page = Page::from_virt_addr(0xdeadbeef)?;
         self.map_page_to_frame(p4_page, p4_frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
-        self.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
+        apc.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
 
         // flush the all the tlb entries
         // needed because the recursive addrs may be mapped to the active paging context and
@@ -173,7 +195,7 @@ impl ActivePagingContext {
      * The, current, active paging context will become inactive
      * and the inactive one, will become active.
      */
-    pub fn switch(&mut self, inactive_context: &mut InactivePagingContext) {
+    pub fn switch(&self, inactive_context: &mut InactivePagingContext) {
         // the ActivePagingContext does not need to be modified as it only uses a recursive addr,
         // so it will work with whatever addr is in CR3
 

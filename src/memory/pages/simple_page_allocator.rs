@@ -1,4 +1,4 @@
-use crate::memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, FrameAllocator}, AddrOps, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, AddrOps, VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull};
 use spin::Mutex;
 
@@ -7,7 +7,7 @@ struct FreedBlock {
     next_freed_block: Option<NonNull<FreedBlock>>
 }
 
-pub struct SimplePageAllocatorInner<A: FrameAllocator + 'static> {
+struct SimplePageAllocatorInner<A: FrameAllocator + 'static> {
     heap_start: VirtualAddress,
     heap_size: usize,
 
@@ -25,7 +25,7 @@ pub struct SimplePageAllocator<A: FrameAllocator + 'static>(Mutex<SimplePageAllo
  * This just sets some defualt values that will get initialized in init().
  */
 #[global_allocator]
-pub static PAGE_ALLOCATOR: SimplePageAllocator<SimpleFrameAllocator> = SimplePageAllocator (Mutex::new(SimplePageAllocatorInner {
+pub static HEAP_ALLOCATOR: SimplePageAllocator<SimpleFrameAllocator> = SimplePageAllocator(Mutex::new(SimplePageAllocatorInner {
     heap_start  : 0x0,
     heap_size   : 0,
     next_block  : 0x0,
@@ -36,9 +36,9 @@ pub static PAGE_ALLOCATOR: SimplePageAllocator<SimpleFrameAllocator> = SimplePag
 impl<A: FrameAllocator + 'static> SimplePageAllocator<A> {
     /*
      * Safety: init() can only be called once or the allocator might get into an inconsistent state.
-     * However, it must be called.
+     * However, it must be called as the allocator expects it.
      */
-    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, frame_allocator: &mut A) {
+    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, frame_allocator: &'static A) {
         debug_assert!(heap_start % FRAME_PAGE_SIZE == 0);
         debug_assert!(heap_size % FRAME_PAGE_SIZE == 0);
 
@@ -47,7 +47,7 @@ impl<A: FrameAllocator + 'static> SimplePageAllocator<A> {
         allocator.heap_size  = heap_size;
         allocator.next_block = heap_start;
 
-        // allocator.frame_allocator = Some(frame_allocator);
+        allocator.frame_allocator = Some(frame_allocator);
     }
 }
 
@@ -62,9 +62,19 @@ unsafe impl<A: FrameAllocator + 'static> GlobalAlloc for SimplePageAllocator<A> 
 
         // make sure that alloc_start is always aligned for FreedBlock and Layout
         let alloc_start = allocator.next_block.align_up(max(align_of::<FreedBlock>(), layout.align()));
+        let alloc_end = alloc_start + layout.size() - 1;
 
         if alloc_start + layout.size() > allocator.heap_start + allocator.heap_size {
             panic!("Out of heap memory!");
+        }
+
+        // check if we need to allocate more frames to hold the new heap allocated data
+        if Frame::from_phy_addr(allocator.next_block) != Frame::from_phy_addr(alloc_end) {
+            for addr in (alloc_start.align_up(FRAME_PAGE_SIZE)..=alloc_end).step_by(FRAME_PAGE_SIZE) {
+                let frame = Frame::from_phy_addr(addr);
+                // let flags = EntryFlags::from_elf_section_flags(elf_section.flags());
+                // active_ctx.identity_map(frame, frame_allocator, flags)?;
+            }
         }
 
         alloc_start as *mut u8
