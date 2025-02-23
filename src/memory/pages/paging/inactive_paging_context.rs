@@ -11,7 +11,7 @@ impl InactivePagingContext {
     /*
      * This creates a new recursively mapped (inactive) paging context.
      */
-    pub fn new<A: FrameAllocator>(active_paging: &mut ActivePagingContext, frame_allocator: &A) -> Result<Self, MemoryError> {
+    pub fn new<A: FrameAllocator>(active_paging: &ActivePagingContext, frame_allocator: &A) -> Result<Self, MemoryError> {
         let p4_frame = frame_allocator.allocate_frame()?;
         let p4_page = Page::from_virt_addr(0xdeadbeef)?;
 

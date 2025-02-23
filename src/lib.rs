@@ -9,7 +9,7 @@ mod vga_buffer;
 mod memory;
 mod logger;
 
-use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
+use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
 use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
 use core::{cmp::max, panic::PanicInfo};
@@ -72,7 +72,7 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_end   = mb_start + mb_info.size() as usize - 1;
     let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-    // set up the frame allocator and the heap allocator
+    // set up the frame allocator and the heap allocator (the active paging context does not need setting up)
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid.").0;
     unsafe {
         FRAME_ALLOCATOR.init(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("Could not initialize the frame allocator.");
@@ -87,17 +87,16 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
-    let active_paging = unsafe { &mut ActivePagingContext::new() };
     { // this scope makes sure that the inactive context does not get used again
-        let inactive_paging = &mut InactivePagingContext::new(active_paging, &FRAME_ALLOCATOR).unwrap();
+        let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::kernel_remap(active_paging, inactive_paging, elf_sections, &FRAME_ALLOCATOR, &mb_info).unwrap();
-        active_paging.switch(inactive_paging);
+        memory::kernel_remap(&ACTIVE_PAGING_CTX, inactive_paging, elf_sections, &FRAME_ALLOCATOR, &mb_info).unwrap();
+        ACTIVE_PAGING_CTX.switch(inactive_paging);
 
         // TODO: is this really necessary?
         // the unwrap is fine as we know that the addr is valid
-        active_paging.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
+        ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
     }
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer

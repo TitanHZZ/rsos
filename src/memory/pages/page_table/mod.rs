@@ -1,6 +1,6 @@
 pub mod page_table_entry;
 
-use crate::memory::{frames::FrameAllocator, MemoryError, FRAME_PAGE_SIZE};
+use crate::memory::{frames::FrameAllocator, MemoryError};
 use page_table_entry::{Entry, EntryFlags};
 use core::marker::PhantomData;
 
@@ -27,7 +27,7 @@ pub const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 
  *  - https://os.phil-opp.com/page-tables/#mapping-page-tables
  *  - https://wiki.osdev.org/User:Neon/Recursive_Paging
  */
-pub const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
+pub(super) const P4: *mut Table<Level4> = 0o177777_777_777_777_777_0000 as *mut _;
 
 pub trait TableLevel {}
 pub enum Level4 {}

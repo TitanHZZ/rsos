@@ -2,8 +2,10 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}, Page};
-use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, print, println, MbBootInfo};
+use core::ops::Deref;
+
+use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext, ActivePagingContextInner}};
+use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, MbBootInfo};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -44,7 +46,7 @@ pub enum MemoryError {
  * Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
  * If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
  */
-pub fn kernel_remap<A>(ctx: &mut ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &A,
+pub fn kernel_remap<A>(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &A,
     mb_info: &MbBootInfo) -> Result<(), MemoryError>
 where
     A: FrameAllocator
@@ -94,21 +96,19 @@ where
 }
 
 
-// the unwraps() here are fine as we are just testing things
-pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
-    let mut page_table = unsafe { ActivePagingContext::new() };
-    let virt_addr = 42 * 512 * 512 * FRAME_PAGE_SIZE; // 42 th entry in p3
-    let page = Page::from_virt_addr(virt_addr).unwrap();
-    let frame = frame_allocator.allocate_frame().expect("out of memory");
-
-    println!("None = {:?}, map to {:?}", page_table.translate(virt_addr), frame);
-    page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty()).unwrap();
-    println!("Some = {:?}", page_table.translate(virt_addr));
-    println!("next free frame: {:?}", frame_allocator.allocate_frame());
-    println!("-------------------");
-    println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).unwrap().addr() as *const u64) });
-
-    page_table.unmap_page(Page::from_virt_addr(virt_addr).unwrap(), frame_allocator);
-    // println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).addr() as *const u64) });
-    println!("None = {:?}", page_table.translate(virt_addr));
-}
+// // the unwraps() here are fine as we are just testing things
+// pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
+//     let mut page_table = unsafe { ActivePagingContext::new() };
+//     let virt_addr = 42 * 512 * 512 * FRAME_PAGE_SIZE; // 42 th entry in p3
+//     let page = Page::from_virt_addr(virt_addr).unwrap();
+//     let frame = frame_allocator.allocate_frame().expect("out of memory");
+//     println!("None = {:?}, map to {:?}", page_table.translate(virt_addr), frame);
+//     page_table.map_page_to_frame(page, frame, frame_allocator, EntryFlags::empty()).unwrap();
+//     println!("Some = {:?}", page_table.translate(virt_addr));
+//     println!("next free frame: {:?}", frame_allocator.allocate_frame());
+//     println!("-------------------");
+//     println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).unwrap().addr() as *const u64) });
+//     page_table.unmap_page(Page::from_virt_addr(virt_addr).unwrap(), frame_allocator);
+//     // println!("virt addr contents: {:#x}", unsafe { *(Page::from_virt_addr(virt_addr).addr() as *const u64) });
+//     println!("None = {:?}", page_table.translate(virt_addr));
+// }
