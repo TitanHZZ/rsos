@@ -219,6 +219,8 @@ impl ActivePagingContext {
      * This does not affect hardware translations and thus, is totally safe to use as long as the
      * caller makes sure that the inactive paging context is in a valid state before being switched to.
      */
+    // Safety: If `&mut ActivePagingContextInner` is used incorrectly, it will lead to UB so, please be careful and
+    //   do not share or send the reference to anywhere else. This is why this function cannot be used outside of crate::memory.
     pub(in crate::memory) fn update_inactive_context<F, A>(&self, inactive_context: &InactivePagingContext, frame_allocator: &A, f: F)
         -> Result<(), MemoryError>
     where

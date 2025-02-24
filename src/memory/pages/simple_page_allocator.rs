@@ -1,5 +1,7 @@
-use crate::memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, AddrOps, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::memory::{frames::{simple_frame_allocator::FRAME_ALLOCATOR, Frame}, pages::page_table::page_table_entry::EntryFlags};
+use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull};
+use super::paging::ActivePagingContext;
 use spin::Mutex;
 
 struct FreedBlock {
@@ -7,38 +9,38 @@ struct FreedBlock {
     next_freed_block: Option<NonNull<FreedBlock>>
 }
 
-struct SimplePageAllocatorInner<A: FrameAllocator + 'static> {
+struct SimplePageAllocatorInner {
     heap_start: VirtualAddress,
     heap_size: usize,
 
     next_block: VirtualAddress,
     freed_blocks: Option<NonNull<FreedBlock>>,
 
-    frame_allocator: Option<&'static A>,
+    apc: Option<&'static ActivePagingContext>,
 }
 
-unsafe impl<A: FrameAllocator + 'static> Send for SimplePageAllocatorInner<A> {}
+unsafe impl Send for SimplePageAllocatorInner {}
 
-pub struct SimplePageAllocator<A: FrameAllocator + 'static>(Mutex<SimplePageAllocatorInner<A>>);
+pub struct SimplePageAllocator(Mutex<SimplePageAllocatorInner>);
 
 /*
  * This just sets some defualt values that will get initialized in init().
  */
 #[global_allocator]
-pub static HEAP_ALLOCATOR: SimplePageAllocator<SimpleFrameAllocator> = SimplePageAllocator(Mutex::new(SimplePageAllocatorInner {
+pub static HEAP_ALLOCATOR: SimplePageAllocator = SimplePageAllocator(Mutex::new(SimplePageAllocatorInner { 
     heap_start  : 0x0,
     heap_size   : 0,
     next_block  : 0x0,
     freed_blocks: None,
-    frame_allocator: None,
+    apc: None,
 }));
 
-impl<A: FrameAllocator + 'static> SimplePageAllocator<A> {
+impl SimplePageAllocator {
     /*
      * Safety: init() can only be called once or the allocator might get into an inconsistent state.
      * However, it must be called as the allocator expects it.
      */
-    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, frame_allocator: &'static A) {
+    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, apc: &'static ActivePagingContext) -> Result<(), MemoryError> {
         debug_assert!(heap_start % FRAME_PAGE_SIZE == 0);
         debug_assert!(heap_size % FRAME_PAGE_SIZE == 0);
 
@@ -47,11 +49,14 @@ impl<A: FrameAllocator + 'static> SimplePageAllocator<A> {
         allocator.heap_size  = heap_size;
         allocator.next_block = heap_start;
 
-        allocator.frame_allocator = Some(frame_allocator);
+        allocator.apc = Some(apc);
+
+        // we are going to lazily allocate the required frames (for now we allocate just the first one)
+        apc.map(heap_start, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
     }
 }
 
-unsafe impl<A: FrameAllocator + 'static> GlobalAlloc for SimplePageAllocator<A> {
+unsafe impl GlobalAlloc for SimplePageAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let allocator = &mut *self.0.lock();
 
@@ -69,11 +74,13 @@ unsafe impl<A: FrameAllocator + 'static> GlobalAlloc for SimplePageAllocator<A> 
         }
 
         // check if we need to allocate more frames to hold the new heap allocated data
-        if Frame::from_phy_addr(allocator.next_block) != Frame::from_phy_addr(alloc_end) {
-            for addr in (alloc_start.align_up(FRAME_PAGE_SIZE)..=alloc_end).step_by(FRAME_PAGE_SIZE) {
-                let frame = Frame::from_phy_addr(addr);
-                // let flags = EntryFlags::from_elf_section_flags(elf_section.flags());
-                // active_ctx.identity_map(frame, frame_allocator, flags)?;
+        if allocator.next_block.align_down(FRAME_PAGE_SIZE) != alloc_end.align_down(FRAME_PAGE_SIZE) {
+            let start_addr = allocator.next_block.align_up(FRAME_PAGE_SIZE);
+            let end_addr = alloc_end.align_up(FRAME_PAGE_SIZE) - 1;
+
+            for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
+                allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+                    .expect("Could not allocate more frame for the heap memory.");
             }
         }
 

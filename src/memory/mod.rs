@@ -2,9 +2,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use core::ops::Deref;
-
-use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext, ActivePagingContextInner}};
+use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, MbBootInfo};
 use frames::{Frame, FrameAllocator};
 

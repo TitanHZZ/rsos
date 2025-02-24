@@ -17,6 +17,7 @@ struct SimpleFrameAllocatorInner {
 
 pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
 
+// TODO: maybe this does not need to be static??
 pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
     areas: None,
     current_area: 0,
