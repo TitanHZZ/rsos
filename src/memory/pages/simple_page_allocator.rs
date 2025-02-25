@@ -1,4 +1,4 @@
-use crate::memory::{frames::{simple_frame_allocator::FRAME_ALLOCATOR, Frame}, pages::page_table::page_table_entry::EntryFlags};
+use crate::{memory::{frames::{simple_frame_allocator::FRAME_ALLOCATOR, Frame}, pages::page_table::page_table_entry::EntryFlags}, println, print};
 use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull};
 use super::paging::ActivePagingContext;
@@ -64,6 +64,23 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         if let Some(freed_blocks) = allocator.freed_blocks {
             unimplemented!()
         }
+
+        let real_align = max(align_of::<FreedBlock>(), layout.align());
+        let real_size = layout.size().align_up(real_align); // buffer overflows??
+
+        let alloc_start = allocator.next_block.align_up(real_align);
+
+
+
+        let alloc_end = alloc_start + layout.size() - 1;
+        let align = max(align_of::<FreedBlock>(), layout.align());
+        let real_alloc_size = layout.size().align_up(align);
+        println!("{} -- {} -- {}", layout.size(), layout.align(), real_alloc_size);
+
+
+
+
+
 
         // make sure that alloc_start is always aligned for FreedBlock and Layout
         let alloc_start = allocator.next_block.align_up(max(align_of::<FreedBlock>(), layout.align()));

@@ -73,6 +73,9 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_end   = mb_start + mb_info.size() as usize - 1;
     let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
+    // println!("kernel  : {:#x} -- {:#x}", k_start, k_end);
+    // println!("mb2 info: {:#x} -- {:#x}", mb_start, mb_end);
+
     // set up the frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
     unsafe {
@@ -113,14 +116,18 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    let a = Box::new(42);
-    println!("{}", a);
+    let a = Box::new(Aligned16(10));
+    println!("{:?}", a);
 
-    let b = String::from("Hello, World!");
-    println!("{}", b);
+    // let b = String::from("Hello, World!");
+    // println!("{}", b);
 
     loop {}
 }
+
+#[derive(Debug)]
+#[repr(align(16))]
+struct Aligned16(u64);
 
 /*
  * Current physical memory layout (NOT UP TO DATE):
