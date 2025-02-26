@@ -130,10 +130,10 @@ pub static WRITER: Mutex<LazyCell<Writer>> = Mutex::new(LazyCell::new(|| Writer 
 
 #[macro_export]
 macro_rules! println {
-    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => (print!($fg, $bg, concat!($fmt, "\n"), $($arg)*));
-    ( $fg:path, $bg:path, $fmt:expr ) => (print!($fg, $bg, concat!($fmt, "\n")));
-    ( $fmt:expr, $($arg:tt)* ) => (print!(concat!($fmt, "\n"), $($arg)*));
-    ( $fmt:expr ) => (print!(concat!($fmt, "\n")));
+    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{ use crate::print; print!($fg, $bg, concat!($fmt, "\n"), $($arg)*) }};
+    ( $fg:path, $bg:path, $fmt:expr ) => {{ use crate::print; print!($fg, $bg, concat!($fmt, "\n")) }};
+    ( $fmt:expr, $($arg:tt)* ) => {{ use crate::print; print!(concat!($fmt, "\n"), $($arg)*) }};
+    ( $fmt:expr ) => {{ use crate::print; print!(concat!($fmt, "\n")) }};
 }
 
 #[macro_export]

@@ -116,11 +116,12 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    let a = Box::new(Aligned16(10));
-    println!("{:?}", a);
-
-    // let b = String::from("Hello, World!");
-    // println!("{}", b);
+    {
+        let a = Box::new(Aligned16(10));
+        let b = String::from("Hello, World!");
+        println!("{:?}", a);
+        println!("{}", b);
+    }
 
     loop {}
 }
