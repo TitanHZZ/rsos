@@ -66,20 +66,83 @@ impl SimplePageAllocatorInner {
         block.size = size;
 
         match self.freed_blocks {
+            // TODO: fix this. `freed_block` might already point to a block ahead of the current one!
             Some(mut addr_first_block) => addr_first_block.as_mut().add_to_list(block),
             // we assume that `addr` is valid
             None => self.freed_blocks = Some(NonNull::new_unchecked(block as _)),
         }
     }
 
-    fn get_from_list(&self, align: usize, size: usize) -> Option<*mut u8> {
-        debug_assert!(align >= align_of::<FreedBlock>());
-        debug_assert!(size >= size_of::<FreedBlock>());
+    // Safety: The caller must ensure that `addr` is valid and points to usable memory. `self.freed_blocks` must be Some(_)
+    unsafe fn remove_from_list(&mut self, addr: VirtualAddress) {
+        debug_assert!(self.freed_blocks != None);
 
-        match self.freed_blocks {
-            Some(_) => todo!(),
-            None => None
+        // check if the first block matches the addr
+        let mut addr_first_block = self.freed_blocks.unwrap();
+        let first_block = addr_first_block.as_mut();
+
+        if addr_first_block.as_ptr() == addr as _ {
+            self.freed_blocks = first_block.next_freed_block.take();
+            return;
         }
+
+        // loop through the remaning blocks
+        let mut current_block = first_block;
+        let mut option_next_block = current_block.next_freed_block;
+        while let Some(mut addr_next_block) = option_next_block {
+            let next_block = addr_next_block.as_mut();
+
+            // check if the block matches and remove it if so
+            if addr_next_block.as_ptr() == addr as _ {
+                current_block.next_freed_block = next_block.next_freed_block.take();
+                break;
+            }
+
+            current_block = next_block;
+            option_next_block = current_block.next_freed_block;
+        }
+    }
+
+    unsafe fn get_from_list(&mut self, real_align: usize, real_size: usize) -> Option<*mut u8> {
+        debug_assert!(real_align >= align_of::<FreedBlock>());
+        debug_assert!(real_size >= size_of::<FreedBlock>());
+
+        // loop all the blocks to find the first that matches the requirements
+        let mut option_current_block = self.freed_blocks;
+        while let Some(mut addr_current_block) = option_current_block {
+            let current_block = addr_current_block.as_mut();
+
+            // the block must have matching alignment
+            if addr_current_block.as_ptr() as VirtualAddress % real_align != 0 {
+                option_current_block = current_block.next_freed_block;
+                continue;
+            }
+
+            // ideal case
+            if current_block.size == real_size {
+                self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress);
+                return Some(addr_current_block.as_ptr() as *mut u8);
+            }
+
+            // if the sizes do not match, it must have enough space to fit a new FreedBlock
+            if current_block.size >= real_size + size_of::<FreedBlock>() {
+                self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress);
+
+                let free_block_addr = addr_current_block.byte_offset(real_size as _).as_ptr() as VirtualAddress;
+                let free_block_size = current_block.size - real_size;
+                self.add_to_list(free_block_addr, free_block_size);
+
+                debug_assert!(free_block_addr % size_of::<FreedBlock>() == 0);
+                debug_assert!(free_block_size >= size_of::<FreedBlock>());
+
+                return Some(addr_current_block.as_ptr() as *mut u8);
+            }
+
+            option_current_block = current_block.next_freed_block;
+        }
+
+        // no matching blocks
+        None
     }
 }
 
@@ -109,15 +172,15 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let allocator = &mut *self.0.lock();
 
-        // try to find a free block first
-        if let Some(freed_blocks) = allocator.freed_blocks {
-            unimplemented!()
-        }
-
         debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
 
         let real_align = max(align_of::<FreedBlock>(), layout.align());
         let real_size = layout.size().align_up(real_align); // buffer overflows??
+
+        // try to find a free block first
+        if let Some(addr) = allocator.get_from_list(real_align, real_size) {
+            return addr;
+        }
 
         let mut freed_block_needed = false;
         let freed_block_addr = allocator.next_block;
