@@ -56,21 +56,51 @@ impl SimplePageAllocator {
     }
 }
 
+// TODO: write tests for all of this
+// TODO: do all these functions really need to be unsafe??
 impl SimplePageAllocatorInner {
     // Safety: The caller must ensure that `addr` is valid and points to usable memory.
     unsafe fn add_to_list(&mut self, addr: VirtualAddress, size: usize) {
         debug_assert!(size >= size_of::<FreedBlock>());
 
+        // set up defaults for the new block
         let block = &mut *(addr as *mut FreedBlock);
         block.next_freed_block = None;
         block.size = size;
 
-        match self.freed_blocks {
-            // TODO: fix this. `freed_block` might already point to a block ahead of the current one!
-            Some(mut addr_first_block) => addr_first_block.as_mut().add_to_list(block),
-            // we assume that `addr` is valid
-            None => self.freed_blocks = Some(NonNull::new_unchecked(block as _)),
+        // add at the beginning (list is empty)
+        if self.freed_blocks == None {
+            self.freed_blocks = Some(NonNull::new_unchecked(addr as _));
+            return;
         }
+
+        // add at the beginning (list is not empty)
+        let mut addr_first_block = self.freed_blocks.unwrap();
+        if addr_first_block.as_ptr() > addr as _ {
+            self.freed_blocks = Some(NonNull::new_unchecked(addr as _));
+            block.next_freed_block = Some(NonNull::new_unchecked(addr_first_block.as_ptr()));
+            return;
+        }
+
+        // loop through the remaning blocks
+        let mut current_block = addr_first_block.as_mut();
+        let mut option_next_block = current_block.next_freed_block;
+        while let Some(mut addr_next_block) = option_next_block {
+            let next_block = addr_next_block.as_mut();
+
+            // add in the middle of the list
+            if addr_next_block.as_ptr() > addr as _ {
+                current_block.next_freed_block = Some(NonNull::new_unchecked(addr as _));
+                block.next_freed_block = Some(NonNull::new_unchecked(addr_next_block.as_ptr()));
+                return;
+            }
+
+            current_block = next_block;
+            option_next_block = current_block.next_freed_block;
+        }
+
+        // add at the end
+        current_block.next_freed_block = Some(NonNull::new_unchecked(addr as _));
     }
 
     // Safety: The caller must ensure that `addr` is valid and points to usable memory. `self.freed_blocks` must be Some(_)
@@ -103,6 +133,7 @@ impl SimplePageAllocatorInner {
         }
     }
 
+    // Safety: The caller must ensure that `real_align` and `real_size` are valid.
     unsafe fn get_from_list(&mut self, real_align: usize, real_size: usize) -> Option<*mut u8> {
         debug_assert!(real_align >= align_of::<FreedBlock>());
         debug_assert!(real_size >= size_of::<FreedBlock>());
@@ -144,26 +175,35 @@ impl SimplePageAllocatorInner {
         // no matching blocks
         None
     }
-}
 
-impl FreedBlock {
-    // Safety: The caller must ensure that `block` is valid and points to usable memory.
-    unsafe fn add_to_list(&mut self, block: &mut FreedBlock) {
-        // recursively add to the linked list
-        match self.next_freed_block {
-            Some(mut addr_next_block) => {
-                let next_block = addr_next_block.as_mut();
+    unsafe fn unify_list(&mut self) {
+        if self.freed_blocks == None {
+            return;
+        }
 
-                if addr_next_block.as_ptr() > block as _ {
-                    self.next_freed_block = Some(NonNull::new_unchecked(block as _));
-                    block.next_freed_block = Some(NonNull::new_unchecked(addr_next_block.as_ptr()));
-                    return;
-                }
+        let first_block = self.freed_blocks.unwrap().as_mut();
 
-                next_block.add_to_list(block);
-            },
-            // we assume that `addr` is valid
-            None => self.next_freed_block = Some(NonNull::new_unchecked(block as _)),
+        // loop through the blocks
+        let mut current_block = first_block;
+        let mut option_next_block = current_block.next_freed_block;
+        while let Some(mut addr_next_block) = option_next_block {
+            let mut next_block = addr_next_block.as_mut();
+
+            let addr_current_block = current_block as *const FreedBlock as VirtualAddress;
+            if addr_current_block + current_block.size == addr_next_block.as_ptr() as VirtualAddress {
+                let new_size = current_block.size + next_block.size;
+                let new_next = next_block.next_freed_block;
+
+                self.remove_from_list(addr_next_block.as_ptr() as _);
+                current_block.size = new_size;
+                current_block.next_freed_block = new_next;
+
+                // this will make it loop again over the block that just got expanded
+                next_block = current_block;
+            }
+
+            current_block = next_block;
+            option_next_block = current_block.next_freed_block;
         }
     }
 }
@@ -231,5 +271,6 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         let real_size = layout.size().align_up(real_align); // buffer overflows??
 
         allocator.add_to_list(ptr as VirtualAddress, real_size);
+        allocator.unify_list();
     }
 }
