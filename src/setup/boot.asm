@@ -259,7 +259,7 @@ section .text
 bits 64
 
 ; rust entry point
-extern main
+extern _main
 
 _start_long_mode:
     ; load 0 into all data segment registers (to avoid future problems)
@@ -271,4 +271,4 @@ _start_long_mode:
     mov gs, ax
 
     ; call rust
-    call main
+    call _main

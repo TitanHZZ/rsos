@@ -2,6 +2,11 @@
 #![no_main]
 #![feature(lazy_get)]
 
+// testing
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+
 extern crate alloc;
 
 mod multiboot2;
@@ -21,6 +26,14 @@ fn panic(info: &PanicInfo) -> ! {
     log!(failed, "Kernel Panic occurred!");
     println!("{}", info);
     loop {}
+}
+
+#[cfg(test)]
+pub fn test_runner(tests: &[&dyn Fn()]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
 }
 
 // fn print_mem_status(mb_info: &MbBootInfo) {
@@ -50,7 +63,7 @@ fn panic(info: &PanicInfo) -> ! {
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
 #[no_mangle]
-pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+pub extern "C" fn _main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
@@ -123,12 +136,22 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         println!("{}", b);
     }
 
+    #[cfg(test)]
+    test_main();
+
     loop {}
 }
 
 #[derive(Debug)]
 #[repr(align(16))]
 struct Aligned16(u64);
+
+#[test_case]
+fn trivial_assertion() {
+    print!("trivial assertion... ");
+    assert_eq!(1, 1);
+    println!("[ok]");
+}
 
 /*
  * Current physical memory layout (NOT UP TO DATE):
