@@ -1,10 +1,12 @@
 [package]
 name = "rsos"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["staticlib"]
+harness = false
+test = false
 
 [dependencies]
 bitflags = "2.6.0"
