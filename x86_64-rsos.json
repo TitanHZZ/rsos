@@ -11,5 +11,14 @@
     "disable-redzone": true,
     "panic-strategy": "abort",
     "features": "-mmx,-sse,+soft-float",
-    "rustc-abi": "x86-softfloat"
+    "rustc-abi": "x86-softfloat",
+    "pre-link-args": {
+        "gcc": [
+            "-Wl,--script=setup/linker.ld",
+            "-ffreestanding",
+            "-O2",
+            "-nostdlib",
+            "-nostartfiles"
+        ]
+    }
 }

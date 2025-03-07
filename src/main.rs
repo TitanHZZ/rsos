@@ -2,6 +2,10 @@
 #![no_main]
 #![feature(lazy_get)]
 
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
+
 extern crate alloc;
 
 mod multiboot2;
@@ -13,14 +17,24 @@ use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{in
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
 use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
 use alloc::{boxed::Box, string::String};
-use core::{cmp::max, panic::PanicInfo};
+use core::{arch::global_asm, cmp::max, panic::PanicInfo};
 use vga_buffer::Color;
+
+global_asm!(include_str!("boot.asm"), options(att_syntax));
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     log!(failed, "Kernel Panic occurred!");
     println!("{}", info);
     loop {}
+}
+
+#[cfg(test)]
+pub fn test_runner(tests: &[&dyn Fn()]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
 }
 
 // fn print_mem_status(mb_info: &MbBootInfo) {
@@ -50,7 +64,7 @@ fn panic(info: &PanicInfo) -> ! {
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
 #[unsafe(no_mangle)]
-pub extern "C" fn _main(mb_boot_info_addr: *const u8) -> ! {
+pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
@@ -123,12 +137,20 @@ pub extern "C" fn _main(mb_boot_info_addr: *const u8) -> ! {
         println!("{}", b);
     }
 
+    #[cfg(test)]
+    test_main();
+
     loop {}
 }
 
 #[derive(Debug)]
 #[repr(align(16))]
 struct Aligned16(u64);
+
+#[test_case]
+fn test_println_simple() {
+    println!("test_println_simple output");
+}
 
 /*
  * Current physical memory layout (NOT UP TO DATE):

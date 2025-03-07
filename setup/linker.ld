@@ -1,12 +1,5 @@
 ENTRY(_start)
 
-PHDRS
-{
-	r PT_LOAD FLAGS(R);
-	rw PT_LOAD FLAGS(RW);
-	rx PT_LOAD FLAGS(RX);
-}
-
 SECTIONS
 {
 	/* It used to be universally recommended to use 1M as a start offset,
@@ -27,57 +20,51 @@ SECTIONS
 	/* First put the multiboot 2 header, as it is required to be put very early
 	   in the image or the bootloader won't recognize the file format,
 	   and the, group all text (code) sections */
-	.text BLOCK(4K) : ALIGN(4K)
+	.text : ALIGN(4K)
 	{
 		*(.multiboot_header)
 		*(.text .text.*) /* group together all the text sections made by the rust compiler */
-	} : rx
+	}
 
 	/* Read-only data */
-	.rodata BLOCK(4K) : ALIGN(4K)
+	.rodata : ALIGN(4K)
 	{
 		*(.rodata .rodata.*) /* group together all the rodata sections made by the rust compiler */
-	} : r
+	}
 
     /* group more rust compiler sections */
-	.data.rel.ro BLOCK(4K) : ALIGN(4K)
-	{
-        *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*)
-    } : r
+	.data.rel.ro : ALIGN(4K)
+    {
+        *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*) *(.got)
+    }
 
 	/* Read-write data (initialized) */
-	.data BLOCK(4K) : ALIGN(4K)
+	.data : ALIGN(4K)
 	{
 		*(.data .data.*)
-	} : rw
+	}
 
 	/* Read-write data (uninitialized) and stack */
-	.bss BLOCK(4K) : ALIGN(4K)
+	.bss : ALIGN(4K)
 	{
 		*(COMMON)
 		*(.bss .bss.*)
-	} : rw
-
-	/* Global Offset Table */
-	.got BLOCK(4K) : ALIGN(4K)
-	{
-		*(.got)
 	}
 
 	/* Procedure Linkage Table */
-	.got.plt BLOCK(4K) : ALIGN(4K)
+	.got.plt : ALIGN(4K)
 	{
 		*(.got.plt)
 	}
 
 	/* Exception Frames */
-	.eh_frame BLOCK(4K) : ALIGN(4K)
+	.eh_frame : ALIGN(4K)
 	{
 		*(.eh_frame .eh_frame.*)
 	}
 
 	/* Debug GDB Scripts */
-	.debug_gdb_scripts BLOCK(4K) : ALIGN(4K)
+	.debug_gdb_scripts : ALIGN(4K)
 	{
 		*(.debug_gdb_scripts)
 	}
