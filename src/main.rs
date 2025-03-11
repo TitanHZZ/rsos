@@ -16,13 +16,14 @@ mod logger;
 use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
 use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
-use alloc::{boxed::Box, string::String};
 use core::{arch::global_asm, cmp::max, panic::PanicInfo};
+use alloc::{boxed::Box, string::String};
 use vga_buffer::Color;
 
 global_asm!(include_str!("boot.asm"), options(att_syntax));
 
 #[panic_handler]
+#[cfg(not(test))]
 fn panic(info: &PanicInfo) -> ! {
     log!(failed, "Kernel Panic occurred!");
     println!("{}", info);
@@ -30,10 +31,51 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 #[cfg(test)]
-pub fn test_runner(tests: &[&dyn Fn()]) {
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    println!("[failed]");
+
+    unsafe {
+        exit_qemu(0x11);
+    }
+}
+
+#[cfg(test)]
+#[allow(unreachable_code)]
+/// Safety: The `isa-debug-exit` I/O device must exist in qemu and be 32 bits in size
+unsafe fn exit_qemu(ret: u32) -> ! {
+    use core::arch::asm;
+
+    unsafe {
+        asm!("out dx, eax", in("dx") 0xf4, in("eax") ret, options(noreturn, nomem, nostack, preserves_flags));
+    }
+
+    // just in case it fails to exit
+    // this could be a panic!() but, that would create recursive exit_qemu() calls
+    loop {}
+}
+
+pub trait Testable {
+    fn run(&self) -> ();
+}
+
+impl<T: Fn()> Testable for T {
+    fn run(&self) {
+        print!("{}... ", core::any::type_name::<T>());
+        self();
+        println!("[ok]");
+    }
+}
+
+#[cfg(test)]
+pub fn test_runner(tests: &[&dyn Testable]) {
     println!("Running {} tests", tests.len());
     for test in tests {
-        test();
+        test.run();
+    }
+
+    unsafe {
+        exit_qemu(0x10);
     }
 }
 
@@ -87,9 +129,6 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_end   = mb_start + mb_info.size() as usize - 1;
     let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-    // println!("kernel  : {:#x} -- {:#x}", k_start, k_end);
-    // println!("mb2 info: {:#x} -- {:#x}", mb_start, mb_end);
-
     // set up the frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
     unsafe {
@@ -132,9 +171,9 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     {
         let a = Box::new(Aligned16(10));
-        let b = String::from("Hello, World!");
+        // let b = String::from("Hello, World!");
         println!("{:?}", a);
-        println!("{}", b);
+        // println!("{}", b);
     }
 
     #[cfg(test)]
@@ -148,8 +187,8 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 struct Aligned16(u64);
 
 #[test_case]
-fn test_println_simple() {
-    println!("test_println_simple output");
+fn trivial_assertion() {
+    assert_eq!(1, 1);
 }
 
 /*
