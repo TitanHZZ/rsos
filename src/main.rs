@@ -10,9 +10,13 @@ extern crate alloc;
 
 mod multiboot2;
 mod vga_buffer;
-mod io_port;
 mod memory;
 mod logger;
+
+#[cfg(test)]
+mod io_port;
+
+#[cfg(test)]
 mod serial;
 
 use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
@@ -20,7 +24,6 @@ use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, mem
 use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
 use core::{arch::global_asm, cmp::max, panic::PanicInfo};
 use alloc::{boxed::Box, string::String};
-use serial::SERIAL_PORT;
 use vga_buffer::Color;
 
 // add all the necessary asm set up and boot code (some of this code could probably be ported to Rust)
@@ -37,12 +40,11 @@ fn panic(info: &PanicInfo) -> ! {
 #[cfg(test)]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    println!("[failed]");
+    serial_println!("[failed]");
     exit_qemu(0x11);
 }
 
 #[cfg(test)]
-#[allow(unreachable_code)]
 /// Safety: The `isa-debug-exit` I/O device must exist in qemu and be 32 bits in size
 fn exit_qemu(ret: u32) -> ! {
     use io_port::IO_PORT;
@@ -54,21 +56,23 @@ fn exit_qemu(ret: u32) -> ! {
     loop {}
 }
 
+#[cfg(test)]
 pub trait Testable {
     fn run(&self) -> ();
 }
 
+#[cfg(test)]
 impl<T: Fn()> Testable for T {
     fn run(&self) {
-        print!("{}... ", core::any::type_name::<T>());
+        serial_print!("{}... ", core::any::type_name::<T>());
         self();
-        println!("[ok]");
+        serial_println!("[ok]");
     }
 }
 
 #[cfg(test)]
 pub fn test_runner(tests: &[&dyn Testable]) {
-    println!("Running {} tests", tests.len());
+    serial_println!("Running {} tests", tests.len());
     for test in tests {
         test.run();
     }
@@ -172,9 +176,6 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         println!("{:?}", a);
         // println!("{}", b);
     }
-
-    SERIAL_PORT.lock().send(0x61);
-    SERIAL_PORT.lock().send(0x0A);
 
     #[cfg(test)]
     test_main();

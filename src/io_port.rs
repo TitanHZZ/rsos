@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use core::arch::asm;
 
 pub struct IO_PORT;

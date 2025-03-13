@@ -8,10 +8,21 @@ cp setup/grub.cfg target/isofiles/boot/grub
 
 grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 
-qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso \
-    -device isa-debug-exit,iobase=0xf4,iosize=0x04 `# this is an I/O device that allows for a simple way to shutdown qemu (useful for tests)` \
-    -serial stdio `# this add a serial device (UART) and redirects the output to stdio (so that we can write to the host's terminal)`
+cmd="qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso"
 
+# check for 'test' mode
+if [[ "$1" == *"/deps/"* ]]; then
+    # this is an I/O device that allows for a simple way to shutdown qemu (useful for tests)
+    cmd+=" -device isa-debug-exit,iobase=0xf4,iosize=0x04"
+
+    # this add a serial device (UART) and redirects the output to stdio (so that we can write to the host's terminal)
+    cmd+=" -serial stdio"
+
+    # hide qemu
+    # cmd+=" -display none"
+fi
+
+eval $cmd
 ret=$?
 
 # 33 is the success exit code for the tests --> (0x10 << 1) | 1 = 33

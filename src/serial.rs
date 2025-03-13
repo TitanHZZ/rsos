@@ -1,8 +1,11 @@
+#![cfg(test)]
+
 // https://wiki.osdev.org/I/O_Ports
 // https://wiki.osdev.org/Serial_Ports
-use core::cell::LazyCell;
 use crate::io_port::IO_PORT;
+use core::cell::LazyCell;
 use spin::Mutex;
+use alloc::fmt;
 
 pub struct SerialPort(u16);
 
@@ -26,17 +29,56 @@ impl SerialPort {
         Self(port)
     }
 
-    pub fn send(&self, value: u8) {
+    fn send(&self, value: u8) {
         // wait for the serial port to be ready for the transmission
         while IO_PORT::read_u8(self.0 + 5) & 0x20 == 0 {}
 
         IO_PORT::write_u8(self.0, value);
     }
 
-    pub fn receive(&self) -> u8 {
+    fn receive(&self) -> u8 {
         // wait for the serial port to be ready to receive
         while IO_PORT::read_u8(self.0 + 5) & 1 == 0 {}
 
         IO_PORT::read_u8(self.0)
     }
+}
+
+impl fmt::Write for SerialPort {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        // send all the bytes 'as is'
+        for byte in s.bytes() {
+            self.send(byte);
+        }
+
+        Ok(())
+    }
+}
+
+#[macro_export]
+macro_rules! serial_println {
+    ( $fmt:expr, $($arg:tt)* ) => {{
+        serial_print!(concat!($fmt, "\n"), $($arg)*);
+    }};
+
+    ( $fmt:expr ) => {{
+        serial_print!(concat!($fmt, "\n"));
+    }};
+}
+
+#[macro_export]
+macro_rules! serial_print {
+    ( $fmt:expr, $($arg:tt)* ) => {{
+        use core::{cell::LazyCell, fmt::Write};
+        use crate::serial::SERIAL_PORT;
+
+        LazyCell::force_mut(&mut SERIAL_PORT.lock()).write_fmt(format_args!($fmt, $($arg)*)).unwrap();
+    }};
+
+    ( $fmt:expr ) => {{
+        use core::{cell::LazyCell, fmt::Write};
+        use crate::serial::SERIAL_PORT;
+
+        LazyCell::force_mut(&mut SERIAL_PORT.lock()).write_fmt(format_args!($fmt)).unwrap();
+    }};
 }

@@ -2,6 +2,7 @@ use crate::{print, println, vga_buffer::Color};
 use core::fmt;
 
 pub struct LOGGER;
+
 impl LOGGER {
     pub fn failed(fmt: fmt::Arguments) {
         // [FAILED]
