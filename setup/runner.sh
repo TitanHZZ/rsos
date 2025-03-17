@@ -4,7 +4,12 @@ mkdir -p target/isofiles/boot/grub
 
 cp "$1" target/isofiles/boot/kernel.bin
 
-cp setup/grub.cfg target/isofiles/boot/grub
+# check for 'test' mode
+if [[ "$1" == *"/deps/"* ]]; then
+    cp setup/grub_test.cfg target/isofiles/boot/grub/grub.cfg
+else
+    cp setup/grub.cfg target/isofiles/boot/grub
+fi
 
 grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 
@@ -19,7 +24,7 @@ if [[ "$1" == *"/deps/"* ]]; then
     cmd+=" -serial stdio"
 
     # hide qemu
-    # cmd+=" -display none"
+    cmd+=" -display none"
 fi
 
 eval $cmd
