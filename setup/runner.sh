@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# TODO: add timeouts to the tests so that they do not indefinitely hang
+
 mkdir -p target/isofiles/boot/grub
 
 cp "$1" target/isofiles/boot/kernel.bin

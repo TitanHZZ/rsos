@@ -39,8 +39,9 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[cfg(test)]
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
     serial_println!("[failed]");
+    serial_println!("{}", info);
     exit_qemu(0x11);
 }
 
