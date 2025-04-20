@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, MbBootInfo};
+use crate::{println, multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbolsIter}}};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -63,6 +63,7 @@ where
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
             if start_addr % FRAME_PAGE_SIZE != 0 {
+                println!("{:#?}", elf_section.name());
                 return Err(MemoryError::MisalignedKernelSection);
             }
 

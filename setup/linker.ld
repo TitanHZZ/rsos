@@ -69,6 +69,9 @@ SECTIONS
 		*(.debug_gdb_scripts)
 	}
 
-	/* The compiler may produce other sections, by default it will put them in
-	   a segment with the same name.*/
+	/* The compiler may produce other sections, it will put them here.*/
+	.other : ALIGN(4K)
+	{
+		*(*)
+	}
 }

@@ -140,7 +140,7 @@ macro_rules! println {
 macro_rules! print {
     // colored print with args
     ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{
-        use crate::vga_buffer::{WRITER, Writer};
+        use crate::vga_buffer::{Writer, WRITER};
         use core::{cell::LazyCell, fmt::Write};
 
         // lock drops when the scope ends
@@ -161,13 +161,13 @@ macro_rules! print {
 
     // conventional print with args
     ( $fmt:expr, $($arg:tt)* ) => {{
-        use crate::Color;
+        use crate::vga_buffer::Color;
         print!(Color::White, Color::Black, $fmt, $($arg)*);
     }};
 
     // conventional print without args
     ( $fmt:expr ) => {{
-        use crate::Color;
+        use crate::vga_buffer::Color;
         print!(Color::White, Color::Black, concat!($fmt, "{}"), "");
     }};
 }

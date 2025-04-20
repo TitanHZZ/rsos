@@ -3,25 +3,25 @@ use core::ptr::{addr_of, slice_from_raw_parts};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
-pub(crate) struct MemoryMap {
+pub struct MemoryMap {
     header: MbTagHeader,
-    pub(crate) entry_size: u32,
-    pub(crate) entry_version: u32,
+    pub entry_size: u32,
+    pub entry_version: u32,
 
     entries: [MemoryMapEntry],
 }
 
 #[repr(C)]
-pub(crate) struct MemoryMapEntry {
-    pub(crate) base_addr: u64,
-    pub(crate) length: u64,
+pub struct MemoryMapEntry {
+    pub base_addr: u64,
+    pub length: u64,
     entry_type: u32,
-    pub(crate) reserved: u32,
+    pub reserved: u32,
 }
 
 #[repr(u32)]
 #[derive(Debug, PartialEq)]
-pub(crate) enum MemoryMapEntryType {
+pub enum MemoryMapEntryType {
     AvailableRAM,
     ACPIInformation,
     ReservedForHibernation,
@@ -30,7 +30,7 @@ pub(crate) enum MemoryMapEntryType {
 }
 
 impl MemoryMapEntry {
-    pub(crate) fn entry_type(&self) -> MemoryMapEntryType {
+    pub fn entry_type(&self) -> MemoryMapEntryType {
         match self.entry_type {
             1 => MemoryMapEntryType::AvailableRAM,
             3 => MemoryMapEntryType::ACPIInformation,
@@ -42,12 +42,12 @@ impl MemoryMapEntry {
 }
 
 #[derive(Debug)]
-pub(crate) enum MemoryMapError {
+pub enum MemoryMapError {
     EntriesInvalidSize,
 }
 
 impl MemoryMap {
-    pub(crate) fn entries(&self) -> Result<MemoryMapEntries, MemoryMapError> {
+    pub fn entries(&self) -> Result<MemoryMapEntries, MemoryMapError> {
         // make sure that the data in the tag is consistent
         if self.entry_size as usize != size_of::<MemoryMapEntry>() {
             return Err(MemoryMapError::EntriesInvalidSize);
@@ -73,7 +73,7 @@ impl MbTag for MemoryMap {
 // wrapper to be able to implement IntoIterator and still have access to the slice
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub(crate) struct MemoryMapEntries(pub(crate) &'static [MemoryMapEntry]);
+pub struct MemoryMapEntries(pub &'static [MemoryMapEntry]);
 
 impl IntoIterator for MemoryMapEntries {
     type Item = &'static MemoryMapEntry;
@@ -88,7 +88,7 @@ impl IntoIterator for MemoryMapEntries {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct MemoryMapEntryIter{
+pub struct MemoryMapEntryIter{
     entries: &'static [MemoryMapEntry],
     curr_mem_entry_idx: usize,
 }

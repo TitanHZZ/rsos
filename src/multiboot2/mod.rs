@@ -30,14 +30,14 @@ struct MbBootInformationHeader {
 }
 
 #[repr(C)]
-pub(crate) struct MbTagHeader {
+pub struct MbTagHeader {
     tag_type: TagType,
     size: u32,
 }
 
 #[repr(u32)]
 #[derive(PartialEq)]
-pub(crate) enum TagType {
+pub enum TagType {
     End                          = 0,
     CmdLine                      = 1,
     BootLoaderName               = 2,
@@ -70,7 +70,7 @@ impl MbTagHeader {
 }
 
 #[repr(C)]
-pub(crate) struct MbBootInfo {
+pub struct MbBootInfo {
     header: MbBootInformationHeader,
 
     /*
@@ -80,7 +80,7 @@ pub(crate) struct MbBootInfo {
 }
 
 #[derive(Debug)]
-pub(crate) enum MbBootInfoError {
+pub enum MbBootInfoError {
     Not64BitAligned,
     NullPtr,
 }

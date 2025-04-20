@@ -26,7 +26,7 @@ if [[ "$1" == *"/deps/"* ]]; then
     cmd+=" -serial stdio"
 
     # hide qemu
-    cmd+=" -display none"
+    # cmd+=" -display none"
 fi
 
 eval $cmd

@@ -124,8 +124,8 @@ impl ActivePagingContextInner {
         let page = Page::from_virt_addr(virtual_addr)?;
 
         match self.translate_page(page) {
-            Some(frame) => return Ok(Some(frame.addr() + offset)),
-            None => return Ok(None),
+            Some(frame) => Ok(Some(frame.addr() + offset)),
+            None => Ok(None),
         }
     }
 

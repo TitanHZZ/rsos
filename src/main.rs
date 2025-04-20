@@ -1,85 +1,20 @@
 #![no_std]
 #![no_main]
 #![feature(lazy_get)]
-
 #![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
+#![test_runner(rsos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
-mod multiboot2;
-mod vga_buffer;
-mod memory;
-mod logger;
+use rsos::{vga_buffer, logger};
 
-#[cfg(test)]
-mod io_port;
-
-#[cfg(test)]
-mod serial;
-
-use memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
-use multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
-use memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
-use core::{arch::global_asm, cmp::max, panic::PanicInfo};
-use alloc::{boxed::Box, string::String};
-use vga_buffer::Color;
-
-// add all the necessary asm set up and boot code (some of this code could probably be ported to Rust)
-global_asm!(include_str!("boot.asm"), options(att_syntax));
-
-#[panic_handler]
-#[cfg(not(test))]
-fn panic(info: &PanicInfo) -> ! {
-    log!(failed, "Kernel Panic occurred!");
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    serial_println!("[failed]");
-    serial_println!("{}", info);
-    exit_qemu(0x11);
-}
-
-#[cfg(test)]
-/// Safety: The `isa-debug-exit` I/O device must exist in qemu and be 32 bits in size
-fn exit_qemu(ret: u32) -> ! {
-    use io_port::IO_PORT;
-
-    IO_PORT::write_u32(0xF4, ret);
-
-    // just in case it fails to exit
-    // this could be a panic!() but, that would create recursive exit_qemu() calls
-    loop {}
-}
-
-#[cfg(test)]
-pub trait Testable {
-    fn run(&self) -> ();
-}
-
-#[cfg(test)]
-impl<T: Fn()> Testable for T {
-    fn run(&self) {
-        serial_print!("{}... ", core::any::type_name::<T>());
-        self();
-        serial_println!("[ok]");
-    }
-}
-
-#[cfg(test)]
-pub fn test_runner(tests: &[&dyn Testable]) {
-    serial_println!("Running {} tests", tests.len());
-    for test in tests {
-        test.run();
-    }
-
-    exit_qemu(0x10);
-}
+use rsos::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
+use rsos::multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
+use rsos::memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
+use rsos::{log, memory, print, println};
+use alloc::boxed::Box;
+use core::cmp::max;
 
 // fn print_mem_status(mb_info: &MbBootInfo) {
 //     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
@@ -108,7 +43,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 // TODO: look into stack probes
 // TODO: double check the section permissions on the linker script
 #[unsafe(no_mangle)]
-pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
@@ -189,7 +124,7 @@ pub extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 struct Aligned16(u64);
 
 #[test_case]
-fn trivial_assertion() {
+fn basic_assert() {
     assert_eq!(1, 1);
 }
 

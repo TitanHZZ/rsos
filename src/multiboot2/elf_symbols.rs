@@ -9,9 +9,9 @@ use core::ffi::CStr;
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
-pub(crate) struct ElfSymbols {
+pub struct ElfSymbols {
     header: MbTagHeader,
-    pub(crate) num: u32, // number of section headers
+    pub num: u32, // number of section headers
     entry_size: u32, // size of each section header (needs to be 64 as that is the size of every entry for ELF64)
     string_table: u32,
 
@@ -39,14 +39,14 @@ struct ElfSectionHeader {
     entry_size: u64,
 }
 
-pub(crate) struct ElfSection {
+pub struct ElfSection {
     header: &'static ElfSectionHeader,
     string_table: &'static ElfSectionHeader,
 }
 
 #[repr(u32)]
 #[derive(Debug)]
-pub(crate) enum ElfSectionType {
+pub enum ElfSectionType {
     Unused,
     ProgramSection,
     LinkerSymbolTable,
@@ -66,7 +66,7 @@ pub(crate) enum ElfSectionType {
 
 bitflags! {
     #[derive(Debug)]
-    pub(crate) struct ElfSectionFlags: u64 {
+    pub struct ElfSectionFlags: u64 {
         const ELF_SECTION_WRITABLE   = 0x00000001; // section contains data that is writable
         const ELF_SECTION_ALLOCATED  = 0x00000002; // section is in memory during execution
         const ELF_SECTION_EXECUTABLE = 0x00000004; // section contains executable code
@@ -76,7 +76,7 @@ bitflags! {
 }
 
 #[derive(Debug)]
-pub(crate) enum ElfSectionError {
+pub enum ElfSectionError {
     Invalid32BitSectionHeaders,
     StringSectionNotLoaded,
     StringMissingNull,
@@ -86,7 +86,7 @@ pub(crate) enum ElfSectionError {
 impl ElfSymbols {
     // Safety: This assumes that the memory is valid as it *should* only be created by the bootloader and thus,
     // it assumes correct bootloader behavior.
-    pub(crate) fn sections(&self) -> Result<ElfSymbolsIter, ElfSectionError> {
+    pub fn sections(&self) -> Result<ElfSymbolsIter, ElfSectionError> {
         if self.entry_size as usize != size_of::<ElfSectionHeader>() { // must be 64bytes
             return Err(ElfSectionError::Invalid32BitSectionHeaders);
         }
@@ -116,7 +116,7 @@ impl ElfSection {
     // Safety: The caller must ensure that the data is valid as this assumes so. This *should* not be a problem
     // as this should only be called by the iter and we assume correct bootloader behavior.
     // The string *should* never leave memory, so it's lifetime is static as it lasts for the entire duration of the program.
-    pub(crate) fn name(&self) -> Result<&str, ElfSectionError> {
+    pub fn name(&self) -> Result<&str, ElfSectionError> {
         let strings_ptr = self.string_table.addr as *const u8;
         if strings_ptr.is_null() {
             return Err(ElfSectionError::StringSectionNotLoaded);
@@ -132,7 +132,7 @@ impl ElfSection {
         name_cstr.to_str().map_err(|_| ElfSectionError::StringNotUtf8)
     }
 
-    pub(crate) fn section_type(&self) -> ElfSectionType {
+    pub fn section_type(&self) -> ElfSectionType {
         match self.header.section_type {
             0  => ElfSectionType::Unused,
             1  => ElfSectionType::ProgramSection,
@@ -152,25 +152,25 @@ impl ElfSection {
         }
     }
 
-    pub(crate) fn flags(&self) -> ElfSectionFlags {
+    pub fn flags(&self) -> ElfSectionFlags {
         ElfSectionFlags::from_bits_truncate(self.header.flags)
     }
 
-    pub(crate) fn addr(&self) -> PhysicalAddress {
+    pub fn addr(&self) -> PhysicalAddress {
         self.header.addr as _
     }
 
-    pub(crate) fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.header.size
     }
 
-    pub(crate) fn entry_size(&self) -> u64 {
+    pub fn entry_size(&self) -> u64 {
         self.header.entry_size
     }
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ElfSymbolsIter {
+pub struct ElfSymbolsIter {
     sections: &'static [ElfSectionHeader],
     curr_section_idx: usize,
     string_table: &'static ElfSectionHeader,

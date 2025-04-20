@@ -1,11 +1,8 @@
-#![cfg(test)]
-
 // https://wiki.osdev.org/I/O_Ports
 // https://wiki.osdev.org/Serial_Ports
+use core::{cell::LazyCell, fmt};
 use crate::io_port::IO_PORT;
-use core::cell::LazyCell;
 use spin::Mutex;
-use alloc::fmt;
 
 pub struct SerialPort(u16);
 
