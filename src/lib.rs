@@ -66,7 +66,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 
 #[cfg(test)]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+pub unsafe extern "C" fn main(_mb_boot_info_addr: *const u8) -> ! {
     test_main();
     loop {}
 }

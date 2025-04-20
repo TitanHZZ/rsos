@@ -7,14 +7,25 @@
 
 extern crate alloc;
 
-use rsos::{vga_buffer, logger};
-
-use rsos::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
-use rsos::multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap, MbBootInfo};
-use rsos::memory::{{FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}, AddrOps};
-use rsos::{log, memory, print, println};
-use alloc::boxed::Box;
+use alloc::{boxed::Box, string::String};
 use core::cmp::max;
+use rsos::memory::{
+    AddrOps,
+    {
+        FRAME_PAGE_SIZE,
+        pages::{Page, simple_page_allocator::HEAP_ALLOCATOR},
+    },
+};
+use rsos::memory::{
+    frames::simple_frame_allocator::FRAME_ALLOCATOR,
+    pages::paging::{ACTIVE_PAGING_CTX, inactive_paging_context::InactivePagingContext},
+};
+use rsos::multiboot2::{
+    MbBootInfo,
+    elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter},
+    memory_map::MemoryMap,
+};
+use rsos::{log, memory, println};
 
 // fn print_mem_status(mb_info: &MbBootInfo) {
 //     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
@@ -108,9 +119,9 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     {
         let a = Box::new(Aligned16(10));
-        // let b = String::from("Hello, World!");
+        let b = String::from("Hello, World!");
         println!("{:?}", a);
-        // println!("{}", b);
+        println!("{}", b);
     }
 
     #[cfg(test)]
@@ -130,7 +141,7 @@ fn basic_assert() {
 
 /*
  * Current physical memory layout (NOT UP TO DATE):
- * 
+ *
  * +--------------------+ (higher addresses)
  * |      Unused        |
  * +--------------------+ 0x513000

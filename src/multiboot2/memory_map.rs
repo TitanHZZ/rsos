@@ -103,6 +103,6 @@ impl Iterator for MemoryMapEntryIter {
 
         // go to the next entry and return the current one
         self.curr_mem_entry_idx += 1;
-        return Some(&self.entries[self.curr_mem_entry_idx - 1]);
+        Some(&self.entries[self.curr_mem_entry_idx - 1])
     }
 }

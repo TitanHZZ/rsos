@@ -24,7 +24,7 @@ impl Iterator for MbTagIter {
                 // return the current tag and update the ptr to the next one
                 let ptr_offset = ((curr_tag.size as usize + 7) & !7) as isize;
                 self.curr_tag_addr = unsafe { self.curr_tag_addr.byte_offset(ptr_offset) };
-                return Some(curr_tag);
+                Some(curr_tag)
             }
         }
     }

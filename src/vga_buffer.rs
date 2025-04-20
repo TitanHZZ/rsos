@@ -130,17 +130,17 @@ pub static WRITER: Mutex<LazyCell<Writer>> = Mutex::new(LazyCell::new(|| Writer 
 
 #[macro_export]
 macro_rules! println {
-    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{ use crate::print; print!($fg, $bg, concat!($fmt, "\n"), $($arg)*) }};
-    ( $fg:path, $bg:path, $fmt:expr ) => {{ use crate::print; print!($fg, $bg, concat!($fmt, "\n")) }};
-    ( $fmt:expr, $($arg:tt)* ) => {{ use crate::print; print!(concat!($fmt, "\n"), $($arg)*) }};
-    ( $fmt:expr ) => {{ use crate::print; print!(concat!($fmt, "\n")) }};
+    ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{ use $crate::print; print!($fg, $bg, concat!($fmt, "\n"), $($arg)*) }};
+    ( $fg:path, $bg:path, $fmt:expr ) => {{ use $crate::print; print!($fg, $bg, concat!($fmt, "\n")) }};
+    ( $fmt:expr, $($arg:tt)* ) => {{ use $crate::print; print!(concat!($fmt, "\n"), $($arg)*) }};
+    ( $fmt:expr ) => {{ use $crate::print; print!(concat!($fmt, "\n")) }};
 }
 
 #[macro_export]
 macro_rules! print {
     // colored print with args
     ( $fg:path, $bg:path, $fmt:expr, $($arg:tt)* ) => {{
-        use crate::vga_buffer::{Writer, WRITER};
+        use $crate::vga_buffer::{Writer, WRITER};
         use core::{cell::LazyCell, fmt::Write};
 
         // lock drops when the scope ends
@@ -161,13 +161,13 @@ macro_rules! print {
 
     // conventional print with args
     ( $fmt:expr, $($arg:tt)* ) => {{
-        use crate::vga_buffer::Color;
+        use $crate::vga_buffer::Color;
         print!(Color::White, Color::Black, $fmt, $($arg)*);
     }};
 
     // conventional print without args
     ( $fmt:expr ) => {{
-        use crate::vga_buffer::Color;
+        use $crate::vga_buffer::Color;
         print!(Color::White, Color::Black, concat!($fmt, "{}"), "");
     }};
 }

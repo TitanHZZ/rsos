@@ -186,9 +186,9 @@ impl Iterator for ElfSymbolsIter {
 
         // go to the next section and return the current one
         self.curr_section_idx += 1;
-        return Some(ElfSection {
+        Some(ElfSection {
             header: &self.sections[self.curr_section_idx - 1],
             string_table: &self.string_table,
-        });
+        })
     }
 }

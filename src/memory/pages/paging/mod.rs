@@ -59,7 +59,7 @@ impl ActivePagingContextInner {
     pub(in crate::memory) fn map_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
         let frame = frame_allocator.allocate_frame()?;
-        return self.map_page_to_frame(page, frame, frame_allocator, flags);
+        self.map_page_to_frame(page, frame, frame_allocator, flags)
     }
 
     /*
@@ -67,7 +67,7 @@ impl ActivePagingContextInner {
      */
     pub(in crate::memory) fn map<A: FrameAllocator>(&mut self, virtual_addr: VirtualAddress, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         let page = Page::from_virt_addr(virtual_addr)?;
-        return self.map_page(page, frame_allocator, flags);
+        self.map_page(page, frame_allocator, flags)
     }
 
     /*

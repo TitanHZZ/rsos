@@ -29,7 +29,7 @@ impl LOGGER {
 #[macro_export]
 macro_rules! log {
     ( $method:ident, $($arg:tt)* ) => {{
-        use crate::logger::LOGGER;
+        use $crate::logger::LOGGER;
         LOGGER::$method(format_args!($($arg)*));
     }};
 }
