@@ -8,7 +8,5 @@ pub(crate) struct EfiBootServicesNotTerminated {
 impl MbTag for EfiBootServicesNotTerminated {
     const TAG_TYPE: TagType = TagType::EfiBootServicesNotTerminated;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

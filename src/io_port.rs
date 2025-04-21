@@ -1,8 +1,8 @@
 use core::arch::asm;
 
-pub struct IO_PORT;
+pub struct IoPort;
 
-impl IO_PORT {
+impl IoPort {
     pub fn read_u32(port: u16) -> u32 {
         let value: u32;
         unsafe {

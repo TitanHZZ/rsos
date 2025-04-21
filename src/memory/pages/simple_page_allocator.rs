@@ -36,10 +36,10 @@ pub static HEAP_ALLOCATOR: SimplePageAllocator = SimplePageAllocator(Mutex::new(
 }));
 
 impl SimplePageAllocator {
-    /*
-     * Safety: init() can only be called once or the allocator might get into an inconsistent state.
-     * However, it must be called as the allocator expects it.
-     */
+    /// # Safety
+    /// 
+    /// Can only be called once or the allocator might get into an inconsistent state.  
+    /// However, it must be called as the allocator expects it.
     pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, apc: &'static ActivePagingContext) -> Result<(), MemoryError> {
         debug_assert!(heap_start % FRAME_PAGE_SIZE == 0);
         debug_assert!(heap_size % FRAME_PAGE_SIZE == 0);
@@ -64,34 +64,34 @@ impl SimplePageAllocatorInner {
         debug_assert!(size >= size_of::<FreedBlock>());
 
         // set up defaults for the new block
-        let block = &mut *(addr as *mut FreedBlock);
+        let block = unsafe { &mut *(addr as *mut FreedBlock) };
         block.next_freed_block = None;
         block.size = size;
 
         // add at the beginning (list is empty)
-        if self.freed_blocks == None {
-            self.freed_blocks = Some(NonNull::new_unchecked(addr as _));
+        if self.freed_blocks.is_none() {
+            self.freed_blocks = Some(unsafe { NonNull::new_unchecked(addr as _) });
             return;
         }
 
         // add at the beginning (list is not empty)
         let mut addr_first_block = self.freed_blocks.unwrap();
         if addr_first_block.as_ptr() > addr as _ {
-            self.freed_blocks = Some(NonNull::new_unchecked(addr as _));
-            block.next_freed_block = Some(NonNull::new_unchecked(addr_first_block.as_ptr()));
+            self.freed_blocks = Some(unsafe { NonNull::new_unchecked(addr as _) });
+            block.next_freed_block = Some(unsafe { NonNull::new_unchecked(addr_first_block.as_ptr()) });
             return;
         }
 
         // loop through the remaning blocks
-        let mut current_block = addr_first_block.as_mut();
+        let mut current_block = unsafe { addr_first_block.as_mut() };
         let mut option_next_block = current_block.next_freed_block;
         while let Some(mut addr_next_block) = option_next_block {
-            let next_block = addr_next_block.as_mut();
+            let next_block = unsafe { addr_next_block.as_mut() };
 
             // add in the middle of the list
             if addr_next_block.as_ptr() > addr as _ {
-                current_block.next_freed_block = Some(NonNull::new_unchecked(addr as _));
-                block.next_freed_block = Some(NonNull::new_unchecked(addr_next_block.as_ptr()));
+                current_block.next_freed_block = Some(unsafe { NonNull::new_unchecked(addr as _) });
+                block.next_freed_block = Some(unsafe { NonNull::new_unchecked(addr_next_block.as_ptr()) });
                 return;
             }
 
@@ -100,16 +100,16 @@ impl SimplePageAllocatorInner {
         }
 
         // add at the end
-        current_block.next_freed_block = Some(NonNull::new_unchecked(addr as _));
+        current_block.next_freed_block = Some(unsafe { NonNull::new_unchecked(addr as _) });
     }
 
     // Safety: The caller must ensure that `addr` is valid and points to usable memory. `self.freed_blocks` must be Some(_)
     unsafe fn remove_from_list(&mut self, addr: VirtualAddress) {
-        debug_assert!(self.freed_blocks != None);
+        debug_assert!(self.freed_blocks.is_some());
 
         // check if the first block matches the addr
         let mut addr_first_block = self.freed_blocks.unwrap();
-        let first_block = addr_first_block.as_mut();
+        let first_block = unsafe { addr_first_block.as_mut() };
 
         if addr_first_block.as_ptr() == addr as _ {
             self.freed_blocks = first_block.next_freed_block.take();
@@ -120,7 +120,7 @@ impl SimplePageAllocatorInner {
         let mut current_block = first_block;
         let mut option_next_block = current_block.next_freed_block;
         while let Some(mut addr_next_block) = option_next_block {
-            let next_block = addr_next_block.as_mut();
+            let next_block = unsafe { addr_next_block.as_mut() };
 
             // check if the block matches and remove it if so
             if addr_next_block.as_ptr() == addr as _ {
@@ -141,7 +141,7 @@ impl SimplePageAllocatorInner {
         // loop all the blocks to find the first that matches the requirements
         let mut option_current_block = self.freed_blocks;
         while let Some(mut addr_current_block) = option_current_block {
-            let current_block = addr_current_block.as_mut();
+            let current_block = unsafe { addr_current_block.as_mut() };
 
             // the block must have matching alignment
             if addr_current_block.as_ptr() as VirtualAddress % real_align != 0 {
@@ -151,17 +151,17 @@ impl SimplePageAllocatorInner {
 
             // ideal case
             if current_block.size == real_size {
-                self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress);
+                unsafe { self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress) }
                 return Some(addr_current_block.as_ptr() as *mut u8);
             }
 
             // if the sizes do not match, it must have enough space to fit a new FreedBlock
             if current_block.size >= real_size + size_of::<FreedBlock>() {
-                self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress);
+                unsafe { self.remove_from_list(addr_current_block.as_ptr() as VirtualAddress) }
 
-                let free_block_addr = addr_current_block.byte_offset(real_size as _).as_ptr() as VirtualAddress;
+                let free_block_addr = unsafe { addr_current_block.byte_offset(real_size as _).as_ptr() as VirtualAddress };
                 let free_block_size = current_block.size - real_size;
-                self.add_to_list(free_block_addr, free_block_size);
+                unsafe { self.add_to_list(free_block_addr, free_block_size) }
 
                 debug_assert!(free_block_addr % size_of::<FreedBlock>() == 0);
                 debug_assert!(free_block_size >= size_of::<FreedBlock>());
@@ -181,20 +181,20 @@ impl SimplePageAllocatorInner {
             return;
         }
 
-        let first_block = self.freed_blocks.unwrap().as_mut();
+        let first_block = unsafe { self.freed_blocks.unwrap().as_mut() };
 
         // loop through the blocks
         let mut current_block = first_block;
         let mut option_next_block = current_block.next_freed_block;
         while let Some(mut addr_next_block) = option_next_block {
-            let mut next_block = addr_next_block.as_mut();
+            let mut next_block = unsafe { addr_next_block.as_mut() };
 
             let addr_current_block = current_block as *const FreedBlock as VirtualAddress;
             if addr_current_block + current_block.size == addr_next_block.as_ptr() as VirtualAddress {
                 let new_size = current_block.size + next_block.size;
                 let new_next = next_block.next_freed_block;
 
-                self.remove_from_list(addr_next_block.as_ptr() as _);
+                unsafe { self.remove_from_list(addr_next_block.as_ptr() as _) }
                 current_block.size = new_size;
                 current_block.next_freed_block = new_next;
 
@@ -215,10 +215,10 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
 
         let real_align = max(align_of::<FreedBlock>(), layout.align());
-        let real_size = layout.size().align_up(real_align); // buffer overflows??
+        let real_size  = max(layout.size().align_up(real_align), size_of::<FreedBlock>()); // buffer overflows??
 
         // try to find a free block first
-        if let Some(addr) = allocator.get_from_list(real_align, real_size) {
+        if let Some(addr) = unsafe { allocator.get_from_list(real_align, real_size) } {
             return addr;
         }
 
@@ -226,6 +226,8 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         let freed_block_addr = allocator.next_block;
         let mut alloc_start = allocator.next_block.align_up(real_align);
 
+        // TODO: this is only rrequired when layout.align() > align_of::<FreedBlock>() and if it is big enough,
+        //       we might not need to add size_of::<FreedBlock>();
         // check if we need padding
         if alloc_start != allocator.next_block {
             // we need to make space for the FreedBlock and realign the start (the space used for padding will be a new FreedBlock)
@@ -256,7 +258,7 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
         if freed_block_needed {
             // add the FreedBlock
-            allocator.add_to_list(freed_block_addr, alloc_start - freed_block_addr);
+            unsafe { allocator.add_to_list(freed_block_addr, alloc_start - freed_block_addr) }
         }
 
         alloc_start as *mut u8
@@ -268,9 +270,11 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
         let allocator = &mut *self.0.lock();
         let real_align = max(align_of::<FreedBlock>(), layout.align());
-        let real_size = layout.size().align_up(real_align); // buffer overflows??
+        let real_size  = max(layout.size().align_up(real_align), size_of::<FreedBlock>()); // buffer overflows??
 
-        allocator.add_to_list(ptr as VirtualAddress, real_size);
-        allocator.unify_list();
+        unsafe {
+            allocator.add_to_list(ptr as VirtualAddress, real_size);
+            allocator.unify_list();
+        }
     }
 }

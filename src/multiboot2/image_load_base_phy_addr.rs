@@ -9,7 +9,5 @@ pub(crate) struct ImageLoadBasePhysicalAdress {
 impl MbTag for ImageLoadBasePhysicalAdress {
     const TAG_TYPE: TagType = TagType::ImageLoadBasePhysicalAdress;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

@@ -67,7 +67,7 @@ impl FrameAllocator for SimpleFrameAllocator {
         Ok(frame)
     }
 
-    fn deallocate_frame(&self, frame: Frame) {
+    fn deallocate_frame(&self, _frame: Frame) {
         // for this, we will need some way to store a record of which frames are free and which ones are not
         // this may even require allocation (just a guess)
         unimplemented!();

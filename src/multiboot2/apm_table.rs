@@ -17,7 +17,5 @@ pub(crate) struct ApmTable {
 impl MbTag for ApmTable {
     const TAG_TYPE: TagType = TagType::ApmTable;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

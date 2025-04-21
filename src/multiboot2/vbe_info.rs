@@ -21,7 +21,5 @@ impl VbeInfo {
 impl MbTag for VbeInfo {
     const TAG_TYPE: TagType = TagType::VbeInfo;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

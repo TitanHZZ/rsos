@@ -19,15 +19,11 @@ pub(crate) struct Efi64BitImageHandlePtr {
 impl MbTag for Efi32BitImageHandlePtr {
     const TAG_TYPE: TagType = TagType::Efi32BitImageHandlePtr;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }
 
 impl MbTag for Efi64BitImageHandlePtr {
     const TAG_TYPE: TagType = TagType::Efi64BitImageHandlePtr;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

@@ -13,29 +13,26 @@ pub mod serial;
 pub mod logger;
 
 use core::{panic::PanicInfo, arch::global_asm};
-use crate::io_port::IO_PORT;
+use crate::io_port::IoPort;
 
 // add all the necessary asm set up and boot code (some of this code could probably be ported to Rust)
 global_asm!(include_str!("boot.asm"), options(att_syntax));
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    log!(failed, "Kernel Panic occurred!");
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
+/// Panic handler for when code panic in test mode.
+pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]");
     serial_println!("{}", info);
     exit_qemu(0x11);
 }
 
+#[cfg(test)]
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    test_panic_handler(info);
+}
+
 pub trait Testable {
-    fn run(&self) -> ();
+    fn run(&self);
 }
 
 impl<T: Fn()> Testable for T {
@@ -48,7 +45,7 @@ impl<T: Fn()> Testable for T {
 
 /// Safety: The `isa-debug-exit` I/O device must exist in qemu and be 32 bits in size
 pub fn exit_qemu(ret: u32) -> ! {
-    IO_PORT::write_u32(0xF4, ret);
+    IoPort::write_u32(0xF4, ret);
 
     // just in case it fails to exit
     // this could be a panic!() but, that would create recursive exit_qemu() calls

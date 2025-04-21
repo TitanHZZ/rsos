@@ -19,15 +19,11 @@ pub(crate) struct Efi64BitSystemTablePtr {
 impl MbTag for Efi32BitSystemTablePtr {
     const TAG_TYPE: TagType = TagType::Efi32BitSystemTablePtr;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }
 
 impl MbTag for Efi64BitSystemTablePtr {
     const TAG_TYPE: TagType = TagType::Efi64BitSystemTablePtr;
 
-    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {
-        ()
-    }
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

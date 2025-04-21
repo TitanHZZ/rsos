@@ -94,7 +94,7 @@ impl ElfSymbols {
         // construct the elf sections from raw bytes
         let section_headers_ptr: *const ElfSectionHeader = &self.section_headers as *const [u8] as *const u8 as *const _;
         let sections = slice_from_raw_parts(section_headers_ptr, self.num as usize);
-        let sections = unsafe { &*(sections as *const [ElfSectionHeader]) };
+        let sections = unsafe { &*sections };
 
         Ok(ElfSymbolsIter {
             sections,
@@ -188,7 +188,7 @@ impl Iterator for ElfSymbolsIter {
         self.curr_section_idx += 1;
         Some(ElfSection {
             header: &self.sections[self.curr_section_idx - 1],
-            string_table: &self.string_table,
+            string_table: self.string_table,
         })
     }
 }

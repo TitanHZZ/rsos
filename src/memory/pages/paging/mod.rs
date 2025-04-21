@@ -83,7 +83,7 @@ impl ActivePagingContextInner {
      */
     // TODO: - free P1, P2 and P3 if they get empty
     //       - deallocate the frame
-    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A) {
+    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, _frame_allocator: &A) {
         // set the entry in p1 as unused and free the respective frame
         self.p4_mut().next_table(page.p4_index())
             .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
@@ -94,7 +94,7 @@ impl ActivePagingContextInner {
                 entry.set_unused();
 
                 frame
-            }).and_then(|frame| {
+            }).and_then(|_frame| {
                 // deallocate the frame
                 // frame_allocator.deallocate_frame(frame);
 
@@ -245,7 +245,7 @@ impl ActivePagingContext {
         f(apc, frame_allocator)?;
 
         // restore the active paging context recusive mapping
-        let table = unsafe { &mut *(p4_page.addr() as usize as *mut Table<Level4>) };
+        let table = unsafe { &mut *(p4_page.addr() as *mut Table<Level4>) };
         table.entries[ENTRY_COUNT - 1].set_phy_addr(p4_frame);
 
         // invalidate the entries so that the recursive mapping works again (we don't use cached addrs)

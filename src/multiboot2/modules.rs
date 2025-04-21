@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]

@@ -86,6 +86,10 @@ pub enum MbBootInfoError {
 }
 
 impl MbBootInfo {
+    /// # Safety
+    /// 
+    /// The caller must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct. The ptr will
+    /// be checked for nulls and alignment but no parsing will be performed.
     pub unsafe fn new(mb_boot_info: *const u8) -> Result<Self, MbBootInfoError> {
         // make sure that the ptr is not null
         if mb_boot_info.is_null() {
@@ -97,8 +101,9 @@ impl MbBootInfo {
             return Err(MbBootInfoError::Not64BitAligned);
         }
 
-        let mb_header: &MbBootInformationHeader = &*mb_boot_info.cast();    
-        let tags_ptr: *const MbTagHeader = mb_boot_info.offset(size_of::<MbBootInformationHeader>() as isize).cast();
+        // the `unwrap()` is fine as we know that the value fits
+        let mb_header: &MbBootInformationHeader = unsafe { &*mb_boot_info.cast() };
+        let tags_ptr: *const MbTagHeader = unsafe { mb_boot_info.offset(size_of::<MbBootInformationHeader>().try_into().unwrap()).cast() };
 
         Ok(Self {
             header: mb_header.clone(),

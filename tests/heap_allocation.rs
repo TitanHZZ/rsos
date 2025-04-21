@@ -10,52 +10,21 @@ extern crate alloc;
 use rsos::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
-use core::{cmp::max, panic::PanicInfo};
-use rsos::{log, memory, println};
-use alloc::string::String;
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::{cmp::max, panic::PanicInfo, ptr::null};
+use rsos::{log, memory};
 
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    log!(failed, "Kernel Panic occurred!");
-    println!("{}", info);
-    loop {}
-}
-
-#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     rsos::test_panic_handler(info);
 }
 
-// fn print_mem_status(mb_info: &MbBootInfo) {
-//     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
-//     let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
-//     println!("Memory areas:");
-//     for entry in mem_map_entries {
-//         println!(
-//             "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
-//             entry.base_addr,
-//             entry.length as f64 / 1024.0 / 1024.0,
-//             entry.entry_type()
-//         );
-//     }
-//     let total_memory: u64 = mem_map_entries.into_iter()
-//         .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
-//         .map(|entry| entry.length)
-//         .sum();
-//     println!(
-//         "Total (available) memory: {} bytes ({:.2} GB)",
-//         total_memory,
-//         total_memory as f64 / 1024.0 / 1024.0 / 1024.0
-//     );
-// }
+#[derive(Debug)]
+#[repr(align(16))]
+struct Aligned16(u64);
 
-// TODO: look into stack probes
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
-    // at this point, the cpu is running in 64 bit long mode
-    // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data");
 
@@ -116,37 +85,49 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    {
-        let a = String::from("Hello, World!");
-        println!("{}", a);
-    }
-
-    #[cfg(test)]
     test_main();
-
     loop {}
 }
 
-/*
- * Current physical memory layout (NOT UP TO DATE):
- *
- * +--------------------+ (higher addresses)
- * |      Unused        |
- * +--------------------+ 0x513000
- * |                    |
- * |      Kernel        |
- * |                    |
- * +--------------------+ 0x200000
- * |                    |
- * |   Multiboot Info   |
- * |                    |
- * +--------------------+ 0x1FF000
- * |      Unused        |
- * +--------------------+ 0x0B9000
- * |                    |
- * |    VGA Buffer      |
- * |                    |
- * +--------------------+ 0x0B8000
- * |      Unused        |
- * +--------------------+ 0x000000
- */
+#[test_case]
+fn simple_allocation() {
+    let a = Box::new(42);
+    let b = String::from("Hello, World!");
+    assert_eq!(*a, 42);
+    assert_eq!(b, "Hello, World!");
+}
+
+#[test_case]
+fn large_vector() {
+    let n = 1000;
+    let mut vec = Vec::new();
+    for i in 0..n {
+        vec.push(i);
+    }
+
+    for i in 0..n {
+        assert_eq!(vec[i], i);
+    }
+
+    // check the sum of the 'n' numbers
+    assert_eq!(vec.iter().sum::<usize>(), (n - 1) * n / 2);
+}
+
+#[test_case]
+fn bigger_alignment() {
+    let a = Box::new(Aligned16(13));
+    assert_eq!((*a).0, 13);
+}
+
+#[test_case]
+fn deallocation() {
+    let mut addr: *const i32 = null();
+    {
+        let a = Box::new(42);
+        addr = &*a;
+    }
+
+    // allocate another Box with different size
+    let b: Box<u64> = Box::new(13);
+    assert_eq!(addr, &*b as *const u64 as *const i32);
+}
