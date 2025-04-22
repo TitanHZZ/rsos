@@ -32,7 +32,8 @@ pub struct Page(usize); // this usize is the page index in the virtual memory
 impl Page {
     pub fn from_virt_addr(addr: VirtualAddress) -> Result<Page, MemoryError> {
         // in x86_64, the top 16 bits of a virtual addr must be sign extension bits. if they are not, its an invalid addr
-        if !(addr < 0x0000_8000_0000_0000 || addr >= 0xffff_8000_0000_0000) {
+        // !(addr < 0x0000_8000_0000_0000 || addr >= 0xffff_8000_0000_0000)
+        if (0x0000_8000_0000_0000..0xffff_8000_0000_0000).contains(&addr) {
             return Err(MemoryError::PageInvalidVirtualAddress);
         }
 
@@ -55,6 +56,7 @@ impl Page {
         (self.0 >> 9) & 0o777
     }
 
+    #[allow(clippy::identity_op)]
     pub fn p1_index(&self) -> usize {
         (self.0 >> 0) & 0o777
     }

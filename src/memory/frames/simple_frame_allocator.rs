@@ -30,10 +30,10 @@ pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::n
 }));
 
 impl SimpleFrameAllocator {
-    /*
-     * Safety: init() can only be called once or the allocator might get into an inconsistent state.
-     * However, it must be called as the allocator expects it.
-     */
+    /// # Safety
+    /// 
+    /// Can only be called once or the allocator might get into an inconsistent state.  
+    /// However, it must be called as the allocator expects it.
     pub unsafe fn init(&self, areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 

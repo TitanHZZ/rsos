@@ -19,7 +19,7 @@ use alloc::string::String;
 fn panic(info: &PanicInfo) -> ! {
     log!(failed, "Kernel Panic occurred!");
     println!("{}", info);
-    loop {}
+    rsos::hlt();
 }
 
 #[cfg(test)]
@@ -52,6 +52,11 @@ fn panic(info: &PanicInfo) -> ! {
 // }
 
 // TODO: look into stack probes
+// TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
+/// # Safety
+/// 
+/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
+/// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
@@ -124,7 +129,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     #[cfg(test)]
     test_main();
 
-    loop {}
+    rsos::hlt();
 }
 
 /*

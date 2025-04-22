@@ -12,6 +12,7 @@ pub struct SerialPort(u16);
 pub static SERIAL_PORT: Mutex<LazyCell<SerialPort>> = Mutex::new(LazyCell::new(|| SerialPort::init(0x3F8)));
 
 impl SerialPort {
+    #[allow(clippy::identity_op)]
     /// This `needs` to be called at least once before any data being sent but should be fine if it is called mutiple times.
     fn init(port: u16) -> SerialPort {
         IoPort::write_u8(port + 1, 0x00); // disable all interrupts

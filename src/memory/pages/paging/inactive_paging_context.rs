@@ -20,7 +20,7 @@ impl InactivePagingContext {
 
         // recursive map the table
         // the unsafe block is safe as we know that the page is valid
-        let table = unsafe { &mut *(p4_page.addr() as usize as *mut Table<Level4>) };
+        let table = unsafe { &mut *(p4_page.addr() as *mut Table<Level4>) };
         table.set_unused();
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 

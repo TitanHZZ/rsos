@@ -88,8 +88,8 @@ pub enum MbBootInfoError {
 impl MbBootInfo {
     /// # Safety
     /// 
-    /// The caller must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct. The ptr will
-    /// be checked for nulls and alignment but no parsing will be performed.
+    /// The caller must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
+    /// The ptr will be checked for nulls and alignment but no parsing will be performed.
     pub unsafe fn new(mb_boot_info: *const u8) -> Result<Self, MbBootInfoError> {
         // make sure that the ptr is not null
         if mb_boot_info.is_null() {

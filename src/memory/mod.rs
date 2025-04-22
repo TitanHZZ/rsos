@@ -49,7 +49,7 @@ pub fn kernel_remap<A>(ctx: &ActivePagingContext, new_ctx: &InactivePagingContex
 where
     A: FrameAllocator
 {
-    ctx.update_inactive_context(&new_ctx, fr_alloc, |active_ctx, frame_allocator| {
+    ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
         for elf_section in elf_secs {
             // if the section is not in memory, we don't need to map it
             if !elf_section.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED) {

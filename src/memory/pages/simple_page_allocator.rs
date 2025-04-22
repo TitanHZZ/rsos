@@ -1,6 +1,6 @@
 use crate::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags};
+use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull, ptr::eq as ptr_eq};
 use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
-use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull};
 use super::paging::ActivePagingContext;
 use spin::Mutex;
 
@@ -111,7 +111,7 @@ impl SimplePageAllocatorInner {
         let mut addr_first_block = self.freed_blocks.unwrap();
         let first_block = unsafe { addr_first_block.as_mut() };
 
-        if addr_first_block.as_ptr() == addr as _ {
+        if ptr_eq(addr_first_block.as_ptr(), addr as _) {
             self.freed_blocks = first_block.next_freed_block.take();
             return;
         }
@@ -123,7 +123,7 @@ impl SimplePageAllocatorInner {
             let next_block = unsafe { addr_next_block.as_mut() };
 
             // check if the block matches and remove it if so
-            if addr_next_block.as_ptr() == addr as _ {
+            if ptr_eq(addr_next_block.as_ptr(), addr as _) {
                 current_block.next_freed_block = next_block.next_freed_block.take();
                 break;
             }
@@ -177,7 +177,7 @@ impl SimplePageAllocatorInner {
     }
 
     unsafe fn unify_list(&mut self) {
-        if self.freed_blocks == None {
+        if self.freed_blocks.is_none() {
             return;
         }
 

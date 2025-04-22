@@ -11,7 +11,7 @@ use rsos::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::pagi
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{cmp::max, panic::PanicInfo, ptr::null};
+use core::{cmp::max, panic::PanicInfo};
 use rsos::{log, memory};
 
 #[panic_handler]
@@ -23,6 +23,10 @@ fn panic(info: &PanicInfo) -> ! {
 #[repr(align(16))]
 struct Aligned16(u64);
 
+/// # Safety
+/// 
+/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
+/// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     log!(ok, "Rust kernel code started.");
@@ -86,7 +90,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     }
 
     test_main();
-    loop {}
+    rsos::hlt();
 }
 
 #[test_case]
@@ -105,8 +109,9 @@ fn large_vector() {
         vec.push(i);
     }
 
-    for i in 0..n {
-        assert_eq!(vec[i], i);
+    assert_eq!(vec.len(), n);
+    for (i, &item) in vec.iter().enumerate() {
+        assert_eq!(item, i);
     }
 
     // check the sum of the 'n' numbers
@@ -121,7 +126,7 @@ fn bigger_alignment() {
 
 #[test_case]
 fn deallocation() {
-    let mut addr: *const i32 = null();
+    let addr: *const i32;
     {
         let a = Box::new(42);
         addr = &*a;
