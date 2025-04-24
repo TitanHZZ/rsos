@@ -1,6 +1,10 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 
+use core::marker::PhantomData;
+
 use bitflags::bitflags;
+
+use crate::memory::VirtualAddress;
 
 // TODO: make sure there is no problem in having the InterruptDescriptor type Copyable
 
@@ -26,11 +30,29 @@ enum GateType {
     TrapGate      = 0xF, // 0b1111
 }
 
+#[repr(C)]
+struct InterruptArgs {
+    instruction_pointer: VirtualAddress,
+    code_segment: u16,
+    rflags: u64, // should probably be bitflags!{}
+    stack_pointer: VirtualAddress,
+    stack_segment: u16,
+}
+
+trait InterruptFunc {}
+
+// TODO: correct the arguments
+type IntFunc = fn(a: u32);
+type IntFuncWithErr = fn(a: u32, b: u32);
+
+impl InterruptFunc for IntFunc {}
+impl InterruptFunc for IntFuncWithErr {}
+
 // this represents en entry on the IDT
 // https://wiki.osdev.org/Interrupt_Descriptor_Table#Gate_Descriptor_2
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct InterruptDescriptor {
+struct InterruptDescriptor<F: InterruptFunc> {
     offset_1: u16,              // offset bits 0..15
     selector: u16,              // a code segment selector in GDT or LDT
     ist: Ist,                   // bits 0..2 holds Interrupt Stack Table offset, rest of bits zero.
@@ -38,38 +60,40 @@ struct InterruptDescriptor {
     offset_2: u16,              // offset bits 16..31
     offset_3: u32,              // offset bits 32..63
     zero: u32,                  // reserved
+
+    _func: PhantomData<F>,
 }
 
 #[repr(C)]
 struct InterruptDescriptorTable {
-    divide_error: InterruptDescriptor,
-    debug_exception: InterruptDescriptor,
-    non_maskable_interrupt: InterruptDescriptor,
-    breakpoint: InterruptDescriptor,
-    overflow: InterruptDescriptor,
-    bound_range_exceeded: InterruptDescriptor,
-    invalid_opcode: InterruptDescriptor,
-    device_not_available: InterruptDescriptor,
-    double_fault: InterruptDescriptor,
-    coprocessor_segment_overrun: InterruptDescriptor, // reserved
-    invalid_tss: InterruptDescriptor,
-    segment_not_present: InterruptDescriptor,
-    stack_segment_fault: InterruptDescriptor,
-    general_protection: InterruptDescriptor,
-    page_fault: InterruptDescriptor,
-    intel_reserved: InterruptDescriptor, // reserved
-    x87_fp_error: InterruptDescriptor,
-    alignment_check: InterruptDescriptor,
-    machine_check: InterruptDescriptor,
-    simd_fp_exception: InterruptDescriptor,
-    virtualization_exception: InterruptDescriptor,
-    control_protection_exception: InterruptDescriptor,
-    reserved_for_future_use: [InterruptDescriptor; 10], // reserved
-    interrupt: [InterruptDescriptor; 224], // reserved
+    divide_error                : InterruptDescriptor<IntFunc>,
+    debug_exception             : InterruptDescriptor<IntFunc>,
+    non_maskable_interrupt      : InterruptDescriptor<IntFunc>,
+    breakpoint                  : InterruptDescriptor<IntFunc>,
+    overflow                    : InterruptDescriptor<IntFunc>,
+    bound_range_exceeded        : InterruptDescriptor<IntFunc>,
+    invalid_opcode              : InterruptDescriptor<IntFunc>,
+    device_not_available        : InterruptDescriptor<IntFunc>,
+    double_fault                : InterruptDescriptor<IntFuncWithErr>,
+    coprocessor_segment_overrun : InterruptDescriptor<IntFunc>,          // reserved
+    invalid_tss                 : InterruptDescriptor<IntFuncWithErr>,
+    segment_not_present         : InterruptDescriptor<IntFuncWithErr>,
+    stack_segment_fault         : InterruptDescriptor<IntFuncWithErr>,
+    general_protection          : InterruptDescriptor<IntFuncWithErr>,
+    page_fault                  : InterruptDescriptor<IntFuncWithErr>,
+    intel_reserved              : InterruptDescriptor<IntFunc>,          // reserved
+    x87_fp_error                : InterruptDescriptor<IntFunc>,
+    alignment_check             : InterruptDescriptor<IntFuncWithErr>,
+    machine_check               : InterruptDescriptor<IntFunc>,
+    simd_fp_exception           : InterruptDescriptor<IntFunc>,
+    virtualization_exception    : InterruptDescriptor<IntFunc>,
+    control_protection_exception: InterruptDescriptor<IntFuncWithErr>,
+    reserved_for_future_use     : [InterruptDescriptor<IntFunc>; 10],    // reserved
+    interrupt                   : [InterruptDescriptor<IntFunc>; 224],   // reserved
 }
 
 // TODO: are these the values it should have ?
-impl InterruptDescriptor {
+impl<F: InterruptFunc> InterruptDescriptor<F> {
     /// Returns a completly zeroed out `InterruptDescriptor`.
     fn new() -> Self {
         InterruptDescriptor {
@@ -79,7 +103,9 @@ impl InterruptDescriptor {
             type_attrs: TypeAttributes::empty(), // ??
             offset_2: 0x0000,
             offset_3: 0x0000,
-            zero: 0x00000000
+            zero: 0x00000000,
+
+            _func: PhantomData,
         }
     }
 }
