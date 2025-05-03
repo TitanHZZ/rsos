@@ -1,10 +1,7 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
-
-use core::marker::PhantomData;
-
-use bitflags::bitflags;
-
 use crate::memory::VirtualAddress;
+use core::marker::PhantomData;
+use bitflags::bitflags;
 
 // TODO: make sure there is no problem in having the InterruptDescriptor type Copyable
 
@@ -24,6 +21,31 @@ bitflags! {
     }
 }
 
+// https://en.wikipedia.org/wiki/FLAGS_register
+// https://wiki.osdev.org/CPU_Registers_x86-64#RFLAGS_Register
+bitflags! {
+    #[repr(C)]
+    struct RFLAGS: u64 {
+        const CARRY_FLAG                     = 1 << 0;
+        const PARITY_FLAG                    = 1 << 2;
+        const AUXILIARY_CARRY_FLAG           = 1 << 4;
+        const ZERO_FLAG                      = 1 << 6;
+        const SIGN_FLAG                      = 1 << 7;
+        const TRAP_FLAG                      = 1 << 8;
+        const INTERRUPT_ENABLE_FLAG          = 1 << 9;
+        const DIRECTION_FLAG                 = 1 << 10;
+        const OVERFLOW_FLAG                  = 1 << 11;
+        const IO_PRIVILEGE_LEVEL             = (1 << 12) | (1 << 13);
+        const NESTED_TASK                    = 1 << 14;
+        const RESUME_FLAG                    = 1 << 16;
+        const VIRTUAL_8086_MODE              = 1 << 17;
+        const ALIGNMENT_CHECK_ACCESS_CONTROL = 1 << 18;
+        const VIRTUAL_INTERRUPT_FLAG         = 1 << 19;
+        const VIRTUAL_INTERRUPT_PENDING      = 1 << 20;
+        const ID_FLAG                        = 1 << 21;
+    }
+}
+
 #[repr(u8)]
 enum GateType {
     InterruptGate = 0xE, // 0b1110
@@ -34,16 +56,17 @@ enum GateType {
 struct InterruptArgs {
     instruction_pointer: VirtualAddress,
     code_segment: u16,
-    rflags: u64, // should probably be bitflags!{}
+    rflags: RFLAGS,
     stack_pointer: VirtualAddress,
     stack_segment: u16,
 }
 
 trait InterruptFunc {}
 
-// TODO: correct the arguments
-type IntFunc = fn(a: u32);
-type IntFuncWithErr = fn(a: u32, b: u32);
+// x86-interrupt calling convention
+// https://github.com/rust-lang/rust/issues/40180
+type IntFunc = extern "x86-interrupt" fn(args: InterruptArgs);
+type IntFuncWithErr = extern "x86-interrupt" fn(args: InterruptArgs, error_code: u64);
 
 impl InterruptFunc for IntFunc {}
 impl InterruptFunc for IntFuncWithErr {}
