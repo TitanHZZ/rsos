@@ -222,6 +222,7 @@ _start:
     lgdt gdt64.pointer
 
     # far jump to load the code selector into the CS register
+    # 0x08 is the offset to the long-mode code segment descriptor in the GDT
     ljmp $0x08, $_start_long_mode
 
 .section .bss
@@ -246,9 +247,15 @@ stack_top:
 
 .section .rodata
 gdt64:
-    .quad 0 # Zero entry
+    .quad 0 # zero entry (is always required)
 
 gdt64_code:
+    # this sets up a very minimal code segment (still required in long-mode)
+    # 1 << 43: executable bit
+    # 1 << 44: code/data (instead of TSS) segment bit
+    # 1 << 47: present bit
+    # 1 << 53: long-mode flag bit
+    # the rest may be 0 as it is basically ignored in 64bit mode (including 'base' and 'limit/size')
     .quad (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) # code segment
 
 gdt64.pointer:
@@ -266,6 +273,7 @@ gdt64.pointer:
 
 _start_long_mode:
     # load 0 into all data segment registers (to avoid future problems)
+    # even though they are ignored in the majority of instructions
     movq $0, %rax
     movq %rax, %ss
     movq %rax, %ds
