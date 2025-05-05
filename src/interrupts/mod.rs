@@ -52,6 +52,14 @@ enum GateType {
     TrapGate      = 0xF, // 0b1111
 }
 
+#[repr(u8)]
+enum DplLevel {
+    Ring0 = 0x0,
+    Ring1 = 0x1,
+    Ring2 = 0x2,
+    Ring3 = 0x3,
+}
+
 #[repr(C)]
 struct InterruptArgs {
     instruction_pointer: VirtualAddress,
@@ -71,6 +79,7 @@ type IntFuncWithErr = extern "x86-interrupt" fn(args: InterruptArgs, error_code:
 impl InterruptFunc for IntFunc {}
 impl InterruptFunc for IntFuncWithErr {}
 
+// TODO: structure or bitfield for the selector
 // this represents en entry on the IDT
 // https://wiki.osdev.org/Interrupt_Descriptor_Table#Gate_Descriptor_2
 #[repr(C)]
@@ -112,18 +121,24 @@ struct InterruptDescriptorTable {
     virtualization_exception    : InterruptDescriptor<IntFunc>,
     control_protection_exception: InterruptDescriptor<IntFuncWithErr>,
     reserved_for_future_use     : [InterruptDescriptor<IntFunc>; 10],    // reserved
-    interrupt                   : [InterruptDescriptor<IntFunc>; 224],   // reserved
+    interrupt                   : [InterruptDescriptor<IntFunc>; 224],   // external interrupts (PIC/APIC)
 }
 
-// TODO: are these the values it should have ?
+// TODO: critical exceptions should probably use different (dedicated) stacks
 impl<F: InterruptFunc> InterruptDescriptor<F> {
-    /// Returns a completly zeroed out `InterruptDescriptor`.
+    /// Creates a new `InterruptDescriptor` with the following defaults:
+    ///   - The fn offset is 0
+    ///   - The code segment selector is 0x8. This is the first entry in the GDT after the null descriptor
+    ///   - IST is set to 0 so, the invocation uses the current stack
+    ///   - The gate type is interrupt so, interrups are disabled during handler invocation
+    ///   - DPL is 0 so, only the kernel (ring 0) can invoque the fn
+    ///   - PRESENT is 0
     fn new() -> Self {
         InterruptDescriptor {
             offset_1: 0x0000,
-            selector: 0, // ??
-            ist: Ist::empty(), // ??
-            type_attrs: TypeAttributes::empty(), // ??
+            selector: 0x8, // just use the basic code segment in the GDT
+            ist: Ist::empty(), // at least for now, always directly use the current stack
+            type_attrs: TypeAttributes::from_bits_truncate(GateType::InterruptGate as _),
             offset_2: 0x0000,
             offset_3: 0x0000,
             zero: 0x00000000,
@@ -134,6 +149,7 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
 }
 
 impl InterruptDescriptorTable {
+    /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new`]
     fn new() -> Self {
         InterruptDescriptorTable {
             divide_error: InterruptDescriptor::new(),
@@ -159,7 +175,7 @@ impl InterruptDescriptorTable {
             virtualization_exception: InterruptDescriptor::new(),
             control_protection_exception: InterruptDescriptor::new(),
             reserved_for_future_use: [InterruptDescriptor::new(); 10], // reserved
-            interrupt: [InterruptDescriptor::new(); 224], // reserved
+            interrupt: [InterruptDescriptor::new(); 224], // external interrupts (PIC/APIC)
         }
     }
 }

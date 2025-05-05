@@ -222,7 +222,7 @@ _start:
     lgdt gdt64.pointer
 
     # far jump to load the code selector into the CS register
-    # 0x08 is the offset to the long-mode code segment descriptor in the GDT
+    # (0x08 >> 3) is the index to the long-mode code segment descriptor in the GDT
     ljmp $0x08, $_start_long_mode
 
 .section .bss
@@ -274,6 +274,7 @@ gdt64.pointer:
 _start_long_mode:
     # load 0 into all data segment registers (to avoid future problems)
     # even though they are ignored in the majority of instructions
+    # (FS and GS could be used for something like they are in Linux/Windows)
     movq $0, %rax
     movq %rax, %ss
     movq %rax, %ds
