@@ -1,18 +1,20 @@
 #![no_std]
 #![no_main]
 #![feature(lazy_get)]
+#![feature(abi_x86_interrupt)]
 #![feature(custom_test_frameworks)]
 #![test_runner(rsos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
 
-use rsos::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
+use rsos::{interrupts::{self, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
+use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use core::{cmp::max, panic::PanicInfo};
 use rsos::{log, memory, println};
-use alloc::string::String;
+use alloc::boxed::Box;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -121,15 +123,28 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    {
-        let a = String::from("Hello, World!");
-        println!("{}", a);
+    // set up the IDT
+    let idt = Box::new(InterruptDescriptorTable::new());
+    let idt = Box::leak(idt);
+    idt.breakpoint.set_fn(breakpoint_handler);
+    unsafe {
+        idt.load();
     }
+
+    // unsafe {
+    //     interrupts::enable_interrupts();
+    // }
 
     #[cfg(test)]
     test_main();
 
+    println!("Hello, World!");
     rsos::hlt();
+}
+
+extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {
+    println!("Got breakpoint exception!");
+    println!("{:#?}", args);
 }
 
 /*

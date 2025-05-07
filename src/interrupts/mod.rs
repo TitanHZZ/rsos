@@ -1,7 +1,26 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
+// https://wiki.osdev.org/Interrupts_Tutorial
+use core::{marker::PhantomData, arch::asm};
 use crate::memory::VirtualAddress;
-use core::marker::PhantomData;
 use bitflags::bitflags;
+
+/// # Safety
+/// 
+/// The caller must ensure that both the **GDT** and **IDT** are correct, valid and loaded.
+pub unsafe fn enable_interrupts() {
+    unsafe {
+        asm!("sti", options(nomem, nostack));
+    }
+}
+
+pub fn disable_interrupts() {
+    unsafe {
+        asm!("cli", options(nomem, nostack));
+    }
+}
+
+const GATE_TYPE_MASK: u8 = 0b0000_1111;
+const DPL_LEVEL_MASK: u8 = 0b0110_0000;
 
 #[repr(u8)]
 pub enum GateType {
@@ -11,16 +30,17 @@ pub enum GateType {
 
 #[repr(u8)]
 pub enum DplLevel {
-    Ring0 = 0x00 << 5,
-    Ring1 = 0x01 << 5,
-    Ring2 = 0x02 << 5,
-    Ring3 = 0x03 << 5,
+    Ring0 = 0x00 << 5, // 0b0000_0000
+    Ring1 = 0x01 << 5, // 0b0010_0000
+    Ring2 = 0x02 << 5, // 0b0100_0000
+    Ring3 = 0x03 << 5, // 0b0110_0000
 }
 
 // https://en.wikipedia.org/wiki/FLAGS_register
 // https://wiki.osdev.org/CPU_Registers_x86-64#RFLAGS_Register
 bitflags! {
     #[repr(C)]
+    #[derive(Debug)]
     struct RFLAGS: u64 {
         const CARRY_FLAG                     = 1 << 0;
         const PARITY_FLAG                    = 1 << 2;
@@ -44,12 +64,19 @@ bitflags! {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct InterruptArgs {
     instruction_pointer: VirtualAddress,
     code_segment: u16,
     rflags: RFLAGS,
     stack_pointer: VirtualAddress,
     stack_segment: u16,
+}
+
+#[repr(C, packed)]
+struct IdtR {
+    size: u16, // size of the IDT (minus 1)
+    addr: VirtualAddress, // virtual addr of the IDT
 }
 
 pub trait InterruptFunc {
@@ -98,7 +125,7 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
     ///   - The gate type is interrupt so, interrups are disabled during handler invocation
     ///   - DPL is 0 so, only the kernel (ring 0) can invoque the fn
     ///   - PRESENT is 0
-    fn new() -> Self {
+    const fn new() -> Self {
         InterruptDescriptor {
             offset_1: 0x0000,
             selector: 0x8, // just use the basic code segment in the GDT
@@ -125,12 +152,12 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
 
     /// Sets the gate type.
     pub fn set_gate_type(&mut self, gate_type: GateType) {
-        self.type_attrs |= gate_type as u8;
+        self.type_attrs = (self.type_attrs & !GATE_TYPE_MASK) | gate_type as u8;
     }
 
     /// Sets the DPL level.
     pub fn set_dpl_level(&mut self, dpl_level: DplLevel) {
-        self.type_attrs |= dpl_level as u8;
+        self.type_attrs = (self.type_attrs & !DPL_LEVEL_MASK) | dpl_level as u8;
     }
 }
 
@@ -163,8 +190,8 @@ pub struct InterruptDescriptorTable {
 }
 
 impl InterruptDescriptorTable {
-    /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new`]
-    fn new() -> Self {
+    /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new`].
+    pub const fn new() -> Self {
         InterruptDescriptorTable {
             divide_error: InterruptDescriptor::new(),
             debug_exception: InterruptDescriptor::new(),
@@ -193,7 +220,22 @@ impl InterruptDescriptorTable {
         }
     }
 
-    pub fn load() {
-        todo!()
+    /// Loads `self` as the current IDT.  
+    /// This does not enable/disable interrupts.
+    /// 
+    /// # Safety: 
+    /// 
+    /// The caller must ensure that `self` is a valid IDT and interrupts **should** be disabled before
+    /// loading the IDT and enabled again afterwards.  
+    /// The IDT also **needs** to live for the duration of it's use where preferably, it's lifetime would be `'static`.
+    pub unsafe fn load(&'static self) {
+        let idtr = IdtR {
+            size: size_of::<InterruptDescriptorTable>() as u16 - 1,
+            addr: self as *const InterruptDescriptorTable as VirtualAddress,
+        };
+
+        unsafe {
+            asm!("lidt [{}]", in(reg) &idtr, options(nostack, preserves_flags));
+        }
     }
 }
