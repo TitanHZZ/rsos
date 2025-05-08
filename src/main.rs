@@ -12,7 +12,7 @@ use rsos::{interrupts::{self, InterruptArgs, InterruptDescriptorTable}, memory::
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
-use core::{cmp::max, panic::PanicInfo};
+use core::{arch::asm, cmp::max, panic::PanicInfo};
 use rsos::{log, memory, println};
 use alloc::boxed::Box;
 
@@ -126,14 +126,21 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // set up the IDT
     let idt = Box::new(InterruptDescriptorTable::new());
     let idt = Box::leak(idt);
+    idt.double_fault.set_fn(double_fault_handler);
     idt.breakpoint.set_fn(breakpoint_handler);
     unsafe {
         idt.load();
     }
 
-    // unsafe {
-    //     interrupts::enable_interrupts();
-    // }
+    interrupts::disable_pic();
+    unsafe {
+        interrupts::enable_interrupts();
+    }
+
+    // trigger a breakpoint interrupt
+    unsafe {
+        asm!("int3");
+    }
 
     #[cfg(test)]
     test_main();
@@ -145,6 +152,13 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {
     println!("Got breakpoint exception!");
     println!("{:#?}", args);
+}
+
+extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: u64) {
+    log!(failed, "Got Double Fault exception! Halting...");
+    println!("Error code: {:#x}", error_code);
+    println!("{:#?}", args);
+    rsos::hlt();
 }
 
 /*

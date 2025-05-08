@@ -1,7 +1,7 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 // https://wiki.osdev.org/Interrupts_Tutorial
 use core::{marker::PhantomData, arch::asm};
-use crate::memory::VirtualAddress;
+use crate::{io_port::IoPort, memory::VirtualAddress};
 use bitflags::bitflags;
 
 /// # Safety
@@ -17,6 +17,20 @@ pub fn disable_interrupts() {
     unsafe {
         asm!("cli", options(nomem, nostack));
     }
+}
+
+const PIC1: u16         = 0x20; /* IO base address for master PIC */
+const PIC2: u16         = 0xA0; /* IO base address for slave PIC */
+const PIC1_COMMAND: u16 = PIC1;
+const PIC1_DATA: u16    = PIC1 + 1;
+const PIC2_COMMAND: u16 = PIC2;
+const PIC2_DATA: u16    = PIC2 + 1;
+
+// https://wiki.osdev.org/8259_PIC#Disabling
+/// Disables the PICs (master and slave) by masking all of their interrupts.
+pub fn disable_pic() {
+    IoPort::write_u8(PIC1_DATA, 0xFF);
+    IoPort::write_u8(PIC2_DATA, 0xFF);
 }
 
 const GATE_TYPE_MASK: u8 = 0b0000_1111;
