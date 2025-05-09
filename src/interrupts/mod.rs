@@ -1,5 +1,7 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 // https://wiki.osdev.org/Interrupts_Tutorial
+mod tss;
+
 use core::{marker::PhantomData, arch::asm};
 use crate::{io_port::IoPort, memory::VirtualAddress};
 use bitflags::bitflags;
