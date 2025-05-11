@@ -15,8 +15,7 @@ pub(crate) struct VbeInfo {
     pub(crate) vbe_mode_info: [u8; 256],
 }
 
-impl VbeInfo {
-}
+impl VbeInfo {}
 
 impl MbTag for VbeInfo {
     const TAG_TYPE: TagType = TagType::VbeInfo;

@@ -132,7 +132,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         idt.load();
     }
 
-    interrupts::disable_pic();
+    interrupts::disable_pics();
     unsafe {
         interrupts::enable_interrupts();
     }

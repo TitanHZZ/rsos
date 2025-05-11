@@ -31,7 +31,7 @@ const PIC2_DATA: u16    = PIC2 + 1;
 
 // https://wiki.osdev.org/8259_PIC#Disabling
 /// Disables the PICs (master and slave) by masking all of their interrupts.
-pub fn disable_pic() {
+pub fn disable_pics() {
     IoPort::write_u8(PIC1_DATA, 0xFF);
     IoPort::write_u8(PIC2_DATA, 0xFF);
 }
