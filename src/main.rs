@@ -8,7 +8,9 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, tss::TSS, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::interrupts::gdt::{NormalDescriptorAccessByteArgs, NormalSegmentAccessByte, SegmentDescriptorTrait, SegmentFlags};
+use rsos::interrupts::gdt::{SystemDescriptorAccessByteArgs, SystemSegmentAccessByte, SystemSegmentAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
@@ -123,17 +125,29 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
+    // set up the GDT for interrupts
+    let mut gdt = GDT::new();
+    gdt.code_descriptor.set_flags(SegmentFlags::LONG_MODE_CODE);
+    gdt.code_descriptor.set_access_byte(NormalDescriptorAccessByteArgs {
+        flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
+    });
+
+    gdt.tss_descriptor.set_access_byte(SystemDescriptorAccessByteArgs {
+        flags: SystemSegmentAccessByte::PRESENT,
+        seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
+    });
+
+    let mut tss = TSS::new();
+    tss.ist[0] = 0;
+
     // set up the IDT
-    let idt = Box::new(InterruptDescriptorTable::new());
-    let idt = Box::leak(idt);
+    let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.double_fault.set_fn(double_fault_handler);
     idt.breakpoint.set_fn(breakpoint_handler);
-    unsafe {
-        idt.load();
-    }
 
     interrupts::disable_pics();
     unsafe {
+        InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
     }
 

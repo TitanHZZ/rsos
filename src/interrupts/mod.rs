@@ -1,7 +1,7 @@
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 // https://wiki.osdev.org/Interrupts_Tutorial
-mod tss;
-mod gdt;
+pub mod tss;
+pub mod gdt;
 
 use core::{marker::PhantomData, arch::asm};
 use crate::{io_port::IoPort, memory::VirtualAddress};
@@ -237,18 +237,18 @@ impl InterruptDescriptorTable {
         }
     }
 
-    /// Loads `self` as the current IDT.  
+    /// Loads `idt` as the current IDT.  
     /// This does not enable/disable interrupts.
     /// 
     /// # Safety: 
     /// 
-    /// The caller must ensure that `self` is a valid IDT and interrupts **should** be disabled before
+    /// The caller must ensure that `idt` is a valid IDT and interrupts **should** be disabled before
     /// loading the IDT and enabled again afterwards.  
     /// The IDT also **needs** to live for the duration of it's use where preferably, it's lifetime would be `'static`.
-    pub unsafe fn load(&'static self) {
+    pub unsafe fn load(idt: &'static Self) {
         let idtr = IdtR {
             size: size_of::<InterruptDescriptorTable>() as u16 - 1,
-            addr: self as *const InterruptDescriptorTable as VirtualAddress,
+            addr: idt as *const InterruptDescriptorTable as VirtualAddress,
         };
 
         unsafe {
