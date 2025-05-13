@@ -242,12 +242,12 @@ impl InterruptDescriptorTable {
     /// 
     /// # Safety: 
     /// 
-    /// The caller must ensure that `idt` is a valid IDT and interrupts **should** be disabled before
-    /// loading the IDT and enabled again afterwards.  
-    /// The IDT also **needs** to live for the duration of it's use where preferably, it's lifetime would be `'static`.
+    /// The caller must ensure that `idt` is a valid IDT and interrupts **should** be
+    /// disabled before loading the IDT and enabled again afterwards.  
+    /// The IDT also needs to live for the duration of it's use so, `'static`.
     pub unsafe fn load(idt: &'static Self) {
         let idtr = IdtR {
-            size: size_of::<InterruptDescriptorTable>() as u16 - 1,
+            size: (size_of::<InterruptDescriptorTable>() - 1) as u16,
             addr: idt as *const InterruptDescriptorTable as VirtualAddress,
         };
 

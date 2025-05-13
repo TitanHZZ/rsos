@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, tss::TSS, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
 use rsos::interrupts::gdt::{NormalDescriptorAccessByteArgs, NormalSegmentAccessByte, SegmentDescriptorTrait, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescriptorAccessByteArgs, SystemSegmentAccessByte, SystemSegmentAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
@@ -126,7 +126,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     }
 
     // set up the GDT for interrupts
-    let mut gdt = GDT::new();
+    let mut gdt = Box::new(GDT::new());
     gdt.code_descriptor.set_flags(SegmentFlags::LONG_MODE_CODE);
     gdt.code_descriptor.set_access_byte(NormalDescriptorAccessByteArgs {
         flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
@@ -137,8 +137,10 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
     });
 
-    let mut tss = TSS::new();
-    tss.ist[0] = 0;
+    let mut tss = Box::new(TSS::new());
+    tss.new_stack(TssStackNumber::TssStack1, 4, true);
+
+    gdt.tss_descriptor.set_base(Box::leak(tss));
 
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
@@ -147,6 +149,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     interrupts::disable_pics();
     unsafe {
+        // GDT::load(Box::leak(gdt));
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
     }

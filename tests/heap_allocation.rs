@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use rsos::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
+use rsos::{interrupts::tss::TSS, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -135,4 +135,11 @@ fn deallocation() {
     // allocate another Box with different size
     let b: Box<u64> = Box::new(13);
     assert_eq!(addr, &*b as *const u64 as *const i32);
+}
+
+#[test_case]
+fn big_struct_small_align() {
+    // the TSS struct has a unique combination of size (104 bytes) and align (1 byte)
+    // and this cases some problems if the real_align and real_size are not calculated correctly
+    let _tss = Box::new(TSS::new());
 }

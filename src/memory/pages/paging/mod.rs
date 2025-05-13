@@ -178,7 +178,7 @@ impl ActivePagingContext {
 
     /*
      * This will unmap a page and the respective frame.
-     * If an invalidd page is given, it will simply be ignored as there is nothing to unmap.
+     * If an invalid page is given, it will simply be ignored as there is nothing to unmap.
      */
     pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A) {
         let apc = &mut *self.0.lock();

@@ -1,4 +1,4 @@
-use crate::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags};
+use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags}};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull, ptr::eq as ptr_eq};
 use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use super::paging::ActivePagingContext;
@@ -214,7 +214,7 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
         debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
 
-        let real_align = max(align_of::<FreedBlock>(), layout.align());
+        let real_align = max(size_of::<FreedBlock>(), layout.align());
         let real_size  = max(layout.size().align_up(real_align), size_of::<FreedBlock>()); // buffer overflows??
 
         // try to find a free block first
@@ -226,7 +226,7 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         let freed_block_addr = allocator.next_block;
         let mut alloc_start = allocator.next_block.align_up(real_align);
 
-        // TODO: this is only rrequired when layout.align() > align_of::<FreedBlock>() and if it is big enough,
+        // TODO: this is only required when layout.align() > align_of::<FreedBlock>() and if it is big enough,
         //       we might not need to add size_of::<FreedBlock>();
         // check if we need padding
         if alloc_start != allocator.next_block {
@@ -249,7 +249,7 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
                 allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
-                    .expect("Could not allocate more frame for the heap memory.");
+                    .expect("Could not allocate more frames for the heap memory.");
             }
         }
 
@@ -269,7 +269,7 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         debug_assert!(ptr as usize % layout.align() == 0);
 
         let allocator = &mut *self.0.lock();
-        let real_align = max(align_of::<FreedBlock>(), layout.align());
+        let real_align = max(size_of::<FreedBlock>(), layout.align());
         let real_size  = max(layout.size().align_up(real_align), size_of::<FreedBlock>()); // buffer overflows??
 
         unsafe {
