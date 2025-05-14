@@ -1,5 +1,5 @@
-use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags}};
-use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::NonNull, ptr::eq as ptr_eq};
+use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags}, serial_print, serial_println};
+use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
 use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use super::paging::ActivePagingContext;
 use spin::Mutex;
@@ -16,6 +16,8 @@ struct SimplePageAllocatorInner {
     next_block: VirtualAddress,
     freed_blocks: Option<NonNull<FreedBlock>>,
 
+    max_mapped_addr: VirtualAddress,
+
     apc: Option<&'static ActivePagingContext>,
 }
 
@@ -28,10 +30,11 @@ pub struct SimplePageAllocator(Mutex<SimplePageAllocatorInner>);
  */
 #[global_allocator]
 pub static HEAP_ALLOCATOR: SimplePageAllocator = SimplePageAllocator(Mutex::new(SimplePageAllocatorInner { 
-    heap_start  : 0x0,
-    heap_size   : 0,
-    next_block  : 0x0,
-    freed_blocks: None,
+    heap_start     : 0x0,
+    heap_size      : 0,
+    next_block     : 0x0,
+    freed_blocks   : None,
+    max_mapped_addr: 0,
     apc: None,
 }));
 
@@ -52,7 +55,36 @@ impl SimplePageAllocator {
         allocator.apc = Some(apc);
 
         // we are going to lazily allocate the required frames (for now we allocate just the first one)
+        allocator.max_mapped_addr = heap_start + FRAME_PAGE_SIZE - 1;
         apc.map(heap_start, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+    }
+
+    // DEBUG fn
+    pub fn print_freed_blocks(&self) {
+        let allocator = &mut *self.0.lock();
+
+        // serial_println!("+------------------------+");
+        if allocator.freed_blocks.is_none() {
+            serial_println!("| Empty |");
+            return;
+        }
+
+        let first_block = unsafe { allocator.freed_blocks.unwrap().as_mut() };
+        serial_print!("| {} : {} |", addr_of!(*first_block) as VirtualAddress, first_block.size);
+
+        // loop through the blocks
+        let mut current_block = first_block;
+        let mut option_next_block = current_block.next_freed_block;
+        while let Some(mut addr_next_block) = option_next_block {
+            let next_block = unsafe { addr_next_block.as_mut() };
+
+            serial_print!(" -> |{} : {}|", addr_of!(*next_block) as VirtualAddress, next_block.size);
+
+            current_block = next_block;
+            option_next_block = current_block.next_freed_block;
+        }
+
+        serial_println!("");
     }
 }
 
@@ -211,7 +243,6 @@ impl SimplePageAllocatorInner {
 unsafe impl GlobalAlloc for SimplePageAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let allocator = &mut *self.0.lock();
-
         debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
 
         let real_align = max(size_of::<FreedBlock>(), layout.align());
@@ -242,19 +273,39 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
         let alloc_end = alloc_start + real_size - 1;
 
+        // // check if we need to allocate more frames to hold the new heap allocated data
+        // if allocator.next_block.align_down(FRAME_PAGE_SIZE) != (alloc_end + 1).align_down(FRAME_PAGE_SIZE) {
+        //     let start_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE);
+        //     let end_addr = (alloc_end + 1).align_up(FRAME_PAGE_SIZE) - 1;
+        //     serial_println!("start and end -> {:#x} : {:#x}", start_addr, end_addr);
+        //     for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
+        //         serial_println!("new mapping -> {:#x}", addr);
+        //         allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+        //             .expect("Could not allocate more frames for the heap memory.");
+        //     }
+        // }
+
+        allocator.next_block = alloc_start + real_size;
+
         // check if we need to allocate more frames to hold the new heap allocated data
-        if allocator.next_block.align_down(FRAME_PAGE_SIZE) != alloc_end.align_down(FRAME_PAGE_SIZE) {
-            let start_addr = allocator.next_block.align_up(FRAME_PAGE_SIZE);
-            let end_addr = alloc_end.align_up(FRAME_PAGE_SIZE) - 1;
+        if allocator.next_block > allocator.max_mapped_addr {
+            let start_addr = allocator.max_mapped_addr.align_up(FRAME_PAGE_SIZE);
+            let end_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE) - 1;
+
+            serial_println!("start and end -> {:#x} : {:#x}", start_addr, end_addr);
 
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
+                // serial_println!("new mapping -> {:#x}", addr);
                 allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
                     .expect("Could not allocate more frames for the heap memory.");
             }
+
+            allocator.max_mapped_addr = end_addr;
         }
 
-        allocator.next_block = alloc_start + real_size;
         debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
+        debug_assert!(allocator.max_mapped_addr >= allocator.next_block);
+        debug_assert!((allocator.max_mapped_addr + 1) % FRAME_PAGE_SIZE == 0);
 
         if freed_block_needed {
             // add the FreedBlock

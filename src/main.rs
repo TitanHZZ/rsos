@@ -126,38 +126,41 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     }
 
     // set up the GDT for interrupts
-    let mut gdt = Box::new(GDT::new());
-    gdt.code_descriptor.set_flags(SegmentFlags::LONG_MODE_CODE);
-    gdt.code_descriptor.set_access_byte(NormalDescriptorAccessByteArgs {
-        flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
-    });
+    // let mut gdt = Box::new(GDT::new());
+    // gdt.set_code_descriptor(|code| {
+    //     // set flags and the access byte
+    //     code.set_flags(SegmentFlags::LONG_MODE_CODE);
+    //     code.set_access_byte(NormalDescriptorAccessByteArgs {
+    //         flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
+    //     });
+    // });
+    // gdt.set_tss_descriptor(|tss| {
+    //     tss.set_access_byte(SystemDescriptorAccessByteArgs {
+    //         flags: SystemSegmentAccessByte::PRESENT,
+    //         seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
+    //     });
+    // });
 
-    gdt.tss_descriptor.set_access_byte(SystemDescriptorAccessByteArgs {
-        flags: SystemSegmentAccessByte::PRESENT,
-        seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
-    });
-
-    let mut tss = Box::new(TSS::new());
-    tss.new_stack(TssStackNumber::TssStack1, 4, true);
-
-    gdt.tss_descriptor.set_base(Box::leak(tss));
+    // let mut tss = Box::new(TSS::new());
+    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
+    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
+    // gdt.set_tss_descriptor(|tss_seg| tss_seg.set_base(Box::leak(tss)));
 
     // set up the IDT
-    let mut idt = Box::new(InterruptDescriptorTable::new());
-    idt.double_fault.set_fn(double_fault_handler);
-    idt.breakpoint.set_fn(breakpoint_handler);
-
-    interrupts::disable_pics();
-    unsafe {
-        // GDT::load(Box::leak(gdt));
-        InterruptDescriptorTable::load(Box::leak(idt));
-        interrupts::enable_interrupts();
-    }
+    // let mut idt = Box::new(InterruptDescriptorTable::new());
+    // idt.double_fault.set_fn(double_fault_handler);
+    // idt.breakpoint.set_fn(breakpoint_handler);
+    // interrupts::disable_pics();
+    // unsafe {
+    //     // GDT::load(Box::leak(gdt));
+    //     InterruptDescriptorTable::load(Box::leak(idt));
+    //     interrupts::enable_interrupts();
+    // }
 
     // trigger a breakpoint interrupt
-    unsafe {
-        asm!("int3");
-    }
+    // unsafe {
+    //     asm!("int3");
+    // }
 
     #[cfg(test)]
     test_main();

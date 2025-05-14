@@ -1,5 +1,6 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}}, println};
+use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::alloc::{GlobalAlloc, Layout};
 
 // https://wiki.osdev.org/Task_State_Segment#Long_Mode
@@ -16,6 +17,10 @@ pub struct TSS {
     reserved_4: u32,
     reserved_5: u16,
     iopb: u16,
+
+    // this is not part of the structure but it is needed as metadata fot managing heap allocated stacks
+    // this holds the size (in bytes) for each of the currently allocated stacks and if they used a page guard
+    previous_stack: [(usize, bool); 7],
 }
 
 #[derive(Clone, Copy)]
@@ -44,10 +49,14 @@ impl TSS {
             reserved_4: 0,
             reserved_5: 0,
             iopb: 0,
+
+            previous_stack: [(0, false); 7],
         }
     }
 
-    // TODO: fix the deallocation (might need rework of this fn as we do not know the size of the previous stack)
+    // TODO: remove unwraps
+    // TODO: this should probably return a Result
+    // TODO: maybe a constant for the page align??
     pub fn new_stack(&mut self, stack_number: TssStackNumber, mut page_count: u8, use_guard_page: bool) {
         // minimum 1 page for the stack
         if page_count == 0 {
@@ -59,21 +68,36 @@ impl TSS {
 
         // if a stack is already present, remove it so that a new can can be placed there
         if self.ist[stack_number as usize] != 0 {
-            unimplemented!();
+            let previous_stack_size: usize    = self.previous_stack[stack_number as usize].0;
+            let previous_stack_layout: Layout = Layout::from_size_align(previous_stack_size, 4096).unwrap();
+            let previous_stack_ptr: *mut u8   = (self.ist[stack_number as usize] - previous_stack_size + 1)  as *mut u8;
+
+            println!("old stack addr: {}, and size: {}", previous_stack_ptr as VirtualAddress, previous_stack_size);
+
+            // if the previous stack used a guard page, we need to map it again
+            if self.previous_stack[stack_number as usize].1 {
+                let guard_page_addr = previous_stack_ptr as VirtualAddress;
+                let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
+                ACTIVE_PAGING_CTX.map(guard_page_addr, &FRAME_ALLOCATOR, flags).unwrap();
+            }
+
+            unsafe { HEAP_ALLOCATOR.dealloc(previous_stack_ptr, previous_stack_layout) };
         }
 
         // alocate enough memory for the stack
-        // TODO: maybe a constant for the page align??
-        // TODO: remove this unwrap() call
-        let layout = Layout::from_size_align(real_page_count as usize * FRAME_PAGE_SIZE, 4096).unwrap();
-        let stack = unsafe { HEAP_ALLOCATOR.alloc(layout) };
+        let size = real_page_count as usize * FRAME_PAGE_SIZE;
+        let layout = Layout::from_size_align(size, 4096).unwrap();
+        let stack = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+
+        println!("new stack addr: {}, and size: {}", stack, size);
 
         // in x86_64, the stack grows downwards so, it must point to the last stack byte
-        self.ist[stack_number as usize] = (stack as usize + real_page_count as usize * FRAME_PAGE_SIZE) - 1;
+        self.ist[stack_number as usize] = (stack + real_page_count as usize * FRAME_PAGE_SIZE) - 1;
+        self.previous_stack[stack_number as usize] = (size, use_guard_page);
 
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack as VirtualAddress).unwrap(), &FRAME_ALLOCATOR);
+            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR);
         }
     }
 }

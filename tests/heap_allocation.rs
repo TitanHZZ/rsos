@@ -7,11 +7,12 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::tss::TSS, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
+use rsos::{interrupts::tss::{TssStackNumber, TSS}, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}, VirtualAddress}, println, serial_println};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{cmp::max, panic::PanicInfo};
+use core::{alloc::Layout, cmp::max, panic::PanicInfo};
+use core::alloc::GlobalAlloc;
 use rsos::{log, memory};
 
 #[panic_handler]
@@ -29,6 +30,8 @@ struct Aligned16(u64);
 /// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+    // at this point, the cpu is running in 64 bit long mode
+    // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data");
 
@@ -89,7 +92,12 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
+    // serial_println!("kernel: {:#x} : {:#x}", k_start, k_end);
+    // serial_println!("MB:     {:#x} : {:#x}", mb_start, mb_end);
+
+    #[cfg(test)]
     test_main();
+
     rsos::hlt();
 }
 
@@ -142,4 +150,27 @@ fn big_struct_small_align() {
     // the TSS struct has a unique combination of size (104 bytes) and align (1 byte)
     // and this cases some problems if the real_align and real_size are not calculated correctly
     let _tss = Box::new(TSS::new());
+}
+
+#[test_case]
+fn bruh() {
+    let layout = Layout::from_size_align(FRAME_PAGE_SIZE, 2048).unwrap();
+    let stack1 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+    // let stack2 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+    // let stack3 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+
+    // serial_println!("stack addrs -> {:#x} : {:#x} : {:#x}", stack1, stack2, stack3);
+
+    // unsafe {
+    //     *(stack1 as *mut u64) = 10;
+    //     *(stack2 as *mut u64) = 10;
+    //     *(stack3 as *mut u64) = 10;
+    // }
+
+    // let addr2 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+    // assert_eq!(addr, addr2);
+
+    // let mut tss = Box::new(TSS::new());
+    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
+    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
 }

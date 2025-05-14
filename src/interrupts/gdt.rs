@@ -1,9 +1,9 @@
 // https://wiki.osdev.org/Global_Descriptor_Table
 // https://wiki.osdev.org/GDT_Tutorial
+use core::{arch::asm, ptr::{addr_of, addr_of_mut}};
 use crate::memory::VirtualAddress;
 use bitflags::bitflags;
 use super::tss::TSS;
-use core::arch::asm;
 
 bitflags! {
     #[repr(C)]
@@ -158,8 +158,8 @@ impl SegmentDescriptorTrait for SystemSegmentDescriptor {
 #[repr(C)]
 pub struct GDT {
     null_descriptor: NormalSegmentDescriptor,
-    pub code_descriptor: NormalSegmentDescriptor,
-    pub tss_descriptor: SystemSegmentDescriptor,
+    code_descriptor: NormalSegmentDescriptor,
+    tss_descriptor: SystemSegmentDescriptor,
 }
 
 #[repr(C, packed)]
@@ -168,6 +168,7 @@ struct GDTR {
     offset: u64,
 }
 
+// TODO: add this somewhere: https://doc.rust-lang.org/stable/error_codes/E0793.html
 impl GDT {
     /// Creates a new `GDT` with 3 predefined segment descriptors.
     pub const fn new() -> Self {
@@ -180,6 +181,20 @@ impl GDT {
         // set the type of the code descriptor to 'code/data segment descriptor'
         gdt.code_descriptor.access_byte |= 1 << 4;
         gdt
+    }
+
+    pub fn set_code_descriptor(&mut self, f: impl FnOnce(&mut NormalSegmentDescriptor)) {
+        // use the read, modify, write pattern
+        let mut tmp = unsafe { addr_of!(self.code_descriptor).read_unaligned() };
+        f(&mut tmp);
+        unsafe { addr_of_mut!(self.code_descriptor).write_unaligned(tmp) };
+    }
+
+    pub fn set_tss_descriptor(&mut self, f: impl FnOnce(&mut SystemSegmentDescriptor)) {
+        // use the read, modify, write pattern
+        let mut tmp = unsafe { addr_of!(self.tss_descriptor).read_unaligned() };
+        f(&mut tmp);
+        unsafe { addr_of_mut!(self.tss_descriptor).write_unaligned(tmp) };
     }
 
     // TODO: write the description and safety sections
