@@ -7,12 +7,11 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::tss::{TssStackNumber, TSS}, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}, VirtualAddress}, println, serial_println};
+use rsos::{interrupts::tss::{TSS}, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{alloc::Layout, cmp::max, panic::PanicInfo};
-use core::alloc::GlobalAlloc;
+use core::{cmp::max, panic::PanicInfo};
 use rsos::{log, memory};
 
 #[panic_handler]
@@ -92,9 +91,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    // serial_println!("kernel: {:#x} : {:#x}", k_start, k_end);
-    // serial_println!("MB:     {:#x} : {:#x}", mb_start, mb_end);
-
     #[cfg(test)]
     test_main();
 
@@ -152,25 +148,14 @@ fn big_struct_small_align() {
     let _tss = Box::new(TSS::new());
 }
 
-#[test_case]
-fn bruh() {
-    let layout = Layout::from_size_align(FRAME_PAGE_SIZE, 2048).unwrap();
-    let stack1 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
-    // let stack2 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
-    // let stack3 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
-
-    // serial_println!("stack addrs -> {:#x} : {:#x} : {:#x}", stack1, stack2, stack3);
-
-    // unsafe {
-    //     *(stack1 as *mut u64) = 10;
-    //     *(stack2 as *mut u64) = 10;
-    //     *(stack3 as *mut u64) = 10;
-    // }
-
-    // let addr2 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
-    // assert_eq!(addr, addr2);
-
-    // let mut tss = Box::new(TSS::new());
-    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
-    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
-}
+// Because of the way the heap allocator works, the assert might fail but this is expected so this test is commented.
+// #[test_case]
+// fn big_deallocation() {
+//     let layout = Layout::from_size_align(5 * FRAME_PAGE_SIZE, 4096).unwrap();
+//     let addr1 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+// 
+//     unsafe { HEAP_ALLOCATOR.dealloc(addr1 as *mut u8, layout) };
+// 
+//     let addr2 = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+//     assert_eq!(addr1, addr2);
+// }

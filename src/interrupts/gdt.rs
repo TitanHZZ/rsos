@@ -200,7 +200,7 @@ impl GDT {
     // TODO: write the description and safety sections
     pub unsafe fn load(slf: &'static Self) {
         let gdtr = GDTR {
-            size: (size_of::<GDT>() - 1) as u16,
+            size: (size_of::<NormalSegmentDescriptor>() * 2 - 1) as u16,
             offset: slf as *const GDT as u64,
         };
 

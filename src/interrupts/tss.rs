@@ -72,7 +72,7 @@ impl TSS {
             let previous_stack_layout: Layout = Layout::from_size_align(previous_stack_size, 4096).unwrap();
             let previous_stack_ptr: *mut u8   = (self.ist[stack_number as usize] - previous_stack_size + 1)  as *mut u8;
 
-            println!("old stack addr: {}, and size: {}", previous_stack_ptr as VirtualAddress, previous_stack_size);
+            println!("old stack addr: {:#x}, and size: {}", previous_stack_ptr as VirtualAddress, previous_stack_size);
 
             // if the previous stack used a guard page, we need to map it again
             if self.previous_stack[stack_number as usize].1 {
@@ -89,7 +89,7 @@ impl TSS {
         let layout = Layout::from_size_align(size, 4096).unwrap();
         let stack = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
 
-        println!("new stack addr: {}, and size: {}", stack, size);
+        println!("new stack addr: {:#x}, and size: {}", stack, size);
 
         // in x86_64, the stack grows downwards so, it must point to the last stack byte
         self.ist[stack_number as usize] = (stack + real_page_count as usize * FRAME_PAGE_SIZE) - 1;

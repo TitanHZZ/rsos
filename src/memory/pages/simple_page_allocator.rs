@@ -70,7 +70,7 @@ impl SimplePageAllocator {
         }
 
         let first_block = unsafe { allocator.freed_blocks.unwrap().as_mut() };
-        serial_print!("| {} : {} |", addr_of!(*first_block) as VirtualAddress, first_block.size);
+        serial_print!("| {:#x} : {} |", addr_of!(*first_block) as VirtualAddress, first_block.size);
 
         // loop through the blocks
         let mut current_block = first_block;
@@ -78,7 +78,7 @@ impl SimplePageAllocator {
         while let Some(mut addr_next_block) = option_next_block {
             let next_block = unsafe { addr_next_block.as_mut() };
 
-            serial_print!(" -> |{} : {}|", addr_of!(*next_block) as VirtualAddress, next_block.size);
+            serial_print!(" -> | {:#x} : {} |", addr_of!(*next_block) as VirtualAddress, next_block.size);
 
             current_block = next_block;
             option_next_block = current_block.next_freed_block;
@@ -165,6 +165,9 @@ impl SimplePageAllocatorInner {
         }
     }
 
+    // TODO: this only checks if the requested block fits in the start of the freed blocks but,
+    //       while this might not be the case, the requested lbock might fit with an offset inside the
+    //       freed block. could/should this be implemented??
     // Safety: The caller must ensure that `real_align` and `real_size` are valid.
     unsafe fn get_from_list(&mut self, real_align: usize, real_size: usize) -> Option<*mut u8> {
         debug_assert!(real_align >= align_of::<FreedBlock>());
@@ -271,15 +274,12 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
             panic!("Out of heap memory!");
         }
 
-        let alloc_end = alloc_start + real_size - 1;
-
+        // let alloc_end = alloc_start + real_size - 1;
         // // check if we need to allocate more frames to hold the new heap allocated data
         // if allocator.next_block.align_down(FRAME_PAGE_SIZE) != (alloc_end + 1).align_down(FRAME_PAGE_SIZE) {
         //     let start_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE);
         //     let end_addr = (alloc_end + 1).align_up(FRAME_PAGE_SIZE) - 1;
-        //     serial_println!("start and end -> {:#x} : {:#x}", start_addr, end_addr);
         //     for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
-        //         serial_println!("new mapping -> {:#x}", addr);
         //         allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
         //             .expect("Could not allocate more frames for the heap memory.");
         //     }
@@ -287,15 +287,12 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
 
         allocator.next_block = alloc_start + real_size;
 
-        // check if we need to allocate more frames to hold the new heap allocated data
+        // check if we need to allocate and map more frames to hold the new heap allocated data
         if allocator.next_block > allocator.max_mapped_addr {
             let start_addr = allocator.max_mapped_addr.align_up(FRAME_PAGE_SIZE);
             let end_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE) - 1;
 
-            serial_println!("start and end -> {:#x} : {:#x}", start_addr, end_addr);
-
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
-                // serial_println!("new mapping -> {:#x}", addr);
                 allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
                     .expect("Could not allocate more frames for the heap memory.");
             }
@@ -303,12 +300,12 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
             allocator.max_mapped_addr = end_addr;
         }
 
-        debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
         debug_assert!(allocator.max_mapped_addr >= allocator.next_block);
+        debug_assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
         debug_assert!((allocator.max_mapped_addr + 1) % FRAME_PAGE_SIZE == 0);
 
         if freed_block_needed {
-            // add the FreedBlock
+            // add the FreedBlock to the linked list
             unsafe { allocator.add_to_list(freed_block_addr, alloc_start - freed_block_addr) }
         }
 

@@ -94,7 +94,6 @@ where
     })
 }
 
-
 // // the unwraps() here are fine as we are just testing things
 // pub fn test_paging<A: FrameAllocator>(frame_allocator: &mut A) {
 //     let mut page_table = unsafe { ActivePagingContext::new() };
