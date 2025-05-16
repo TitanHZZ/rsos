@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, GDTTest}, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, gdt, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
 use rsos::interrupts::gdt::{NormalDescriptorAccessByteArgs, NormalSegmentAccessByte, SegmentDescriptorTrait, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescriptorAccessByteArgs, SystemSegmentAccessByte, SystemSegmentAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
@@ -125,22 +125,21 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    // set up the GDT for interrupts
-    let mut gdt = Box::new(GDT::new());
-    gdt.set_code_descriptor(|code| {
-        // set flags and the access byte
-        code.set_flags(SegmentFlags::LONG_MODE_CODE);
-        code.set_access_byte(NormalDescriptorAccessByteArgs {
-            flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
-        });
-    });
-
-    gdt.set_tss_descriptor(|tss| {
-        tss.set_access_byte(SystemDescriptorAccessByteArgs {
-            flags: SystemSegmentAccessByte::PRESENT,
-            seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
-        });
-    });
+    // // set up the GDT for interrupts
+    // let mut gdt = Box::new(GDT::new());
+    // gdt.set_code_descriptor(|code| {
+    //     // set flags and the access byte
+    //     code.set_flags(SegmentFlags::LONG_MODE_CODE);
+    //     code.set_access_byte(NormalDescriptorAccessByteArgs {
+    //         flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
+    //     });
+    // });
+    // gdt.set_tss_descriptor(|tss| {
+    //     tss.set_access_byte(SystemDescriptorAccessByteArgs {
+    //         flags: SystemSegmentAccessByte::PRESENT,
+    //         seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
+    //     });
+    // });
 
     // let mut tss = Box::new(TSS::new());
     // tss.new_stack(TssStackNumber::TssStack1, 4, true);
