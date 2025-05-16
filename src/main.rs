@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, gdt::{self, GDTTest}, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
 use rsos::interrupts::gdt::{NormalDescriptorAccessByteArgs, NormalSegmentAccessByte, SegmentDescriptorTrait, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescriptorAccessByteArgs, SystemSegmentAccessByte, SystemSegmentAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
@@ -145,7 +145,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // let mut tss = Box::new(TSS::new());
     // tss.new_stack(TssStackNumber::TssStack1, 4, true);
     // gdt.set_tss_descriptor(|tss_seg| tss_seg.set_base(Box::leak(tss)));
-
+ 
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.general_protection.set_fn(general_protection_fault_handler);
@@ -154,15 +154,16 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     interrupts::disable_pics();
     unsafe {
-        GDT::load(Box::leak(gdt));
+        // GDT::load(Box::leak(gdt));
+        gdt::reload_seg_regs();
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
     }
 
     // trigger a breakpoint interrupt
-    // unsafe {
-    //     asm!("int3");
-    // }
+    unsafe {
+        asm!("int3");
+    }
 
     #[cfg(test)]
     test_main();

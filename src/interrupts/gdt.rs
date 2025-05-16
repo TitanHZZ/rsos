@@ -5,6 +5,27 @@ use crate::memory::VirtualAddress;
 use bitflags::bitflags;
 use super::tss::TSS;
 
+// https://wiki.osdev.org/GDT_Tutorial#Long_Mode_2
+pub unsafe fn reload_seg_regs() {
+    unsafe {
+        asm!(
+            "push 0x08",              // Push code segment to stack, 0x08 is a stand-in for your code segment
+            "lea {tmp}, [13f + rip]", // Load address of the label `13` into `reg`
+            "push {tmp}",             // Push this value to the stack
+            "retfq",                  // Perform a far return, RETFQ or LRETQ depending on syntax
+            "13:",
+            // Reload data segment registers
+            "mov rax, 0", // 0x10 is a stand-in for your data segment
+            "mov ss, rax",
+            "mov ds, rax",
+            "mov es, rax",
+            "mov fs, rax",
+            "mov gs, rax",
+            tmp = lateout(reg) _,
+        );
+    }
+}
+
 bitflags! {
     #[repr(C)]
     pub struct NormalSegmentAccessByte: u8 {
@@ -155,7 +176,7 @@ impl SegmentDescriptorTrait for SystemSegmentDescriptor {
 }
 
 // TODO: this might have to be packed
-#[repr(C)]
+#[repr(C, packed)]
 pub struct GDT {
     null_descriptor: NormalSegmentDescriptor,
     code_descriptor: NormalSegmentDescriptor,
@@ -200,7 +221,7 @@ impl GDT {
     // TODO: write the description and safety sections
     pub unsafe fn load(slf: &'static Self) {
         let gdtr = GDTR {
-            size: (size_of::<NormalSegmentDescriptor>() * 2 - 1) as u16,
+            size: (size_of::<GDT>() - 1) as u16,
             offset: slf as *const GDT as u64,
         };
 
