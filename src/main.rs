@@ -8,9 +8,9 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
-use rsos::interrupts::gdt::{NormalDescriptorAccessByteArgs, NormalSegmentAccessByte, SegmentDescriptorTrait, SegmentFlags};
-use rsos::interrupts::gdt::{SystemDescriptorAccessByteArgs, SystemSegmentAccessByte, SystemSegmentAccessByteType, GDT};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
+use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
@@ -141,6 +141,17 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     //     });
     // });
 
+    let mut code_seg = NormalSegmentDescriptor::new();
+    code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
+    code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA_SEG));
+
+    let mut tss_seg = SystemSegmentDescriptor::new();
+    tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
+
+    let mut gdt = Box::new(GDT::new());
+    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg));
+    // let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg));
+
     // let mut tss = Box::new(TSS::new());
     // tss.new_stack(TssStackNumber::TssStack1, 4, true);
     // gdt.set_tss_descriptor(|tss_seg| tss_seg.set_base(Box::leak(tss)));
@@ -153,7 +164,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     interrupts::disable_pics();
     unsafe {
-        // GDT::load(Box::leak(gdt));
+        GDT::load(Box::leak(gdt));
         gdt::reload_seg_regs();
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
