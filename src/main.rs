@@ -125,47 +125,30 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Heap allocator initialized.");
     }
 
-    // // set up the GDT for interrupts
-    // let mut gdt = Box::new(GDT::new());
-    // gdt.set_code_descriptor(|code| {
-    //     // set flags and the access byte
-    //     code.set_flags(SegmentFlags::LONG_MODE_CODE);
-    //     code.set_access_byte(NormalDescriptorAccessByteArgs {
-    //         flags: NormalSegmentAccessByte::EXECUTABLE | NormalSegmentAccessByte::PRESENT
-    //     });
-    // });
-    // gdt.set_tss_descriptor(|tss| {
-    //     tss.set_access_byte(SystemDescriptorAccessByteArgs {
-    //         flags: SystemSegmentAccessByte::PRESENT,
-    //         seg_type: SystemSegmentAccessByteType::TssAvailable64bit,
-    //     });
-    // });
-
     let mut code_seg = NormalSegmentDescriptor::new();
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
-    code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA_SEG));
+    code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
 
     let mut tss_seg = SystemSegmentDescriptor::new();
     tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
 
+    let mut tss = Box::new(TSS::new());
+    tss.new_stack(TssStackNumber::TssStack1, 4, true);
+    tss_seg.set_base(Box::leak(tss));
+
     let mut gdt = Box::new(GDT::new());
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg));
-    // let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg));
-
-    // let mut tss = Box::new(TSS::new());
-    // tss.new_stack(TssStackNumber::TssStack1, 4, true);
-    // gdt.set_tss_descriptor(|tss_seg| tss_seg.set_base(Box::leak(tss)));
+    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg));
  
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
-    idt.general_protection.set_fn(general_protection_fault_handler);
-    idt.double_fault.set_fn(double_fault_handler);
     idt.breakpoint.set_fn(breakpoint_handler);
 
     interrupts::disable_pics();
     unsafe {
         GDT::load(Box::leak(gdt));
-        gdt::reload_seg_regs();
+        TSS::load(tss_seg_sel);
+        gdt::reload_seg_regs(code_seg_sel);
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
     }
@@ -185,18 +168,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {
     println!("Got breakpoint exception!");
     println!("{:#?}", args);
-}
-
-extern "x86-interrupt" fn general_protection_fault_handler(args: InterruptArgs, error_code: u64) {
-    println!("Got general protection fault!");
-    rsos::hlt();
-}
-
-extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: u64) {
-    log!(failed, "Got Double Fault exception! Halting...");
-    println!("Error code: {:#x}", error_code);
-    println!("{:#?}", args);
-    rsos::hlt();
 }
 
 /*

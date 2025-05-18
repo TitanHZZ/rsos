@@ -1,7 +1,8 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}}, println};
+use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}}};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
-use core::alloc::{GlobalAlloc, Layout};
+use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
+use super::gdt::SegmentSelector;
 
 // https://wiki.osdev.org/Task_State_Segment#Long_Mode
 #[repr(C, packed)]
@@ -72,8 +73,6 @@ impl TSS {
             let previous_stack_layout: Layout = Layout::from_size_align(previous_stack_size, 4096).unwrap();
             let previous_stack_ptr: *mut u8   = (self.ist[stack_number as usize] - previous_stack_size + 1)  as *mut u8;
 
-            println!("old stack addr: {:#x}, and size: {}", previous_stack_ptr as VirtualAddress, previous_stack_size);
-
             // if the previous stack used a guard page, we need to map it again
             if self.previous_stack[stack_number as usize].1 {
                 let guard_page_addr = previous_stack_ptr as VirtualAddress;
@@ -89,8 +88,6 @@ impl TSS {
         let layout = Layout::from_size_align(size, 4096).unwrap();
         let stack = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
 
-        println!("new stack addr: {:#x}, and size: {}", stack, size);
-
         // in x86_64, the stack grows downwards so, it must point to the last stack byte
         self.ist[stack_number as usize] = (stack + real_page_count as usize * FRAME_PAGE_SIZE) - 1;
         self.previous_stack[stack_number as usize] = (size, use_guard_page);
@@ -98,6 +95,17 @@ impl TSS {
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
             ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR);
+        }
+    }
+
+    // https://wiki.osdev.org/Task_State_Segment#TSS_in_software_multitasking
+    pub unsafe fn load(tss_sel: SegmentSelector) {
+        unsafe {
+            asm! (
+                "mov rax, {sel}",
+                "ltr ax",
+                sel = in(reg) tss_sel.as_u16() as u64,
+            )
         }
     }
 }

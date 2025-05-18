@@ -6,10 +6,10 @@ use core::{arch::asm};
 use super::tss::TSS;
 
 // https://wiki.osdev.org/GDT_Tutorial#Long_Mode_2
-pub unsafe fn reload_seg_regs() {
+pub unsafe fn reload_seg_regs(code_sel: SegmentSelector) {
     unsafe {
         asm!(
-            "push 0x08",              // Push code segment to stack, 0x08 is a stand-in for your code segment
+            "push {sel}",             // Push code segment to stack, 0x08 is a stand-in for your code segment
             "lea {tmp}, [13f + rip]", // Load address of the label `13` into `reg`
             "push {tmp}",             // Push this value to the stack
             "retfq",                  // Perform a far return, RETFQ or LRETQ depending on syntax
@@ -21,6 +21,7 @@ pub unsafe fn reload_seg_regs() {
             "mov es, rax",
             "mov fs, rax",
             "mov gs, rax",
+            sel = in(reg) code_sel.as_u16() as u64,
             tmp = lateout(reg) _,
         );
     }
@@ -29,25 +30,25 @@ pub unsafe fn reload_seg_regs() {
 bitflags! {
     #[repr(C)]
     pub struct NormalDescAccessByte: u8 {
-        const ACCESSED            = 1 << 0;
-        const RW                  = 1 << 1;
-        const DC                  = 1 << 2; // Direction bit/Conforming bit
-        const EXECUTABLE          = 1 << 3;
-        const IS_CODE_OR_DATA_SEG = 1 << 4; // Descriptor type (code/data or system descriptor)
-        const DPL_LO              = 1 << 5;
-        const DPL_HI              = 1 << 6;
-        const PRESENT             = 1 << 7;
+        const ACCESSED        = 1 << 0;
+        const RW              = 1 << 1;
+        const DC              = 1 << 2; // Direction bit/Conforming bit
+        const EXECUTABLE      = 1 << 3;
+        const IS_CODE_OR_DATA = 1 << 4; // Descriptor type (code/data or system descriptor)
+        const DPL_LO          = 1 << 5;
+        const DPL_HI          = 1 << 6;
+        const PRESENT         = 1 << 7;
     }
 }
 
 bitflags! {
     #[repr(C)]
     pub struct SystemDescAccessByte: u8 {
-        // const TYPE             = 1 << 0 | 1 << 1 | 1 << 2 | 1 << 3;
-        const IS_CODE_OR_DATA_SEG = 1 << 4; // Descriptor type (code/data or system descriptor)
-        const DPL_LO              = 1 << 5;
-        const DPL_HI              = 1 << 6;
-        const PRESENT             = 1 << 7;
+        // const TYPE         = 1 << 0 | 1 << 1 | 1 << 2 | 1 << 3;
+        const IS_CODE_OR_DATA = 1 << 4; // Descriptor type (code/data or system descriptor)
+        const DPL_LO          = 1 << 5;
+        const DPL_HI          = 1 << 6;
+        const PRESENT         = 1 << 7;
     }
 }
 
@@ -203,9 +204,16 @@ pub struct GDT {
 }
 
 // https://wiki.osdev.org/Segment_Selector
+// TODO: it might make sense to add support for TI's and RPL's != 0
 #[repr(C)]
 pub struct SegmentSelector {
     selector: u16,
+}
+
+impl SegmentSelector {
+    pub fn as_u16(&self) -> u16 {
+        self.selector as u16
+    }
 }
 
 #[repr(C, packed)]
@@ -243,14 +251,36 @@ impl GDT {
                 let gdt_offset: usize = self.normal_desc_count as usize + self.system_desc_count as usize * 2;
                 debug_assert!(gdt_offset <= 6);
 
+                self.normal_desc_count += 1;
                 self.descriptors[gdt_offset] = gdt_entry;
-                // TODO: it might make sense to add support for TI's and RPL's != 0
                 SegmentSelector {
-                    selector: self.normal_desc_count as u16 + self.system_desc_count as u16 * 2,
+                    selector: (gdt_offset * 8) as u16,
                 }
             },
-            Descriptor::SystemDescriptor(system_segment_descriptor) => {
-                todo!()
+            Descriptor::SystemDescriptor(s_desc) => {
+                // make sure that the max limit id not violated
+                if self.system_desc_count >= 1 {
+                    panic!("not enough gdt space");
+                }
+
+                let gdt_entry_lo = s_desc.normal_desc.limit_0 as u64
+                    | (s_desc.normal_desc.base_0 as u64) << 16
+                    | (s_desc.normal_desc.base_1 as u64) << 32
+                    | (s_desc.normal_desc.access_byte as u64) << 40
+                    | (s_desc.normal_desc.limit_1_and_flags as u64) << 48
+                    | (s_desc.normal_desc.base_2 as u64) << 56;
+
+                let gdt_entry_hi = s_desc.base_3 as u64 | (s_desc.reserved as u64) << 32;
+
+                let gdt_offset: usize = self.normal_desc_count as usize + self.system_desc_count as usize * 2;
+                debug_assert!(gdt_offset <= 5);
+
+                self.system_desc_count += 1;
+                self.descriptors[gdt_offset] = gdt_entry_lo;
+                self.descriptors[gdt_offset + 1] = gdt_entry_hi;
+                SegmentSelector {
+                    selector: (gdt_offset * 8) as u16,
+                }
             },
         }
     }
@@ -258,7 +288,7 @@ impl GDT {
     // TODO: write the description and safety sections
     pub unsafe fn load(slf: &'static Self) {
         let gdtr = GDTR {
-            size: (size_of::<GDT>() - 1) as u16,
+            size: ((slf.normal_desc_count + slf.system_desc_count * 2) * 8 - 1) as u16,
             offset: slf as *const GDT as u64,
         };
 
@@ -266,38 +296,4 @@ impl GDT {
             asm!("lgdt [{}]", in(reg) &gdtr, options(nostack, preserves_flags));
         }
     }
-
-    // Creates a new `GDT` with 3 predefined segment descriptors.
-    // pub const fn new() -> Self {
-    //     let mut gdt = GDT {
-    //         null_descriptor: NormalSegmentDescriptor::new(),
-    //         code_descriptor: NormalSegmentDescriptor::new(),
-    //         tss_descriptor: SystemSegmentDescriptor::new(),
-    //     };
-    //     // set the type of the code descriptor to 'code/data segment descriptor'
-    //     gdt.code_descriptor.access_byte |= 1 << 4;
-    //     gdt
-    // }
-    // pub fn set_code_descriptor(&mut self, f: impl FnOnce(&mut NormalSegmentDescriptor)) {
-    //     // use the read, modify, write pattern
-    //     let mut tmp = unsafe { addr_of!(self.code_descriptor).read_unaligned() };
-    //     f(&mut tmp);
-    //     unsafe { addr_of_mut!(self.code_descriptor).write_unaligned(tmp) };
-    // }
-    // pub fn set_tss_descriptor(&mut self, f: impl FnOnce(&mut SystemSegmentDescriptor)) {
-    //     // use the read, modify, write pattern
-    //     let mut tmp = unsafe { addr_of!(self.tss_descriptor).read_unaligned() };
-    //     f(&mut tmp);
-    //     unsafe { addr_of_mut!(self.tss_descriptor).write_unaligned(tmp) };
-    // }
-    // // TODO: write the description and safety sections
-    // pub unsafe fn load(slf: &'static Self) {
-    //     let gdtr = GDTR {
-    //         size: (size_of::<GDT>() - 1) as u16,
-    //         offset: slf as *const GDT as u64,
-    //     };
-    //     unsafe {
-    //         asm!("lgdt [{}]", in(reg) &gdtr, options(nostack, preserves_flags));
-    //     }
-    // }
 }
