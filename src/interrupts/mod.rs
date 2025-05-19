@@ -3,9 +3,10 @@
 pub mod tss;
 pub mod gdt;
 
-use core::{marker::PhantomData, arch::asm};
 use crate::{io_port::IoPort, memory::VirtualAddress};
+use core::{marker::PhantomData, arch::asm};
 use bitflags::bitflags;
+use tss::TssStackNumber;
 
 /// # Safety
 /// 
@@ -175,6 +176,10 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
     /// Sets the DPL level.
     pub fn set_dpl_level(&mut self, dpl_level: DplLevel) {
         self.type_attrs = (self.type_attrs & !DPL_LEVEL_MASK) | dpl_level as u8;
+    }
+
+    pub fn set_ist(&mut self, ist: TssStackNumber) {
+        self.ist = ist as u8 + 1;
     }
 }
 

@@ -139,10 +139,13 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mut gdt = Box::new(GDT::new());
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg));
     let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg));
- 
+
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.breakpoint.set_fn(breakpoint_handler);
+    idt.breakpoint.set_ist(TssStackNumber::TssStack1);
+
+    idt.double_fault.set_fn(double_fault_handler);
 
     interrupts::disable_pics();
     unsafe {
@@ -168,6 +171,21 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {
     println!("Got breakpoint exception!");
     println!("{:#?}", args);
+
+    let rsp: usize;
+    unsafe { asm!("mov {}, rsp", out(reg) rsp) };
+    println!("rsp: {}", rsp);
+}
+
+extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: u64) {
+    println!("Got Double Fault exception!");
+    println!("{:#?}", args);
+    println!("error code: {}", error_code);
+
+    let rsp: usize;
+    unsafe { asm!("mov {}, rsp", out(reg) rsp) };
+    println!("rsp: {}", rsp);
+    rsos::hlt();
 }
 
 /*
