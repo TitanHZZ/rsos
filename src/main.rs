@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
@@ -135,6 +135,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mut tss = Box::new(TSS::new());
     tss.new_stack(TssStackNumber::TssStack1, 4, true);
     tss_seg.set_base(Box::leak(tss));
+    tss_seg.set_limit(TSS_SIZE);
 
     let mut gdt = Box::new(GDT::new());
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg));
@@ -143,9 +144,9 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.breakpoint.set_fn(breakpoint_handler);
-    idt.breakpoint.set_ist(TssStackNumber::TssStack1);
 
     idt.double_fault.set_fn(double_fault_handler);
+    idt.double_fault.set_ist(TssStackNumber::TssStack1);
 
     interrupts::disable_pics();
     unsafe {
@@ -171,10 +172,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {
     println!("Got breakpoint exception!");
     println!("{:#?}", args);
-
-    let rsp: usize;
-    unsafe { asm!("mov {}, rsp", out(reg) rsp) };
-    println!("rsp: {}", rsp);
 }
 
 extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: u64) {
@@ -182,9 +179,6 @@ extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: 
     println!("{:#?}", args);
     println!("error code: {}", error_code);
 
-    let rsp: usize;
-    unsafe { asm!("mov {}, rsp", out(reg) rsp) };
-    println!("rsp: {}", rsp);
     rsos::hlt();
 }
 

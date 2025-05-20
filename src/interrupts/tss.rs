@@ -1,5 +1,5 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}}, println};
+use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX, simple_page_allocator::HEAP_ALLOCATOR, Page}}};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
@@ -23,6 +23,9 @@ pub struct TSS {
     // this holds the size (in bytes) for each of the currently allocated stacks and if they used a page guard
     previous_stack: [(usize, bool); 7],
 }
+
+// the TSS always has a constant size
+pub const TSS_SIZE: u32 = 0x68;
 
 #[derive(Clone, Copy)]
 pub enum TssStackNumber {
@@ -92,11 +95,9 @@ impl TSS {
         self.ist[stack_number as usize] = (stack + real_page_count as usize * FRAME_PAGE_SIZE) - 1;
         self.previous_stack[stack_number as usize] = (size, use_guard_page);
 
-        println!("stack addr: {}, {}", { self.ist[stack_number as usize] }, stack);
-
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            // ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR);
+            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR);
         }
     }
 
