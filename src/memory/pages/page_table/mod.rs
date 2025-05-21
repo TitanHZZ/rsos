@@ -90,6 +90,7 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &*(self.next_table_addr(table_index)? as *const _) })
     }
 
+    #[allow(clippy::mut_from_ref)] // the current table is not mut but the next one might be
     pub fn next_table_mut(&self, table_index: usize) -> Option<&mut Table<L::NextLevel>> {
         Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
     }

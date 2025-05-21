@@ -23,12 +23,12 @@ pub fn disable_interrupts() {
     }
 }
 
-const PIC1: u16         = 0x20; /* IO base address for master PIC */
-const PIC2: u16         = 0xA0; /* IO base address for slave PIC */
-const PIC1_COMMAND: u16 = PIC1;
-const PIC1_DATA: u16    = PIC1 + 1;
-const PIC2_COMMAND: u16 = PIC2;
-const PIC2_DATA: u16    = PIC2 + 1;
+const PIC1: u16            = 0x20; /* IO base address for master PIC */
+const PIC2: u16            = 0xA0; /* IO base address for slave PIC */
+// const PIC1_COMMAND: u16 = PIC1;
+const PIC1_DATA: u16       = PIC1 + 1;
+// const PIC2_COMMAND: u16 = PIC2;
+const PIC2_DATA: u16       = PIC2 + 1;
 
 // https://wiki.osdev.org/8259_PIC#Disabling
 /// Disables the PICs (master and slave) by masking all of their interrupts.
@@ -134,7 +134,6 @@ pub struct InterruptDescriptor<F: InterruptFunc> {
     _func: PhantomData<F>,
 }
 
-// TODO: critical exceptions should probably use different (dedicated) stacks
 impl<F: InterruptFunc> InterruptDescriptor<F> {
     /// Creates a new `InterruptDescriptor` with the following defaults:
     ///   - The fn offset is 0
@@ -147,7 +146,7 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
         InterruptDescriptor {
             offset_1: 0x0000,
             selector: 0x8, // just use the basic code segment in the GDT
-            ist: 0x00, // always use the current stack
+            ist: 0x00, // by default, always use the current (kernel) stack
             type_attrs: GateType::InterruptGate as _,
             offset_2: 0x0000,
             offset_3: 0x0000,
@@ -157,6 +156,7 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
         }
     }
 
+    #[allow(clippy::identity_op)]
     /// Sets the fn addr and the 'present' bit.
     pub fn set_fn(&mut self, func: F) {
         let addr = func.to_virt_addr();
@@ -178,6 +178,7 @@ impl<F: InterruptFunc> InterruptDescriptor<F> {
         self.type_attrs = (self.type_attrs & !DPL_LEVEL_MASK) | dpl_level as u8;
     }
 
+    /// Sets the IST index (the stack to use).
     pub fn set_ist(&mut self, ist: TssStackNumber) {
         self.ist = ist as u8 + 1;
     }
@@ -211,6 +212,12 @@ pub struct InterruptDescriptorTable {
     interrupt                       : [InterruptDescriptor<IntFunc>; 224],   // external interrupts (PIC/APIC)
 }
 
+impl Default for InterruptDescriptorTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InterruptDescriptorTable {
     /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new`].
     pub const fn new() -> Self {
@@ -242,10 +249,11 @@ impl InterruptDescriptorTable {
         }
     }
 
-    /// Loads `idt` as the current IDT.  
+    /// Loads `idt` as the current IDT.
+    /// 
     /// This does not enable/disable interrupts.
     /// 
-    /// # Safety: 
+    /// # Safety
     /// 
     /// The caller must ensure that `idt` is a valid IDT and interrupts **should** be
     /// disabled before loading the IDT and enabled again afterwards.  

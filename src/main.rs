@@ -8,10 +8,11 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}, InterruptArgs, InterruptDescriptorTable}, memory::frames::simple_frame_allocator::FRAME_ALLOCATOR};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}};
+use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
+use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use core::{arch::asm, cmp::max, panic::PanicInfo};
@@ -133,13 +134,14 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
 
     let mut tss = Box::new(TSS::new());
-    tss.new_stack(TssStackNumber::TssStack1, 4, true);
+    tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
     tss_seg.set_base(Box::leak(tss));
     tss_seg.set_limit(TSS_SIZE);
 
+    // the unwraps() should be fine as we know that the gdt as space left for these 2 descriptors
     let mut gdt = Box::new(GDT::new());
-    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg));
-    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg));
+    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
+    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
 
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());

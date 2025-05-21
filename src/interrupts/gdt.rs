@@ -5,6 +5,13 @@ use bitflags::bitflags;
 use core::{arch::asm};
 use super::tss::TSS;
 
+/// Reloads all segment registers: cs, ss, ds, es, fs and gs.
+/// 
+/// The cs register will have the value of `code_sel` and the rest of the registers will be set to 0.
+/// 
+/// # Safety
+/// 
+/// The caller must ensure that `code_sel` is a valid segment selector and that the GDT is valid and correctly loaded.
 // https://wiki.osdev.org/GDT_Tutorial#Long_Mode_2
 pub unsafe fn reload_seg_regs(code_sel: SegmentSelector) {
     unsafe {
@@ -86,6 +93,12 @@ pub struct SystemSegmentDescriptor {
     reserved: u32,
 }
 
+impl Default for NormalSegmentDescriptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NormalSegmentDescriptor {
     /// Creates a completly zeroed out `NormalSegmentDescriptor`.
     pub const fn new() -> Self {
@@ -97,6 +110,12 @@ impl NormalSegmentDescriptor {
             limit_1_and_flags: 0,
             base_2: 0,
         }
+    }
+}
+
+impl Default for SystemSegmentDescriptor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -149,6 +168,7 @@ impl SegmentDescriptor for NormalSegmentDescriptor {
         self.limit_1_and_flags = (self.limit_1_and_flags & 0xF0) | ((limit >> 16) & 0x0F) as u8;
     }
 
+    #[allow(clippy::identity_op)]
     fn set_base(&mut self, tss: &'static TSS) {
         let base = tss as *const TSS as VirtualAddress;
         self.base_0 = ((base >> 00) & 0x0000_FFFF) as u16;
@@ -212,14 +232,26 @@ pub struct SegmentSelector {
 
 impl SegmentSelector {
     pub fn as_u16(&self) -> u16 {
-        self.selector as u16
+        self.selector
     }
 }
 
 #[repr(C, packed)]
+#[allow(clippy::upper_case_acronyms)]
 struct GDTR {
     size: u16,
     offset: u64,
+}
+
+#[derive(Debug)]
+pub enum GdtError {
+    NotEnoughGdtSpace,
+}
+
+impl Default for GDT {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GDT {
@@ -232,13 +264,13 @@ impl GDT {
         }
     }
 
-    // TODO: remove the panic!() and add a proper Result<> as the return
-    pub fn new_descriptor(&mut self, desc: Descriptor) -> SegmentSelector {
+    /// Adds `desc` to the GDT and returs a SegmentSelector that points to the newly added descriptor.
+    pub fn new_descriptor(&mut self, desc: Descriptor) -> Result<SegmentSelector, GdtError> {
         match desc {
             Descriptor::NormalDescriptor(n_desc) => {
                 // make sure that the max limit is not violated
                 if self.normal_desc_count >= 5 {
-                    panic!("not enough gdt space");
+                    return Err(GdtError::NotEnoughGdtSpace);
                 }
 
                 let gdt_entry: u64 = n_desc.limit_0 as u64
@@ -253,14 +285,14 @@ impl GDT {
 
                 self.normal_desc_count += 1;
                 self.descriptors[gdt_offset] = gdt_entry;
-                SegmentSelector {
+                Ok(SegmentSelector {
                     selector: (gdt_offset * 8) as u16,
-                }
+                })
             },
             Descriptor::SystemDescriptor(s_desc) => {
                 // make sure that the max limit id not violated
                 if self.system_desc_count >= 1 {
-                    panic!("not enough gdt space");
+                    return Err(GdtError::NotEnoughGdtSpace);
                 }
 
                 let gdt_entry_lo = s_desc.normal_desc.limit_0 as u64
@@ -278,14 +310,20 @@ impl GDT {
                 self.system_desc_count += 1;
                 self.descriptors[gdt_offset] = gdt_entry_lo;
                 self.descriptors[gdt_offset + 1] = gdt_entry_hi;
-                SegmentSelector {
+                Ok(SegmentSelector {
                     selector: (gdt_offset * 8) as u16,
-                }
-            },
+                })
+            }
         }
     }
 
-    // TODO: write the description and safety sections
+    /// Loads `slf` as the current GDT.
+    /// 
+    /// This does not reload segment registers altough it is necessary to do so with `reload_seg_regs()`.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that `slf` is valid.
     pub unsafe fn load(slf: &'static Self) {
         let gdtr = GDTR {
             size: ((slf.normal_desc_count + slf.system_desc_count * 2) * 8 - 1) as u16,

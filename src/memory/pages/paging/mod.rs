@@ -160,9 +160,7 @@ impl ActivePagingContext {
         apc.map_page(page, frame_allocator, flags)
     }
 
-    /*
-     * Maps the Page containing the `virtual_addr` to a (random) Frame.
-     */
+    /// Maps the Page containing the `virtual_addr` to a (random) Frame.
     pub fn map<A: FrameAllocator>(&self, virtual_addr: VirtualAddress, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
         apc.map(virtual_addr, frame_allocator, flags)
