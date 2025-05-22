@@ -15,6 +15,7 @@ pub mod efi_system_table;
 pub mod efi_boot_services_not_terminated;
 pub mod efi_image_handle;
 pub mod image_load_base_phy_addr;
+pub mod acpi_new_rsdp;
 
 use tag_iter::MbTagIter;
 use tag_trait::MbTag;

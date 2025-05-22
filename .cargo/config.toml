@@ -6,4 +6,4 @@ build-std = ["core", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
 [target.'cfg(target_os = "none")']
-runner = "./setup/runner.sh"
+runner = "setup/runner.sh"

@@ -2,8 +2,9 @@
 
 # TODO: add timeouts to the tests so that they do not indefinitely hang
 
-mkdir -p target/isofiles/boot/grub
+USE_UEFI=0
 
+mkdir -p target/isofiles/boot/grub
 cp "$1" target/isofiles/boot/kernel.bin
 
 # check for 'test' mode
@@ -16,6 +17,15 @@ fi
 grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 
 cmd="qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso"
+
+# switch to UEFI mode if requested
+if [ $USE_UEFI -eq 1 ]; then
+    # make a writable copy of OVMF_VARS.fd
+    cp /usr/share/OVMF/OVMF_VARS.fd /tmp/OVMF_VARS.fd
+
+    cmd+=" -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd"
+    cmd+=" -drive if=pflash,format=raw,file=/tmp/OVMF_VARS.fd"
+fi
 
 # check for 'test' mode
 if [[ "$1" == *"/deps/"* ]]; then

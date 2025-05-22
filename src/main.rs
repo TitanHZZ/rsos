@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, multiboot2::acpi_new_rsdp::AcpiNewRsdp};
 use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
@@ -163,6 +163,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     unsafe {
         asm!("int3");
     }
+
+    // let acpi_new_rsdp = mb_info.get_tag::<AcpiNewRsdp>().expect("Could not get acpi new rsdp struct");
 
     #[cfg(test)]
     test_main();
