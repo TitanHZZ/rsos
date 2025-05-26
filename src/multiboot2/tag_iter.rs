@@ -1,3 +1,5 @@
+use crate::memory::VirtualAddress;
+
 use super::{MbTagHeader, TagType};
 
 pub(crate) struct MbTagIter {
@@ -17,6 +19,8 @@ impl Iterator for MbTagIter {
     type Item = &'static MbTagHeader;
 
     fn next(&mut self) -> Option<Self::Item> {
+        debug_assert!(self.curr_tag_addr as VirtualAddress % 8 == 0);
+
         let curr_tag = unsafe { &*self.curr_tag_addr };
         match curr_tag.tag_type {
             TagType::End => None,

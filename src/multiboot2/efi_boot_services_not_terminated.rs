@@ -1,7 +1,7 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
-pub(crate) struct EfiBootServicesNotTerminated {
+pub struct EfiBootServicesNotTerminated {
     header: MbTagHeader,
 }
 

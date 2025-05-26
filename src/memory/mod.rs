@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{println, multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbolsIter}}};
+use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, MbBootInfo}, println};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -81,11 +81,11 @@ where
         active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
 
         // identity map the multiboot2 info (from first byte of first frame to last byte of last frame, even if misaligned)
-        let start_addr = mb_info.addr().align_down(FRAME_PAGE_SIZE);
-        let end_addr = mb_info.addr() + mb_info.size() as usize - 1;
-        let end_addr = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
+        let mb_start = mb_info.addr().align_down(FRAME_PAGE_SIZE);
+        let mb_end   = mb_start + mb_info.size() as usize - 1;
+        let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-        for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
+        for addr in (mb_start..=mb_end).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }

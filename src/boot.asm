@@ -30,7 +30,7 @@ header_start:
     .long 0                                                            # architecture
     .long header_end - header_start                                    # header length
     .long 0x100000000 - (0xE85250D6 + 0 + (header_end - header_start)) # checksum
-    # no optional multiboot 2 tags
+    # no optional multiboot 2 header tags
 
     # end tag
     .word 0 # type

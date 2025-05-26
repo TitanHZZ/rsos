@@ -2,7 +2,14 @@
 
 # TODO: add timeouts to the tests so that they do not indefinitely hang
 
-USE_UEFI=0
+# make a writable copy of OVMF_VARS.fd
+cp /usr/share/OVMF/OVMF_VARS.fd /tmp/OVMF_VARS.fd
+
+# https://wiki.osdev.org/UEFI#Emulation_with_QEMU_and_OVMF
+cmd="qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso \
+    -drive if=pflash,format=raw,unit=0,file=/usr/share/OVMF/OVMF_CODE.fd,readonly=on \
+    -drive if=pflash,format=raw,unit=1,file=/tmp/OVMF_VARS.fd \
+    -net none"
 
 mkdir -p target/isofiles/boot/grub
 cp "$1" target/isofiles/boot/kernel.bin
@@ -16,28 +23,20 @@ fi
 
 grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 
-cmd="qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso"
-
-# switch to UEFI mode if requested
-if [ $USE_UEFI -eq 1 ]; then
-    # make a writable copy of OVMF_VARS.fd
-    cp /usr/share/OVMF/OVMF_VARS.fd /tmp/OVMF_VARS.fd
-
-    cmd+=" -drive if=pflash,format=raw,readonly=on,file=/usr/share/OVMF/OVMF_CODE.fd"
-    cmd+=" -drive if=pflash,format=raw,file=/tmp/OVMF_VARS.fd"
-fi
-
 # check for 'test' mode
 if [[ "$1" == *"/deps/"* ]]; then
     # this is an I/O device that allows for a simple way to shutdown qemu (useful for tests)
     cmd+=" -device isa-debug-exit,iobase=0xf4,iosize=0x04"
 
     # this add a serial device (UART) and redirects the output to stdio (so that we can write to the host's terminal)
-    cmd+=" -serial stdio"
+    # cmd+=" -serial stdio"
 
     # hide qemu
     cmd+=" -display none"
 fi
+
+### TEMPORARY
+cmd+=" -serial stdio"
 
 eval $cmd
 ret=$?

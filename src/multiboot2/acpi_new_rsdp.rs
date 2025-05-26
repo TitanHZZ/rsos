@@ -15,13 +15,14 @@ struct RsdpV2 {
     reserved: [u8; 3],
 }
 
+#[repr(C)]
 pub struct AcpiNewRsdp {
     header: MbTagHeader,
-    rsdpv2: RsdpV2,
+    // rsdpv2: RsdpV2,
 }
 
 impl MbTag for AcpiNewRsdp {
     const TAG_TYPE: TagType = TagType::AcpiNewRsdp;
 
-    fn dst_size(base_tag: &MbTagHeader) -> Self::Metadata {}
+    fn dst_size(_base_tag: &MbTagHeader) -> Self::Metadata {}
 }

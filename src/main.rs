@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, multiboot2::acpi_new_rsdp::AcpiNewRsdp};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::FrameBufferInfo}, serial_println};
 use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
@@ -22,8 +22,8 @@ use alloc::boxed::Box;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    log!(failed, "Kernel Panic occurred!");
-    println!("{}", info);
+    // log!(failed, "Kernel Panic occurred!");
+    serial_println!("{}", info);
     rsos::hlt();
 }
 
@@ -69,6 +69,9 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     log!(ok, "Rust kernel code started.");
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data");
 
+    // EFI boot services are not supported
+    assert!(mb_info.get_tag::<EfiBootServicesNotTerminated>().is_none());
+
     // get the necessary mb2 tags and data
     let mem_map: &MemoryMap          = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present");
     let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
@@ -86,27 +89,37 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_end   = mb_start + mb_info.size() as usize - 1;
     let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
+    serial_println!("kernel:  {:#x} -- {:#x}", k_start, k_end);
+    serial_println!("mb2:     {:#x} -- {:#x}", mb_start, mb_end);
+    serial_println!("vga buf: {:#x} -- {:#x}", 0xb8000, 0xb8000 + FRAME_PAGE_SIZE - 1);
+
     // set up the frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
     unsafe {
         FRAME_ALLOCATOR.init(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("Could not initialize the frame allocator");
-        log!(ok, "Frame allocator initialized.");
+        // log!(ok, "Frame allocator initialized.");
     }
 
     // get the current paging context and create a new (empty) one
-    log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
+    // log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     { // this scope makes sure that the inactive context does not get used again
         let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
         memory::kernel_remap(&ACTIVE_PAGING_CTX, inactive_paging, elf_sections, &FRAME_ALLOCATOR, &mb_info)
             .expect("Could not remap the kernel");
+
+        // let acpi_new_rsdp = mb_info.get_tag::<AcpiNewRsdp>();
+        // serial_println!("acpi new rsdp exists: {}", acpi_new_rsdp.is_some());
+
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
         // TODO: is this really necessary?
         // the unwrap is fine as we know that the addr is valid
-        ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
+        // ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
     }
+
+    rsos::hlt();
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -164,12 +177,14 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         asm!("int3");
     }
 
-    // let acpi_new_rsdp = mb_info.get_tag::<AcpiNewRsdp>().expect("Could not get acpi new rsdp struct");
+    // let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
+    // let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
+    // serial_println!("framebuffer type: {:#?}", fb_type);
 
     #[cfg(test)]
     test_main();
 
-    println!("Hello, World!");
+    serial_println!("Hello, World!");
     rsos::hlt();
 }
 

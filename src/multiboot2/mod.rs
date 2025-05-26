@@ -16,11 +16,17 @@ pub mod efi_boot_services_not_terminated;
 pub mod efi_image_handle;
 pub mod image_load_base_phy_addr;
 pub mod acpi_new_rsdp;
+pub mod framebuffer_info;
 
 use tag_iter::MbTagIter;
 use tag_trait::MbTag;
 
 use crate::memory::PhysicalAddress;
+
+// TODO: remove BIOS only mb2 tags
+// TODO: check what type of mb2 header tags the kernel can pass to the bootloader
+// TODO: check which tags might not available in efi boot services are left active by the bootloader
+// TODO: if efi boot services are left enabled, panic (at least for now) as we expect all nedded tags to be available with mb2
 
 #[repr(C)]
 #[derive(Clone)]
