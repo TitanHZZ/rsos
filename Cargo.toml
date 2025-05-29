@@ -7,3 +7,4 @@ edition = "2024"
 bitflags = "2.6.0"
 spin = "0.9.8"
 ptr_meta = { version = "0.3.0", default-features = false, features = ["derive", "ptr_meta_derive"] }
+blake3 = { version = "1.8.2", default-features = false, features = ["no_avx2", "no_avx512", "no_neon", "no_sse2", "no_sse41"] }

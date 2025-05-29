@@ -9,7 +9,9 @@ cp /usr/share/OVMF/OVMF_VARS.fd /tmp/OVMF_VARS.fd
 cmd="qemu-system-x86_64 -enable-kvm -m 4G -cdrom target/rsos.iso \
     -drive if=pflash,format=raw,unit=0,file=/usr/share/OVMF/OVMF_CODE.fd,readonly=on \
     -drive if=pflash,format=raw,unit=1,file=/tmp/OVMF_VARS.fd \
-    -net none"
+    -net none \
+    -d int,cpu_reset \
+    -D qemu_debug.log"
 
 mkdir -p target/isofiles/boot/grub
 cp "$1" target/isofiles/boot/kernel.bin

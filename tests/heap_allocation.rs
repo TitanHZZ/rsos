@@ -7,7 +7,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::tss::{TSS}, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
+use rsos::{interrupts::tss::TSS, kernel, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
 use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use alloc::{boxed::Box, string::String, vec::Vec};
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // set up the frame allocator
     let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
     unsafe {
-        FRAME_ALLOCATOR.init(mem_map_entries, k_start, k_end, mb_start, mb_end).expect("Could not initialize the frame allocator");
+        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
         log!(ok, "Frame allocator initialized.");
     }
 

@@ -21,7 +21,7 @@ pub mod framebuffer_info;
 use tag_iter::MbTagIter;
 use tag_trait::MbTag;
 
-use crate::memory::PhysicalAddress;
+use crate::{memory::{PhysicalAddress, VirtualAddress}};
 
 // TODO: remove BIOS only mb2 tags
 // TODO: check what type of mb2 header tags the kernel can pass to the bootloader
@@ -123,7 +123,7 @@ impl MbBootInfo {
     }
 
     fn tags (&self) -> MbTagIter {
-        MbTagIter::new(self.tags_ptr)
+        MbTagIter::new(self.tags_ptr, self.tags_ptr as VirtualAddress + self.header.total_size as VirtualAddress)
     }
 
     pub fn get_tag<T: MbTag + ?Sized>(&self) -> Option<&T> {

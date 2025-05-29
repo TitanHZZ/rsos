@@ -67,9 +67,9 @@ pub enum ElfSectionType {
 bitflags! {
     #[derive(Debug)]
     pub struct ElfSectionFlags: u64 {
-        const ELF_SECTION_WRITABLE   = 0x00000001; // section contains data that is writable
-        const ELF_SECTION_ALLOCATED  = 0x00000002; // section is in memory during execution
-        const ELF_SECTION_EXECUTABLE = 0x00000004; // section contains executable code
+        const ELF_SECTION_WRITABLE      = 0x00000001; // section contains data that is writable
+        const ELF_SECTION_ALLOCATED     = 0x00000002; // section is in memory during execution
+        const ELF_SECTION_EXECUTABLE    = 0x00000004; // section contains executable code
         // const ENVIRONMENT_SPECIFIC   = 0x0F000000;
         // const PROCESSOR_SPECIFIC     = 0xF0000000;
     }

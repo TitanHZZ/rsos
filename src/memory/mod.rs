@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbolsIter}, MbBootInfo}, println};
+use crate::{kernel::Kernel, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}}};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -44,13 +44,15 @@ pub enum MemoryError {
  * Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
  * If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
  */
-pub fn kernel_remap<A>(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, elf_secs: ElfSymbolsIter, fr_alloc: &A,
-    mb_info: &MbBootInfo) -> Result<(), MemoryError>
+pub fn kernel_remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
 where
     A: FrameAllocator
-{
+{    
     ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
-        for elf_section in elf_secs {
+        let elf_symbols: &ElfSymbols = kernel.mb_info().get_tag::<ElfSymbols>().expect("elf_symbols broke");
+        let elf_sections = elf_symbols.sections().expect("elf_sections broke");
+
+        for elf_section in elf_sections {
             // if the section is not in memory, we don't need to map it
             if !elf_section.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED) {
                 continue;
@@ -63,7 +65,6 @@ where
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
             if start_addr % FRAME_PAGE_SIZE != 0 {
-                println!("{:#?}", elf_section.name());
                 return Err(MemoryError::MisalignedKernelSection);
             }
 
@@ -80,12 +81,8 @@ where
         let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
         active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
 
-        // identity map the multiboot2 info (from first byte of first frame to last byte of last frame, even if misaligned)
-        let mb_start = mb_info.addr().align_down(FRAME_PAGE_SIZE);
-        let mb_end   = mb_start + mb_info.size() as usize - 1;
-        let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
-
-        for addr in (mb_start..=mb_end).step_by(FRAME_PAGE_SIZE) {
+        // identity map the multiboot2 info
+        for addr in (kernel.mb_start()..=kernel.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }

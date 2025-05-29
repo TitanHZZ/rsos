@@ -1,4 +1,4 @@
-use crate::{memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMapEntry, MemoryMapEntryType}};
+use crate::{kernel::Kernel, memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntry, MemoryMapEntryType}};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -34,14 +34,19 @@ impl SimpleFrameAllocator {
     /// 
     /// Can only be called once or the allocator might get into an inconsistent state.  
     /// However, it must be called as the allocator expects it.
-    pub unsafe fn init(&self, areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize) -> Result<(), MemoryError> {
+    // TODO: the Result<> could contain an error intead of the random expect()s
+    pub unsafe fn init(&self, kernel: &Kernel /* areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize */) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
-        allocator.areas    = Some(areas);
-        allocator.k_start  = Frame(k_start);
-        allocator.k_end    = Frame(k_end);
-        allocator.mb_start = Frame(mb_start);
-        allocator.mb_end   = Frame(mb_end);
+        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().expect("Memory map tag is not present");
+        let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
+
+        // in identity mapping, the virtual addrs and the physical addrs are the same
+        allocator.areas    = Some(mem_map_entries);
+        allocator.k_start  = Frame::from_phy_addr(kernel.k_start());
+        allocator.k_end    = Frame::from_phy_addr(kernel.k_end());
+        allocator.mb_start = Frame::from_phy_addr(kernel.mb_start());
+        allocator.mb_end   = Frame::from_phy_addr(kernel.mb_end());
 
         // make sure thet the allocator starts with a free frame
         if allocator.is_frame_used() {
