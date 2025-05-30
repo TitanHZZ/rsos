@@ -3,7 +3,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{kernel::Kernel, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols}}};
+use crate::{kernel::Kernel, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}, memory_map::MemoryMapError}};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -33,11 +33,17 @@ impl AddrOps for usize {
 
 #[derive(Debug)]
 pub enum MemoryError {
-    PageInvalidVirtualAddress, // tried creating a page with an invalid x86_64 addr
-    NotEnoughPhyMemory,        // a frame allocator ran out of memory
-    MisalignedKernelSection,   // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
-    MappingUsedTableEntry,     // the user is trying to map to a used page table entry
-    FrameInvalidAllocatorAddr, // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
+    PageInvalidVirtualAddress,      // tried creating a page with an invalid x86_64 addr
+    NotEnoughPhyMemory,             // a frame allocator ran out of memory
+    MisalignedKernelSection,        // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
+    MappingUsedTableEntry,          // the user is trying to map to a used page table entry
+    FrameInvalidAllocatorAddr,      // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
+
+    // TODO: perhaps this should not be considered a memory error ??
+    ElfSymbolsMbTagDoesNotExist,    // the `ElfSymbols` multiboot2 tag does not exist
+    MemoryMapMbTagDoesNotExist,     // the `MemoryMap` multiboot2 tag does not exist
+    ElfSectionErr(ElfSectionError), // elf section specific errors
+    MemoryMapErr(MemoryMapError),   // elf section specific errors
 }
 
 /*
@@ -47,10 +53,10 @@ pub enum MemoryError {
 pub fn kernel_remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
 where
     A: FrameAllocator
-{    
+{
     ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
-        let elf_symbols: &ElfSymbols = kernel.mb_info().get_tag::<ElfSymbols>().expect("elf_symbols broke");
-        let elf_sections = elf_symbols.sections().expect("elf_sections broke");
+        let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
+        let elf_sections = elf_symbols.sections().map_err(|e| MemoryError::ElfSectionErr(e))?;
 
         for elf_section in elf_sections {
             // if the section is not in memory, we don't need to map it
@@ -60,8 +66,8 @@ where
 
             // get section addr range (from first byte of first frame to last byte of last frame)
             let start_addr = elf_section.addr();
-            let end_addr = start_addr + elf_section.size() as usize - 1;
-            let end_addr = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
+            let end_addr   = start_addr + elf_section.size() as usize - 1;
+            let end_addr   = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
             if start_addr % FRAME_PAGE_SIZE != 0 {

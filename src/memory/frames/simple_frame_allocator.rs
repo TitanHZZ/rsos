@@ -34,12 +34,11 @@ impl SimpleFrameAllocator {
     /// 
     /// Can only be called once or the allocator might get into an inconsistent state.  
     /// However, it must be called as the allocator expects it.
-    // TODO: the Result<> could contain an error intead of the random expect()s
-    pub unsafe fn init(&self, kernel: &Kernel /* areas: &'static [MemoryMapEntry], k_start: usize, k_end: usize, mb_start: usize, mb_end: usize */) -> Result<(), MemoryError> {
+    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
-        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().expect("Memory map tag is not present");
-        let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
+        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
+        let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
 
         // in identity mapping, the virtual addrs and the physical addrs are the same
         allocator.areas    = Some(mem_map_entries);

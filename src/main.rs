@@ -75,10 +75,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // EFI boot services are not supported
     assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
-    serial_println!("kernel:  {:#x} -- {:#x}", kernel.k_start(), kernel.k_end());
-    serial_println!("mb2:     {:#x} -- {:#x}", kernel.mb_start(), kernel.mb_end());
-    serial_println!("vga buf: {:#x} -- {:#x}", 0xb8000, 0xb8000 + FRAME_PAGE_SIZE - 1);
-
     // set up the frame allocator
     unsafe {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
