@@ -116,49 +116,53 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     log!(ok, "Kernel remapping completed.");
     log!(ok, "Stack guard page created.");
 
-    // // set up the heap allocator
-    // unsafe {
-    //     // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
-    //     // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
-    //     // and thus, we can start the kernel heap at the biggest of the 2
-    //     HEAP_ALLOCATOR.init(max(k_end, mb_end).align_up(FRAME_PAGE_SIZE), 100 * 1024, &ACTIVE_PAGING_CTX)
-    //         .expect("Could not initialize the heap allocator");
-    //     log!(ok, "Heap allocator initialized.");
-    // }
+    // set up the heap allocator
+    unsafe {
+        // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
+        // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
+        // and thus, we can start the kernel heap at the biggest of the 2
+        let heap_start = max(kernel.k_end(), kernel.mb_end()).align_up(FRAME_PAGE_SIZE);
+        HEAP_ALLOCATOR.init(heap_start, 100 * 1024, &ACTIVE_PAGING_CTX)
+            .expect("Could not initialize the heap allocator");
+        log!(ok, "Heap allocator initialized.");
+    }
 
-    // let mut code_seg = NormalSegmentDescriptor::new();
-    // code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
-    // code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
-    // let mut tss_seg = SystemSegmentDescriptor::new();
-    // tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
-    // let mut tss = Box::new(TSS::new());
-    // tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
-    // tss_seg.set_base(Box::leak(tss));
-    // tss_seg.set_limit(TSS_SIZE);
-    // // the unwraps() should be fine as we know that the gdt as space left for these 2 descriptors
-    // let mut gdt = Box::new(GDT::new());
-    // let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
-    // let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
+    let mut code_seg = NormalSegmentDescriptor::new();
+    code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
+    code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
+
+    let mut tss_seg = SystemSegmentDescriptor::new();
+    tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
+
+    let mut tss = Box::new(TSS::new());
+    tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
+    tss_seg.set_base(Box::leak(tss));
+    tss_seg.set_limit(TSS_SIZE);
+
+    // the unwraps() *should* be fine as we know that the gdt as space left for these 2 descriptors
+    let mut gdt = Box::new(GDT::new());
+    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
+    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
 
     // set up the IDT
-    let mut idt =  InterruptDescriptorTable::new();
+    let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.breakpoint.set_fn(breakpoint_handler);
     idt.double_fault.set_fn(double_fault_handler);
-    // idt.double_fault.set_ist(TssStackNumber::TssStack1);
+    idt.double_fault.set_ist(TssStackNumber::TssStack1);
 
     interrupts::disable_pics();
-    // unsafe {
-    //     // GDT::load(Box::leak(gdt));
-    //     // TSS::load(tss_seg_sel);
-    //     // gdt::reload_seg_regs(code_seg_sel);
-    //     InterruptDescriptorTable::load(&idt);
-    //     interrupts::enable_interrupts();
-    // }
+    unsafe {
+        GDT::load(Box::leak(gdt));
+        TSS::load(tss_seg_sel);
+        gdt::reload_seg_regs(code_seg_sel);
+        InterruptDescriptorTable::load(Box::leak(idt));
+        interrupts::enable_interrupts();
+    }
 
     // trigger a breakpoint interrupt
-    // unsafe {
-    //     asm!("int3");
-    // }
+    unsafe {
+        asm!("int3");
+    }
 
     let framebuffer = kernel.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
@@ -193,27 +197,3 @@ extern "x86-interrupt" fn double_fault_handler(args: InterruptArgs, error_code: 
     serial_println!("error code: {}", error_code);
     rsos::hlt();
 }
-
-/*
- * Current physical memory layout (NOT UP TO DATE):
- *
- * +--------------------+ (higher addresses)
- * |      Unused        |
- * +--------------------+ 0x513000
- * |                    |
- * |      Kernel        |
- * |                    |
- * +--------------------+ 0x200000
- * |                    |
- * |   Multiboot Info   |
- * |                    |
- * +--------------------+ 0x1FF000
- * |      Unused        |
- * +--------------------+ 0x0B9000
- * |                    |
- * |    VGA Buffer      |
- * |                    |
- * +--------------------+ 0x0B8000
- * |      Unused        |
- * +--------------------+ 0x000000
- */

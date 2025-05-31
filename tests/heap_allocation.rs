@@ -7,11 +7,12 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::tss::TSS, kernel, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}}};
-use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
+use rsos::{interrupts::tss::TSS, kernel::Kernel, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR}};
+use rsos::memory::pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
+use rsos::multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated, MbBootInfo};
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{cmp::max, panic::PanicInfo};
+use core::{cmp::max, panic::PanicInfo, slice};
 use rsos::{log, memory};
 
 #[panic_handler]
@@ -32,31 +33,23 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid mb2 data");
 
-    // get the necessary mb2 tags and data
-    let mem_map: &MemoryMap          = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present");
-    let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
-    let elf_sections: ElfSymbolsIter = elf_symbols.sections().expect("Elf sections are invalid");
+    // build the main Kernel structure
+    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
+    let kernel = Kernel::new(mb_info);
 
-    // get the kernel start and end addrs
-    let k_start = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
-        .map(|s: _| s.addr()).min().expect("Elf sections is empty").align_down(FRAME_PAGE_SIZE);
-
-    let k_end   = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
-        .map(|s: _| s.addr() + s.size() as usize).max().expect("Elf sections is empty").align_up(FRAME_PAGE_SIZE) - 1;
-
-    // get the mb2 info start and end addrs
-    let mb_start = mb_info.addr().align_down(FRAME_PAGE_SIZE);
-    let mb_end   = mb_start + mb_info.size() as usize - 1;
-    let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
+    // EFI boot services are not supported
+    assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
     // set up the frame allocator
-    let mem_map_entries = mem_map.entries().expect("Memory map entries are invalid").0;
     unsafe {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
         log!(ok, "Frame allocator initialized.");
     }
+
+    let a = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -64,14 +57,22 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::kernel_remap(&ACTIVE_PAGING_CTX, inactive_paging, elf_sections, &FRAME_ALLOCATOR, &mb_info)
+        memory::kernel_remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
             .expect("Could not remap the kernel");
+
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
         // TODO: is this really necessary?
         // the unwrap is fine as we know that the addr is valid
         ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
     }
+
+    let b = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
+    // if this fails, the mb2 memory got corrupted
+    assert!(a == b);
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -86,7 +87,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
         // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
         // and thus, we can start the kernel heap at the biggest of the 2
-        HEAP_ALLOCATOR.init(max(k_end, mb_end).align_up(FRAME_PAGE_SIZE), 100 * 1024, &ACTIVE_PAGING_CTX)
+        let heap_start = max(kernel.k_end(), kernel.mb_end()).align_up(FRAME_PAGE_SIZE);
+        HEAP_ALLOCATOR.init(heap_start, 100 * 1024, &ACTIVE_PAGING_CTX)
             .expect("Could not initialize the heap allocator");
         log!(ok, "Heap allocator initialized.");
     }
@@ -95,6 +97,14 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     test_main();
 
     rsos::hlt();
+}
+
+unsafe fn hash_memory_region(ptr: *const u8, len: usize) -> [u8; 32] {
+    let data = unsafe { slice::from_raw_parts(ptr, len) };
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(data);
+    let hash = hasher.finalize();
+    *hash.as_bytes()
 }
 
 #[test_case]
