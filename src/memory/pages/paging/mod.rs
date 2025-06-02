@@ -73,7 +73,7 @@ impl ActivePagingContextInner {
     //       - deallocate the frame
     /// This will unmap a page and the respective frame (NOT YET IMPLEMENTED).
     /// 
-    /// If an invalidd page is given, it will simply be ignored as there is nothing to unmap.
+    /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
     pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, _frame_allocator: &A) {
         // set the entry in p1 as unused and free the respective frame
         self.p4_mut().next_table(page.p4_index())

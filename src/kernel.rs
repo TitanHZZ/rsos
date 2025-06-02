@@ -2,7 +2,7 @@ use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE}, multiboot2::{elf
 
 // TODO: this should probably be a static and hold a mutex
 pub struct Kernel {
-    // kernel dimensions
+    // kernel
     k_start: usize,
     k_end: usize,
 

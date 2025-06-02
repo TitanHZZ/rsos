@@ -8,15 +8,15 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::FrameBufferInfo}, serial_println};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}}, serial_println};
 use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
-use rsos::multiboot2::{MbBootInfo, elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
 use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
 use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
-use rsos::{log, memory, println};
+use rsos::multiboot2::MbBootInfo;
+use rsos::{log, memory};
 use alloc::boxed::Box;
 
 #[cfg(not(test))]
@@ -72,6 +72,10 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
     let kernel = Kernel::new(mb_info);
 
+    let a = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
     // EFI boot services are not supported
     assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
@@ -80,10 +84,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
         log!(ok, "Frame allocator initialized.");
     }
-
-    let a = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -100,13 +100,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         // the unwrap is fine as we know that the addr is valid
         ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
     }
-
-    let b = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -126,6 +119,9 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
             .expect("Could not initialize the heap allocator");
         log!(ok, "Heap allocator initialized.");
     }
+
+    // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
+    //       this needs to be solved
 
     let mut code_seg = NormalSegmentDescriptor::new();
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
@@ -164,12 +160,23 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         asm!("int3");
     }
 
+    // to be used later
+    let acpi_new_rsdp = kernel.mb_info().get_tag::<AcpiNewRsdp>();
+    assert!(acpi_new_rsdp.is_some());
+
     let framebuffer = kernel.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
     serial_println!("framebuffer type: {:#?}", fb_type);
 
-    let acpi_new_rsdp = kernel.mb_info().get_tag::<AcpiNewRsdp>();
-    serial_println!("acpi new rsdp exists: {}", acpi_new_rsdp.is_some());
+    ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
+    framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
+
+    let b = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
+    // if this fails, the mb2 memory got corrupted
+    assert!(a == b);
 
     #[cfg(test)]
     test_main();

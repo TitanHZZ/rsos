@@ -1,8 +1,8 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
-use crate::memory::PhysicalAddress;
+use crate::{memory::PhysicalAddress, serial_println};
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum FrameBufferType {
     IndexedColor = 0,
     DirectRGBColor = 1,
@@ -29,6 +29,7 @@ struct ColorInfoIndexedColor {
 }
 
 #[repr(C)]
+#[derive(Debug)]
 struct ColorInfoDirectRGBColor {
     framebuffer_red_field_position: u8,
     framebuffer_red_mask_size: u8,
@@ -38,7 +39,7 @@ struct ColorInfoDirectRGBColor {
     framebuffer_blue_mask_size: u8,
 }
 
-#[repr(C, packed)]
+#[repr(C)]
 #[derive(ptr_meta::Pointee)]
 pub struct FrameBufferInfo {
     header: MbTagHeader,
@@ -50,6 +51,18 @@ pub struct FrameBufferInfo {
     framebuffer_type: u8,
     reserved: u8,
     color_info: [u8], // depends on framebuffer_type
+}
+
+pub struct FrameBufferColor {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl FrameBufferColor {
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
+        FrameBufferColor { r, g, b }
+    }
 }
 
 impl FrameBufferInfo {
@@ -64,6 +77,25 @@ impl FrameBufferInfo {
 
     pub fn get_phy_addr(&self) -> PhysicalAddress {
         self.framebuffer_addr as PhysicalAddress
+    }
+
+    fn get_color_info(&self) -> &ColorInfoDirectRGBColor {
+        assert!(self.get_type().unwrap() == FrameBufferType::DirectRGBColor);
+        unsafe { &*(self.color_info.as_ptr() as *const ColorInfoDirectRGBColor) }
+    }
+
+    pub fn put_pixel(&self, x: u32, y: u32, color: FrameBufferColor) {
+        assert!(self.framebuffer_bpp == 24);
+
+        let pixel_addr = self.get_phy_addr() + (x * self.framebuffer_width + y * self.framebuffer_pitch) as usize;
+        let color_info = self.get_color_info();
+
+        serial_println!("color info: {:#?}", color_info);
+
+        let pixel = unsafe { &mut *(pixel_addr as *mut [u8; 3]) };
+        pixel[0] = color.b; // blue
+        pixel[1] = color.g; // green
+        pixel[2] = color.r; // red
     }
 }
 
