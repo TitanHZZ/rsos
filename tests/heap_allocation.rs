@@ -9,7 +9,7 @@ extern crate alloc;
 
 use rsos::{interrupts::tss::TSS, kernel::Kernel, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR}};
 use rsos::memory::pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX};
-use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
+use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_heap_allocator::HEAP_ALLOCATOR}}};
 use rsos::multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated, MbBootInfo};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{cmp::max, panic::PanicInfo, slice};
@@ -38,18 +38,18 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
     let kernel = Kernel::new(mb_info);
 
+    let a = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
     // EFI boot services are not supported
     assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
     // set up the frame allocator
     unsafe {
-        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
-        log!(ok, "Frame allocator initialized.");
+        FRAME_ALLOCATOR.init_alloc(&kernel).expect("Could not initialize the frame allocator allocation");
+        log!(ok, "Frame allocator allocation initialized.");
     }
-
-    let a = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -62,9 +62,11 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
-        // TODO: is this really necessary?
+        // this creates the guard page for the kernel stack
         // the unwrap is fine as we know that the addr is valid
-        ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
+        // NOTE: the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
+        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
+        ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
 
     let b = unsafe  {

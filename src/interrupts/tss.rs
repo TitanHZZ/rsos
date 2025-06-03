@@ -1,6 +1,6 @@
 // https://wiki.osdev.org/Task_State_Segment
 use crate::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
-use crate::memory::{pages::{simple_page_allocator::HEAP_ALLOCATOR, Page}, MemoryError};
+use crate::memory::{pages::{simple_heap_allocator::HEAP_ALLOCATOR, Page}, MemoryError};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
@@ -110,7 +110,7 @@ impl TSS {
 
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR);
+            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR, true);
         }
 
         Ok(())

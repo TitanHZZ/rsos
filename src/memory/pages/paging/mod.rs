@@ -74,7 +74,7 @@ impl ActivePagingContextInner {
     /// This will unmap a page and the respective frame (NOT YET IMPLEMENTED).
     /// 
     /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
-    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, _frame_allocator: &A) {
+    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, deallocate_frame: bool) {
         // set the entry in p1 as unused and free the respective frame
         self.p4_mut().next_table(page.p4_index())
             .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
@@ -85,10 +85,11 @@ impl ActivePagingContextInner {
                 entry.set_unused();
 
                 frame
-            }).and_then(|_frame| {
-                // TODO: finish this
+            }).and_then(|frame| {
                 // deallocate the frame
-                // frame_allocator.deallocate_frame(frame);
+                if deallocate_frame {
+                    frame_allocator.deallocate_frame(frame);
+                }
 
                 Some(()) // `and_then()` requires an Option to be returned
             });
@@ -155,9 +156,9 @@ impl ActivePagingContext {
     /// This will unmap a `page` and the respective frame.
     /// 
     /// If an invalid `page` is given, it will simply be ignored as there is nothing to unmap.
-    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A) {
+    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, deallocate_frame: bool) {
         let apc = &mut *self.0.lock();
-        apc.unmap_page(page, frame_allocator);
+        apc.unmap_page(page, frame_allocator, deallocate_frame);
     }
 
     /// This takes a Page and returns the respective Frame if the address is mapped.
@@ -209,7 +210,7 @@ impl ActivePagingContext {
         // set the recusive entry on the current paging context to the inactive p4 frame
         apc.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
 
-        // flush the all the tlb entries
+        // flush all the tlb entries
         // needed because the recursive addrs may be mapped to the active paging context and
         // we need them pointing to the inactive context (hardware translations would still work)
         CR3::invalidate_all();
@@ -221,8 +222,9 @@ impl ActivePagingContext {
         table.entries[ENTRY_COUNT - 1].set_phy_addr(p4_frame);
 
         // invalidate the entries so that the recursive mapping works again (we don't use cached addrs)
+        // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         CR3::invalidate_all();
-        apc.unmap_page(p4_page, frame_allocator);
+        apc.unmap_page(p4_page, frame_allocator, false);
 
         Ok(())
     }

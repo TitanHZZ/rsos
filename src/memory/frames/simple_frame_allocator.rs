@@ -1,20 +1,17 @@
 use crate::{kernel::Kernel, memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntry, MemoryMapEntryType}, serial_println};
 use super::{Frame, FrameAllocator};
-use core::ptr::NonNull;
 use spin::Mutex;
-
-struct FreedFrame {
-    next_freed_frame: Option<NonNull<FreedFrame>>
-}
 
 struct SimpleFrameAllocatorInner {
     // available areas
     areas: Option<&'static [MemoryMapEntry]>,
     current_area: usize,
 
+    // next frame to be used
+    // this frame points to an area of type `AvailableRAM` and is not inside the prohibited memory ranges below
     next_frame: Frame,
-    freed_frames: Option<NonNull<FreedFrame>>,
 
+    // prohibited memory ranges
     // memory ranges that we need to avoid using so we don't override important memory
     k_start : Frame,
     k_end   : Frame,
@@ -32,7 +29,6 @@ pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::n
     current_area: 0,
 
     next_frame: Frame(0x0),
-    freed_frames: None,
 
     k_start : Frame(0x0),
     k_end   : Frame(0x0),
@@ -43,10 +39,10 @@ pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::n
 impl SimpleFrameAllocator {
     /// # Safety
     /// 
-    /// Can only be called once or the allocator might get into an inconsistent state.
+    /// Resets the frame allocator state.
     /// 
-    /// However, it must be called as the allocator expects it.
-    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+    /// However, it must be called (before any allocation) as the allocator expects it.
+    pub unsafe fn init_alloc(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
@@ -67,7 +63,31 @@ impl SimpleFrameAllocator {
             }
         }
 
-        // make sure thet the allocator starts with a free frame
+        let mut usable_frame_count = 0;
+        for area in mem_map_entries {
+            if area.entry_type() == MemoryMapEntryType::AvailableRAM {
+                usable_frame_count += area.length as usize / FRAME_PAGE_SIZE;
+            }
+        }
+
+        usable_frame_count -= (kernel.mb_end() - kernel.mb_start() + 1) / FRAME_PAGE_SIZE;
+        usable_frame_count -= (kernel.k_end() - kernel.k_start() + 1) / FRAME_PAGE_SIZE;
+        serial_println!("Total frame count: {}", usable_frame_count);
+        serial_println!("Required frames for bitmap: {}", usable_frame_count / FRAME_PAGE_SIZE);
+
+        let mut index = 0;
+        for area in mem_map_entries {
+            if area.entry_type() == MemoryMapEntryType::AvailableRAM {
+                if area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE {
+                    serial_println!("Got usable area for bitmap: {}", index);
+                    break;
+                }
+
+                index += 1;
+            }
+        }
+
+        // make sure that the allocator starts with a free frame
         if allocator.is_frame_used() {
             allocator.get_next_free_frame()?;
         }
@@ -93,6 +113,7 @@ impl FrameAllocator for SimpleFrameAllocator {
         Ok(frame)
     }
 
+    // TODO: finish the frame deallocation
     fn deallocate_frame(&self, _frame: Frame) {
         // for this, we will need some way to store a record of which frames are free and which ones are not
         // this may even require allocation (just a guess)

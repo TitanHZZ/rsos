@@ -13,7 +13,7 @@ use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
-use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_page_allocator::HEAP_ALLOCATOR}}};
+use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_heap_allocator::HEAP_ALLOCATOR}}};
 use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
 use rsos::multiboot2::MbBootInfo;
 use rsos::{log, memory};
@@ -81,8 +81,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // set up the frame allocator
     unsafe {
-        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator");
-        log!(ok, "Frame allocator initialized.");
+        FRAME_ALLOCATOR.init_alloc(&kernel).expect("Could not initialize the frame allocator allocation");
+        log!(ok, "Frame allocator allocation initialized.");
     }
 
     // get the current paging context and create a new (empty) one
@@ -96,10 +96,19 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
-        // TODO: is this really necessary?
+        // this creates the guard page for the kernel stack
         // the unwrap is fine as we know that the addr is valid
-        ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap(), &FRAME_ALLOCATOR);
+        // NOTE: the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
+        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
+        ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
+
+    let b = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
+    // if this fails, the mb2 memory got corrupted
+    assert!(a == b);
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -170,13 +179,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
-
-    let b = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
 
     #[cfg(test)]
     test_main();

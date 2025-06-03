@@ -1,4 +1,4 @@
-pub mod simple_page_allocator;
+pub mod simple_heap_allocator;
 pub mod page_table;
 pub mod paging;
 
