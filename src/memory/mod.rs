@@ -1,3 +1,4 @@
+pub mod simple_heap_allocator;
 pub mod pages;
 pub mod frames;
 mod cr3;
@@ -28,6 +29,40 @@ impl AddrOps for usize {
     fn align_up(&self, align: usize) -> usize {
         debug_assert!(align.is_power_of_two());
         (*self + align - 1) & !(align - 1)
+    }
+}
+
+/// Represents a memory range that MUST not be touched by frame/page allocators.
+/// 
+/// This memory regions are expected to be identity mapped and as such, these addrs are virtual and physical.
+/// 
+/// The addrs are both inclusive.
+#[derive(Clone, Copy)]
+pub struct ProhibitedMemoryRange {
+    start_addr: PhysicalAddress,
+    end_addr: PhysicalAddress,
+}
+
+impl ProhibitedMemoryRange {
+    /// Creates a `ProhibitedMemoryRange`.
+    pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> ProhibitedMemoryRange {
+        ProhibitedMemoryRange {
+            start_addr,
+            end_addr,
+        }
+    }
+
+    /// Creates a `ProhibitedMemoryRange` with both addrs as 0.
+    pub const fn empty() -> ProhibitedMemoryRange {
+        ProhibitedMemoryRange::new(0, 0)
+    }
+
+    pub fn start_addr(&self) -> PhysicalAddress {
+        self.start_addr
+    }
+
+    pub fn end_addr(&self) -> PhysicalAddress {
+        self.end_addr
     }
 }
 

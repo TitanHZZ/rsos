@@ -1,4 +1,7 @@
-use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE}, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}};
+use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}};
+use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}};
+
+pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 2;
 
 // TODO: this should probably be a static and hold a mutex
 pub struct Kernel {
@@ -40,6 +43,13 @@ impl Kernel {
             mb_start,
             mb_end,
         }
+    }
+
+    pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
+        [
+            ProhibitedMemoryRange::new(self.k_start,  self.k_end),
+            ProhibitedMemoryRange::new(self.mb_start, self.mb_end),
+        ]
     }
 
     pub fn k_start(&self) -> VirtualAddress {

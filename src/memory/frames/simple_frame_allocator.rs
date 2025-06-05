@@ -1,4 +1,5 @@
-use crate::{kernel::Kernel, memory::{MemoryError, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntry, MemoryMapEntryType}, serial_println};
+use crate::{kernel::{Kernel, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, FRAME_PAGE_SIZE, ProhibitedMemoryRange}};
+use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntry, MemoryMapEntryType};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -11,30 +12,26 @@ struct SimpleFrameAllocatorInner {
     // this frame points to an area of type `AvailableRAM` and is not inside the prohibited memory ranges below
     next_frame: Frame,
 
-    // prohibited memory ranges
     // memory ranges that we need to avoid using so we don't override important memory
-    k_start : Frame,
-    k_end   : Frame,
-    mb_start: Frame,
-    mb_end  : Frame,
+    kernel_prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 }
 
 unsafe impl Send for SimpleFrameAllocatorInner {}
 
 pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
 
-// TODO: maybe this does not need to be static??
-pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
-    areas: None,
-    current_area: 0,
+impl SimpleFrameAllocator {
+    pub const fn new() -> Self {
+        SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
+            areas: None,
+            current_area: 0,
 
-    next_frame: Frame(0x0),
+            next_frame: Frame(0x0),
 
-    k_start : Frame(0x0),
-    k_end   : Frame(0x0),
-    mb_start: Frame(0x0),
-    mb_end  : Frame(0x0),
-}));
+            kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+        }))
+    }
+}
 
 impl SimpleFrameAllocator {
     /// # Safety
@@ -42,18 +39,15 @@ impl SimpleFrameAllocator {
     /// Resets the frame allocator state.
     /// 
     /// However, it must be called (before any allocation) as the allocator expects it.
-    pub unsafe fn init_alloc(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
 
         // in identity mapping, the virtual addrs and the physical addrs are the same
-        allocator.areas    = Some(mem_map_entries);
-        allocator.k_start  = Frame::from_phy_addr(kernel.k_start());
-        allocator.k_end    = Frame::from_phy_addr(kernel.k_end());
-        allocator.mb_start = Frame::from_phy_addr(kernel.mb_start());
-        allocator.mb_end   = Frame::from_phy_addr(kernel.mb_end());
+        allocator.areas = Some(mem_map_entries);
+        allocator.kernel_prohibited_memory_ranges = kernel.prohibited_memory_ranges();
 
         // get the first area of type `MemoryMapEntryType::AvailableRAM`
         for area in mem_map_entries.iter().enumerate() {
@@ -63,29 +57,26 @@ impl SimpleFrameAllocator {
             }
         }
 
-        let mut usable_frame_count = 0;
-        for area in mem_map_entries {
-            if area.entry_type() == MemoryMapEntryType::AvailableRAM {
-                usable_frame_count += area.length as usize / FRAME_PAGE_SIZE;
-            }
-        }
-
-        usable_frame_count -= (kernel.mb_end() - kernel.mb_start() + 1) / FRAME_PAGE_SIZE;
-        usable_frame_count -= (kernel.k_end() - kernel.k_start() + 1) / FRAME_PAGE_SIZE;
-        serial_println!("Total frame count: {}", usable_frame_count);
-        serial_println!("Required frames for bitmap: {}", usable_frame_count / FRAME_PAGE_SIZE);
-
-        let mut index = 0;
-        for area in mem_map_entries {
-            if area.entry_type() == MemoryMapEntryType::AvailableRAM {
-                if area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE {
-                    serial_println!("Got usable area for bitmap: {}", index);
-                    break;
-                }
-
-                index += 1;
-            }
-        }
+        // let mut usable_frame_count = 0;
+        // for area in mem_map_entries {
+        //     if area.entry_type() == MemoryMapEntryType::AvailableRAM {
+        //         usable_frame_count += area.length as usize / FRAME_PAGE_SIZE;
+        //     }
+        // }
+        // usable_frame_count -= (kernel.mb_end() - kernel.mb_start() + 1) / FRAME_PAGE_SIZE;
+        // usable_frame_count -= (kernel.k_end() - kernel.k_start() + 1) / FRAME_PAGE_SIZE;
+        // serial_println!("Total frame count: {}", usable_frame_count);
+        // serial_println!("Required frames for bitmap: {}", usable_frame_count / FRAME_PAGE_SIZE);
+        // let mut index = 0;
+        // for area in mem_map_entries {
+        //     if area.entry_type() == MemoryMapEntryType::AvailableRAM {
+        //         if area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE {
+        //             serial_println!("Got usable area for bitmap: {}", index);
+        //             break;
+        //         }
+        //         index += 1;
+        //     }
+        // }
 
         // make sure that the allocator starts with a free frame
         if allocator.is_frame_used() {
@@ -96,7 +87,7 @@ impl SimpleFrameAllocator {
     }
 }
 
-impl FrameAllocator for SimpleFrameAllocator {
+unsafe impl FrameAllocator for SimpleFrameAllocator {
     fn allocate_frame(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
 
@@ -108,23 +99,27 @@ impl FrameAllocator for SimpleFrameAllocator {
             return Err(MemoryError::FrameInvalidAllocatorAddr);
         }
 
-        serial_println!("Allocated new frame: {:#x}", frame.0);
-
         Ok(frame)
     }
 
-    // TODO: finish the frame deallocation
+    /// This allocator does not support deallocation, what means that this will panic.
     fn deallocate_frame(&self, _frame: Frame) {
-        // for this, we will need some way to store a record of which frames are free and which ones are not
-        // this may even require allocation (just a guess)
         unimplemented!();
+    }
+
+    fn prohibited_memory_ranges(&self) -> Option<&[ProhibitedMemoryRange]> {
+        None
     }
 }
 
 impl SimpleFrameAllocatorInner {
     fn is_frame_used(&self) -> bool {
-        (self.next_frame >= self.k_start && self.next_frame <= self.k_end)
-            || (self.next_frame >= self.mb_start && self.next_frame <= self.mb_end)
+        let mut result = false;
+        for prohibited_mem_range in self.kernel_prohibited_memory_ranges {
+            result |= self.next_frame.addr() >= prohibited_mem_range.start_addr() && self.next_frame.addr() <= prohibited_mem_range.end_addr();
+        }
+
+        result
     }
 
     /// Returns the next (free or used) frame if it exists.

@@ -1,7 +1,6 @@
-use crate::{memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::page_table::page_table_entry::EntryFlags}, serial_print, serial_println};
+use crate::{memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}}, serial_print, serial_println};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
 use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
-use super::paging::ActivePagingContext;
 use spin::Mutex;
 
 struct FreedBlock {

@@ -1,6 +1,6 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
-use crate::memory::{pages::{simple_heap_allocator::HEAP_ALLOCATOR, Page}, MemoryError};
+use crate::memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
+use crate::memory::{pages::Page, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
@@ -21,7 +21,7 @@ pub struct TSS {
     iopb: u16,
 
     // this is not part of the structure but it is needed as metadata fot managing heap allocated stacks
-    // this holds the size (in bytes) for each of the currently allocated stacks and if they used a page guard
+    // this holds the size (in bytes) for each of tuse paging::ActivePagingContext;he currently allocated stacks and if they used a page guard
     previous_stack: [(usize, bool); 7],
 }
 

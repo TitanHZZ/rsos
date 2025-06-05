@@ -8,12 +8,12 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}}, serial_println};
-use rsos::{memory::frames::simple_frame_allocator::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
+use rsos::{data_structures::bitmap::Bitmap, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}}, serial_print, serial_println};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
-use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_heap_allocator::HEAP_ALLOCATOR}}};
+use rsos::{memory::frames::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
+use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
 use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
 use rsos::multiboot2::MbBootInfo;
 use rsos::{log, memory};
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // set up the frame allocator
     unsafe {
-        FRAME_ALLOCATOR.init_alloc(&kernel).expect("Could not initialize the frame allocator allocation");
+        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
         log!(ok, "Frame allocator allocation initialized.");
     }
 
@@ -136,29 +136,29 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
     code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
 
-    let mut tss_seg = SystemSegmentDescriptor::new();
-    tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
+    // let mut tss_seg = SystemSegmentDescriptor::new();
+    // tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
 
-    let mut tss = Box::new(TSS::new());
-    tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
-    tss_seg.set_base(Box::leak(tss));
-    tss_seg.set_limit(TSS_SIZE);
+    // let mut tss = Box::new(TSS::new());
+    // tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
+    // tss_seg.set_base(Box::leak(tss));
+    // tss_seg.set_limit(TSS_SIZE);
 
     // the unwraps() *should* be fine as we know that the gdt as space left for these 2 descriptors
     let mut gdt = Box::new(GDT::new());
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
-    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
+    // let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
 
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.breakpoint.set_fn(breakpoint_handler);
     idt.double_fault.set_fn(double_fault_handler);
-    idt.double_fault.set_ist(TssStackNumber::TssStack1);
+    // idt.double_fault.set_ist(TssStackNumber::TssStack1);
 
     interrupts::disable_pics();
     unsafe {
         GDT::load(Box::leak(gdt));
-        TSS::load(tss_seg_sel);
+        // TSS::load(tss_seg_sel);
         gdt::reload_seg_regs(code_seg_sel);
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
@@ -177,8 +177,16 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
     serial_println!("framebuffer type: {:#?}", fb_type);
 
+    // let a = SimpleFrameAllocator::PROHIBITED_MEM_RANGES_LEN;
+
     ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
+
+    let mut bitmap: Bitmap<2> = Bitmap::new();
+    bitmap.set(0, true);
+    bitmap.set(8, true);
+    bitmap.set(9, true);
+    serial_println!("bitmap: {}", bitmap);
 
     #[cfg(test)]
     test_main();

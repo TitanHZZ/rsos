@@ -7,10 +7,10 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::tss::TSS, kernel::Kernel, memory::{frames::simple_frame_allocator::FRAME_ALLOCATOR}};
 use rsos::memory::pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX};
-use rsos::memory::{AddrOps, {FRAME_PAGE_SIZE, pages::{Page, simple_heap_allocator::HEAP_ALLOCATOR}}};
 use rsos::multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated, MbBootInfo};
+use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
+use rsos::{interrupts::tss::TSS, kernel::Kernel, memory::{frames::FRAME_ALLOCATOR}};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{cmp::max, panic::PanicInfo, slice};
 use rsos::{log, memory};
@@ -47,7 +47,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // set up the frame allocator
     unsafe {
-        FRAME_ALLOCATOR.init_alloc(&kernel).expect("Could not initialize the frame allocator allocation");
+        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
         log!(ok, "Frame allocator allocation initialized.");
     }
 

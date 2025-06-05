@@ -1,5 +1,7 @@
 pub mod simple_frame_allocator;
+pub mod bitmap_frame_allocator;
 
+use crate::memory::{frames::simple_frame_allocator::SimpleFrameAllocator, ProhibitedMemoryRange};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
 
 #[repr(transparent)]
@@ -16,7 +18,14 @@ impl Frame {
     }
 }
 
-pub trait FrameAllocator: Send + Sync {
+/// A Frame allocator to be used OS wide.
+pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate_frame(&self) -> Result<Frame, MemoryError>;
     fn deallocate_frame(&self, frame: Frame);
+
+    /// Get all memory regions that MUST not be touched by the page allocator.
+    fn prohibited_memory_ranges(&self) -> Option<&[ProhibitedMemoryRange]>;
 }
+
+/// The global frame allocator.
+pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator::new();
