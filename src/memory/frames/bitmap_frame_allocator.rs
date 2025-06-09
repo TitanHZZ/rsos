@@ -1,23 +1,10 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
-use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntry, MemoryMapEntryType};
+use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::Kernel, memory::{MemoryError, ProhibitedMemoryRange}, multiboot2::memory_map::MemoryMap};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
 struct BitmapFrameAllocatorInner<'a> {
-    // the first frame containing the bitmap
+    //a rreference to the bitmap
     bitmap: Option<BitmapRefMut<'a>>,
-
-    // how many frames are being used by the bitmap
-    // bitmap_frame_count: usize,
-
-    // // available areas
-    // areas: Option<&'static [MemoryMapEntry]>,
-    // current_area: usize,
-    // // next frame to be used
-    // // this frame points to an area of type `AvailableRAM` and is not inside the prohibited memory ranges below
-    // next_frame: Frame,
-    // // memory ranges that we need to avoid using so we don't override important memory
-    // kernel_prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 }
 
 unsafe impl<'a> Send for BitmapFrameAllocatorInner<'a> {}
@@ -39,12 +26,14 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// 
     /// However, it must be called (before any allocation) as the allocator expects it.
     pub unsafe fn init_alloc(&self, kernel: &Kernel) -> Result<(), MemoryError> {
-        // let allocator = &mut *self.0.lock();
-        // let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
-        // let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
+        let allocator = &mut *self.0.lock();
+        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
+        let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
+
         // // in identity mapping, the virtual addrs and the physical addrs are the same
         // allocator.areas = Some(mem_map_entries);
         // allocator.kernel_prohibited_memory_ranges = kernel.prohibited_memory_ranges();
+
         // // get the first area of type `MemoryMapEntryType::AvailableRAM`
         // for area in mem_map_entries.iter().enumerate() {
         //     if area.1.entry_type() == MemoryMapEntryType::AvailableRAM {
