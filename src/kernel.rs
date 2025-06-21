@@ -1,6 +1,9 @@
 use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}};
 
+// each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
+pub const ORIGINALLY_IDENTITY_MAPPED: usize = 4096 * 512 * 512;
+
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 2;
 
 // TODO: this should probably be a static and hold a mutex
