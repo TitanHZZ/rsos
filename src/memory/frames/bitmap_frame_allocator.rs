@@ -1,4 +1,4 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::Kernel, memory::{MemoryError, ProhibitedMemoryRange, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntryType}, serial_println};
+use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::{AddrOps, MemoryError, ProhibitedMemoryRange, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntryType}, serial_println};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -25,7 +25,7 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// Resets the frame allocator state.
     /// 
     /// However, it must be called (before any allocation) as the allocator expects it.
-    pub unsafe fn init_alloc(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
@@ -42,26 +42,39 @@ impl<'a> BitmapFrameAllocator<'a> {
         //     }
         // }
 
-        let mut usable_frame_count = 0;
-        for area in mem_map_entries.iter().filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM) {
-            usable_frame_count += area.length as usize / FRAME_PAGE_SIZE;
+        // get the amount of frames available in valid RAM
+        let mut usable_frame_count: usize = mem_map_entries.iter()
+            .filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM)
+            .map(|area| area.length as usize / FRAME_PAGE_SIZE)
+            .sum();
+
+        // avoid prohibited kernel memory regions
+        for prohibited_area in kernel.prohibited_memory_ranges() {
+            usable_frame_count -= (prohibited_area.end_addr() - prohibited_area.start_addr() + 1) / FRAME_PAGE_SIZE;
         }
 
-        usable_frame_count -= (kernel.mb_end() - kernel.mb_start() + 1) / FRAME_PAGE_SIZE;
-        usable_frame_count -= (kernel.k_end() - kernel.k_start() + 1) / FRAME_PAGE_SIZE;
+        let bitmap_frame_count = usable_frame_count.align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
         serial_println!("Total usable memory frame count: {}", usable_frame_count);
-        serial_println!("Required frames for bitmap: {}", usable_frame_count / FRAME_PAGE_SIZE);
-        serial_println!("Total bitmap size in bits: {}", usable_frame_count * FRAME_PAGE_SIZE);
+        serial_println!("Required frames for bitmap: {}", bitmap_frame_count);
+        serial_println!("Total bitmap size in bits: {}", bitmap_frame_count * FRAME_PAGE_SIZE);
 
         let mut index = 0;
         for area in mem_map_entries.iter().filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM) {
-            if area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE {
+            if (area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE) && ((area.base_addr + area.length) as usize <= ORIGINALLY_IDENTITY_MAPPED) {
                 serial_println!("Got usable area for bitmap: {}", index);
                 break;
             }
 
             index += 1;
         }
+
+        let suitable_area = mem_map_entries.iter()
+            .enumerate()
+            .filter(|&(_, area)| area.entry_type() == MemoryMapEntryType::AvailableRAM)
+            .find(|&(_, area)|
+                (area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE) &&
+                ((area.base_addr + area.length) as usize <= ORIGINALLY_IDENTITY_MAPPED)
+            );
 
         // make sure that the allocator starts with a free frame
         // if allocator.is_frame_used() {

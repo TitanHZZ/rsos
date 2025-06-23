@@ -1,7 +1,7 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use crate::memory::{frames::simple_frame_allocator::SimpleFrameAllocator, ProhibitedMemoryRange};
+use crate::memory::{frames::{bitmap_frame_allocator::BitmapFrameAllocator, simple_frame_allocator::SimpleFrameAllocator}, ProhibitedMemoryRange};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
 
 #[repr(transparent)]
@@ -28,4 +28,4 @@ pub unsafe trait FrameAllocator: Send + Sync {
 }
 
 /// The global frame allocator.
-pub static FRAME_ALLOCATOR: SimpleFrameAllocator = SimpleFrameAllocator::new();
+pub static FRAME_ALLOCATOR: BitmapFrameAllocator = BitmapFrameAllocator::new();

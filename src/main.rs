@@ -85,6 +85,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Frame allocator allocation initialized.");
     }
 
+    rsos::hlt();
+
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     { // this scope makes sure that the inactive context does not get used again
