@@ -30,18 +30,6 @@ impl<'a> BitmapFrameAllocator<'a> {
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
 
-        // // in identity mapping, the virtual addrs and the physical addrs are the same
-        // allocator.areas = Some(mem_map_entries);
-        // allocator.kernel_prohibited_memory_ranges = kernel.prohibited_memory_ranges();
-
-        // // get the first area of type `MemoryMapEntryType::AvailableRAM`
-        // for area in mem_map_entries.iter().enumerate() {
-        //     if area.1.entry_type() == MemoryMapEntryType::AvailableRAM {
-        //         allocator.current_area = area.0;
-        //         break;
-        //     }
-        // }
-
         // get the amount of frames available in valid RAM
         let mut usable_frame_count: usize = mem_map_entries.iter()
             .filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM)
@@ -49,8 +37,8 @@ impl<'a> BitmapFrameAllocator<'a> {
             .sum();
 
         // avoid prohibited kernel memory regions
-        for prohibited_area in kernel.prohibited_memory_ranges() {
-            usable_frame_count -= (prohibited_area.end_addr() - prohibited_area.start_addr() + 1) / FRAME_PAGE_SIZE;
+        for prohibited_range in kernel.prohibited_memory_ranges() {
+            usable_frame_count -= (prohibited_range.end_addr() - prohibited_range.start_addr() + 1) / FRAME_PAGE_SIZE;
         }
 
         let bitmap_frame_count = usable_frame_count.align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
@@ -58,28 +46,24 @@ impl<'a> BitmapFrameAllocator<'a> {
         serial_println!("Required frames for bitmap: {}", bitmap_frame_count);
         serial_println!("Total bitmap size in bits: {}", bitmap_frame_count * FRAME_PAGE_SIZE);
 
-        let mut index = 0;
-        for area in mem_map_entries.iter().filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM) {
-            if (area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE) && ((area.base_addr + area.length) as usize <= ORIGINALLY_IDENTITY_MAPPED) {
-                serial_println!("Got usable area for bitmap: {}", index);
-                break;
-            }
-
-            index += 1;
-        }
-
+        // TODO: make sure that an area with enough space is now overlapping with any of the kernel.prohibited_memory_ranges()
+        // look for a suitable area to hold the bitmap
         let suitable_area = mem_map_entries.iter()
             .enumerate()
             .filter(|&(_, area)| area.entry_type() == MemoryMapEntryType::AvailableRAM)
             .find(|&(_, area)|
-                (area.length as usize / FRAME_PAGE_SIZE >= usable_frame_count / FRAME_PAGE_SIZE) &&
+                (area.length as usize / FRAME_PAGE_SIZE >= bitmap_frame_count) &&
                 ((area.base_addr + area.length) as usize <= ORIGINALLY_IDENTITY_MAPPED)
             );
 
-        // make sure that the allocator starts with a free frame
-        // if allocator.is_frame_used() {
-        //     allocator.get_next_free_frame()?;
-        // }
+        // this should not, realistically, happen
+        // but in case it does, there is not really anything we can do as we just don't have enough, contiguous, memory
+        if suitable_area.is_none() {
+            return Err(MemoryError::NotEnoughPhyMemory);
+        }
+
+        let (area_index, suitable_area) = suitable_area.unwrap();
+        serial_println!("Found valid area: {}", area_index);
 
         Ok(())
     }
