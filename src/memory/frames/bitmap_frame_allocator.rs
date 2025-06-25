@@ -1,4 +1,4 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::{AddrOps, MemoryError, ProhibitedMemoryRange, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntryType}, serial_println};
+use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::{AddrOps, MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}, multiboot2::memory_map::{MemoryMap, MemoryMapEntryType}, serial_println};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -31,30 +31,37 @@ impl<'a> BitmapFrameAllocator<'a> {
         let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?.0;
 
         // get the amount of frames available in valid RAM
-        let mut usable_frame_count: usize = mem_map_entries.iter()
+        let usable_frame_count: usize = mem_map_entries.iter()
             .filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM)
             .map(|area| area.length as usize / FRAME_PAGE_SIZE)
             .sum();
 
-        // avoid prohibited kernel memory regions
-        for prohibited_range in kernel.prohibited_memory_ranges() {
-            usable_frame_count -= (prohibited_range.end_addr() - prohibited_range.start_addr() + 1) / FRAME_PAGE_SIZE;
-        }
-
         let bitmap_frame_count = usable_frame_count.align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
+        let bitmap_bytes_count = bitmap_frame_count * FRAME_PAGE_SIZE;
         serial_println!("Total usable memory frame count: {}", usable_frame_count);
         serial_println!("Required frames for bitmap: {}", bitmap_frame_count);
-        serial_println!("Total bitmap size in bits: {}", bitmap_frame_count * FRAME_PAGE_SIZE);
+        serial_println!("Total bitmap size in bytes: {}", bitmap_bytes_count);
 
-        // TODO: make sure that an area with enough space is now overlapping with any of the kernel.prohibited_memory_ranges()
         // look for a suitable area to hold the bitmap
-        let suitable_area = mem_map_entries.iter()
-            .enumerate()
+        let suitable_area = mem_map_entries.iter().enumerate()
+            // must be available RAM
             .filter(|&(_, area)| area.entry_type() == MemoryMapEntryType::AvailableRAM)
-            .find(|&(_, area)|
+            // must be large enough and sit below the identity-mapped ceiling
+            .filter(|&(_, area)|
                 (area.length as usize / FRAME_PAGE_SIZE >= bitmap_frame_count) &&
-                ((area.base_addr + area.length) as usize <= ORIGINALLY_IDENTITY_MAPPED)
-            );
+                (((area.base_addr + area.length) as usize) < ORIGINALLY_IDENTITY_MAPPED)
+            )
+            // must not overlap any prohibited kernel range
+            .find(|&(_, area)| {
+                let area_start = area.base_addr as usize;
+                let area_end = area_start + area.length as usize - 1;
+
+                // must fit before or after the prohibited memory range
+                kernel.prohibited_memory_ranges().iter().all(|range|
+                    (area_start + bitmap_bytes_count - 1 < range.start_addr()) ||
+                    (range.end_addr() + 1 + bitmap_bytes_count <= area_end)
+                )
+        });
 
         // this should not, realistically, happen
         // but in case it does, there is not really anything we can do as we just don't have enough, contiguous, memory
@@ -90,46 +97,3 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         None
     }
 }
-
-// impl BitmapFrameAllocatorInner {
-//     fn is_frame_used(&self) -> bool {
-//         let mut result = false;
-//         for prohibited_mem_range in self.kernel_prohibited_memory_ranges {
-//             result |= self.next_frame.addr() >= prohibited_mem_range.start_addr() && self.next_frame.addr() <= prohibited_mem_range.end_addr();
-//         }
-//         result
-//     }
-//     /// Returns the next (free or used) frame if it exists.
-//     /// 
-//     /// This is an abstraction over the areas. With this, the frames may be seen as positions in a list.
-//     fn get_next_frame(&mut self) -> Result<Frame, MemoryError> {
-//         let areas = self.areas.unwrap();
-//         let curr_area = &areas[self.current_area];
-//         let fr_after_last_in_curr_area= Frame::from_phy_addr((curr_area.base_addr + curr_area.length) as _);
-//         // check if the next frame is pointing outside the current area
-//         if self.next_frame == fr_after_last_in_curr_area {
-//             self.current_area += 1;
-//             // get to the next area with available ram
-//             while self.current_area < areas.len() && areas[self.current_area].entry_type() != MemoryMapEntryType::AvailableRAM {
-//                 self.current_area += 1;
-//             }
-//             // no more areas to use (ran out of usable memory)
-//             if self.current_area >= areas.len() {
-//                 return Err(MemoryError::NotEnoughPhyMemory);
-//             }
-//             // get the first frame from the next area
-//             self.next_frame = Frame::from_phy_addr(areas[self.current_area].base_addr as usize);
-//         } else {
-//             // get the next frame from the same (current) area
-//             self.next_frame = Frame(self.next_frame.0 + 1);
-//         }
-//         Ok(self.next_frame)
-//     }
-//     fn get_next_free_frame(&mut self) -> Result<Frame, MemoryError> {
-//         let mut fr = self.get_next_frame()?;
-//         while self.is_frame_used() {
-//             fr = self.get_next_frame()?;
-//         }
-//         Ok(fr)
-//     }
-// }
