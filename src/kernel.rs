@@ -48,6 +48,9 @@ impl Kernel {
         }
     }
 
+    /// Returns all the memory ranges (identity mapped, meaning that the addrs are physical and virtual), that **must be left untouched**.
+    /// 
+    /// There are no order guarantees for the memory ranges.
     pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
         [
             ProhibitedMemoryRange::new(self.k_start,  self.k_end),

@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use rsos::{data_structures::bitmap::Bitmap, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}}, serial_print, serial_println};
+use rsos::{data_structures::bitmap::Bitmap, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::{MemoryMap, MemoryMapEntryType}}, serial_print, serial_println};
 use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
@@ -33,28 +33,31 @@ fn panic(info: &PanicInfo) -> ! {
     rsos::test_panic_handler(info);
 }
 
-// fn print_mem_status(mb_info: &MbBootInfo) {
-//     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
-//     let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
-//     println!("Memory areas:");
-//     for entry in mem_map_entries {
-//         println!(
-//             "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
-//             entry.base_addr,
-//             entry.length as f64 / 1024.0 / 1024.0,
-//             entry.entry_type()
-//         );
-//     }
-//     let total_memory: u64 = mem_map_entries.into_iter()
-//         .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
-//         .map(|entry| entry.length)
-//         .sum();
-//     println!(
-//         "Total (available) memory: {} bytes ({:.2} GB)",
-//         total_memory,
-//         total_memory as f64 / 1024.0 / 1024.0 / 1024.0
-//     );
-// }
+fn print_mem_status(mb_info: &MbBootInfo) {
+    let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
+    let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
+
+    serial_println!("Memory areas:");
+    for entry in mem_map_entries {
+        serial_println!(
+            "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
+            entry.base_addr,
+            entry.length as f64 / 1024.0 / 1024.0,
+            entry.entry_type()
+        );
+    }
+
+    let total_memory: u64 = mem_map_entries.into_iter()
+        .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
+        .map(|entry| entry.length)
+        .sum();
+
+    serial_println!(
+        "Total (available) memory: {} bytes ({:.2} GB)",
+        total_memory,
+        total_memory as f64 / 1024.0 / 1024.0 / 1024.0
+    );
+}
 
 // TODO: look into stack probes
 // TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
@@ -70,6 +73,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // build the main Kernel structure
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
+    print_mem_status(&mb_info);
     let kernel = Kernel::new(mb_info);
 
     let a = unsafe  {

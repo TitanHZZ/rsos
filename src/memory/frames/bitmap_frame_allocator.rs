@@ -52,15 +52,29 @@ impl<'a> BitmapFrameAllocator<'a> {
                 (((area.base_addr + area.length) as usize) < ORIGINALLY_IDENTITY_MAPPED)
             )
             // must not overlap any prohibited kernel range
-            .find(|&(_, area)| {
+            .find_map(|(idx, area)| {
                 let area_start = area.base_addr as usize;
                 let area_end = area_start + area.length as usize - 1;
 
-                // must fit before or after the prohibited memory range
-                kernel.prohibited_memory_ranges().iter().all(|range|
-                    (area_start + bitmap_bytes_count - 1 < range.start_addr()) ||
-                    (range.end_addr() + 1 + bitmap_bytes_count <= area_end)
-                )
+                let mut cursor_start = area_start;
+                let mut cursor_end = cursor_start + bitmap_bytes_count - 1;
+
+                // the chosen region must not overlap with any of the prohibited regions
+                while cursor_end <= area_end {
+                    // https://stackoverflow.com/a/3269471/22836431
+                    let overlaps = kernel.prohibited_memory_ranges().iter().any(|range|
+                        cursor_start <= range.end_addr() && range.start_addr() <= cursor_end
+                    );
+
+                    if !overlaps {
+                        return Some((idx, area, cursor_start));
+                    }
+
+                    cursor_start += FRAME_PAGE_SIZE;
+                    cursor_end = area_start + area.length as usize - 1;
+                }
+
+                None
         });
 
         // this should not, realistically, happen
@@ -69,8 +83,9 @@ impl<'a> BitmapFrameAllocator<'a> {
             return Err(MemoryError::NotEnoughPhyMemory);
         }
 
-        let (area_index, suitable_area) = suitable_area.unwrap();
+        let (area_index, suitable_area, bitmap_start_addr) = suitable_area.unwrap();
         serial_println!("Found valid area: {}", area_index);
+        serial_println!("Bitmap starting addr: {:#x}", bitmap_start_addr);
 
         Ok(())
     }
