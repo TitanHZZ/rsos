@@ -1,4 +1,4 @@
-use core::fmt;
+use core::{fmt, ptr::slice_from_raw_parts_mut};
 
 // TODO: write tests for this
 
@@ -12,6 +12,15 @@ impl<'a> BitmapRefMut<'a> {
         BitmapRefMut {
             data,
         }
+    }
+
+    /// Creates a **BitmapRefMut** that starts at `data` and has `len` * 8 bits.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that `data` is valid, points to mapped memory and is big enough to hold `len` elements.
+    pub const unsafe fn from_raw_parts_mut(data: *mut u8, len: usize) -> Self {
+        Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) })
     }
 
     pub fn get(&self, bit: usize) -> Option<bool> {
