@@ -22,12 +22,12 @@ pub trait AddrOps {
 // this implements AddrsOps for both VirtualAddress and PhysicalAddress
 impl AddrOps for usize {
     fn align_down(&self, align: usize) -> usize {
-        debug_assert!(align.is_power_of_two());
+        assert!(align.is_power_of_two());
         *self & !(align - 1)
     }
 
     fn align_up(&self, align: usize) -> usize {
-        debug_assert!(align.is_power_of_two());
+        assert!(align.is_power_of_two());
         (*self + align - 1) & !(align - 1)
     }
 }
@@ -36,7 +36,8 @@ impl AddrOps for usize {
 /// 
 /// This memory regions are expected to be identity mapped and as such, these addrs are virtual and physical.
 /// 
-/// The addrs are both inclusive.
+/// The addrs are both inclusive. The start address is guaranteed to be **0** or a multiple of **FRAME_PAGE_SIZE**, while the end address is guaranteed
+/// to be **0** or else, the **end address + 1** is a multiple of **FRAME_PAGE_SIZE**.
 #[derive(Clone, Copy)]
 pub struct ProhibitedMemoryRange {
     start_addr: PhysicalAddress,
@@ -46,6 +47,9 @@ pub struct ProhibitedMemoryRange {
 impl ProhibitedMemoryRange {
     /// Creates a `ProhibitedMemoryRange`.
     pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> ProhibitedMemoryRange {
+        assert!(start_addr % FRAME_PAGE_SIZE == 0);
+        assert!((end_addr == 0) || ((end_addr + 1) % FRAME_PAGE_SIZE == 0));
+
         ProhibitedMemoryRange {
             start_addr,
             end_addr,
@@ -64,6 +68,16 @@ impl ProhibitedMemoryRange {
     pub fn end_addr(&self) -> PhysicalAddress {
         self.end_addr
     }
+
+    /// Get the prohibited range length in bytes.
+    pub fn length(&self) -> usize {
+        self.end_addr - self.start_addr + 1
+    }
+
+    /// Get the prohibited range length in frames.
+    pub fn frame_length(&self) -> usize {
+        self.length().align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE
+    }
 }
 
 #[derive(Debug)]
@@ -74,7 +88,7 @@ pub enum MemoryError {
     MappingUsedTableEntry,          // the user is trying to map to a used page table entry
     FrameInvalidAllocatorAddr,      // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
 
-    // TODO: perhaps this should not be considered a memory error ??
+    // TODO: perhaps these should not be considered a memory error ??
     ElfSymbolsMbTagDoesNotExist,    // the `ElfSymbols` multiboot2 tag does not exist
     MemoryMapMbTagDoesNotExist,     // the `MemoryMap` multiboot2 tag does not exist
     ElfSectionErr(ElfSectionError), // elf section specific errors

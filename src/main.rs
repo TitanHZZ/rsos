@@ -47,8 +47,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
         );
     }
 
-    let total_memory: u64 = mem_map_entries.into_iter()
-        .filter(|entry| entry.entry_type() == MemoryMapEntryType::AvailableRAM)
+    let total_memory: u64 = mem_map_entries.usable_areas()
         .map(|entry| entry.length)
         .sum();
 
@@ -89,7 +88,9 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Frame allocator allocation initialized.");
     }
 
-    rsos::hlt();
+    let b = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -109,12 +110,10 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
 
-    let b = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
-
     // if this fails, the mb2 memory got corrupted
     assert!(a == b);
+
+    rsos::hlt();
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -182,8 +181,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let framebuffer = kernel.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
     serial_println!("framebuffer type: {:#?}", fb_type);
-
-    // let a = SimpleFrameAllocator::PROHIBITED_MEM_RANGES_LEN;
 
     ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));

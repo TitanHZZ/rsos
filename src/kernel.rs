@@ -1,10 +1,14 @@
-use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}};
+use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}, serial_println};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}};
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
+/// Represents the number of sequential bytes starting at addr 0x0 that are identity mapped when the Rust code first starts.
+/// 
+/// It is guaranteed to be a multiple of 4096.
 pub const ORIGINALLY_IDENTITY_MAPPED: usize = 4096 * 512 * 512;
+const _: () = assert!(ORIGINALLY_IDENTITY_MAPPED % 4096 == 0);
 
-pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 2;
+pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
 // TODO: this should probably be a static and hold a mutex
 pub struct Kernel {
@@ -38,6 +42,9 @@ impl Kernel {
         let mb_end   = mb_info.addr() + mb_info.size() as usize - 1;
         let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
+        serial_println!("kernel start: {}, kernel end: {}", k_start, k_end);
+        serial_println!("mb start: {}, mb end: {}", mb_start, mb_end);
+
         Kernel {
             k_start,
             k_end,
@@ -48,14 +55,25 @@ impl Kernel {
         }
     }
 
-    /// Returns all the memory ranges (identity mapped, meaning that the addrs are physical and virtual), that **must be left untouched**.
+    /// Returns all the memory ranges that **must be left untouched** meaning that these regions cannot be used for
+    /// allocations in the physical (frame allocator) and virtual (page allocator) memory spaces.
+    /// These ranges live in available RAM.
     /// 
     /// There are no order guarantees for the memory ranges.
     pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
         [
+            ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
             ProhibitedMemoryRange::new(self.k_start,  self.k_end),
             ProhibitedMemoryRange::new(self.mb_start, self.mb_end),
         ]
+    }
+
+    pub fn identity_mapped_regions(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN - 1] {
+        // we are just ignoring the first entry in the prohibited_memory_ranges() output because it cannot be identity mapped to avoid problems with ptrs
+        self.prohibited_memory_ranges()[1..KERNEL_PROHIBITED_MEM_RANGES_LEN].try_into().unwrap()
+    }
+
+    pub fn unusable_memory_ranges(&self) {
     }
 
     pub fn k_start(&self) -> VirtualAddress {

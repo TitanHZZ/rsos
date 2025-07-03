@@ -1,30 +1,46 @@
 use core::{fmt, ptr::slice_from_raw_parts_mut};
 
 // TODO: write tests for this
+// TODO: fix the descriptions
 
 /// A bitmap with a mut ref to the bitmap itself.
 pub struct BitmapRefMut<'a> {
     data: &'a mut [u8],
+    bit_len: usize,
 }
 
 impl<'a> BitmapRefMut<'a> {
-    pub const fn new(data: &'a mut [u8]) -> Self {
+    /// Creates a new **BitmapRefMut** that points to `data`.
+    /// The data pointed to by `data` will be zeroed out.
+    pub fn new(data: &'a mut [u8], bit_len: Option<usize>) -> Self {
+        // get the real length
+        let bit_len = match bit_len {
+            Some(len) => len,
+            None => data.len() * 8,
+        };
+
+        // make sure that the real length is a valid value
+        assert!(bit_len <= data.len() * 8);
+
+        data.fill(0);
         BitmapRefMut {
             data,
+            bit_len,
         }
     }
 
     /// Creates a **BitmapRefMut** that starts at `data` and has `len` * 8 bits.
+    /// The data pointed to by `data` with `len` elements will be zeroed out.
     /// 
     /// # Safety
     /// 
     /// The caller must ensure that `data` is valid, points to mapped memory and is big enough to hold `len` elements.
-    pub const unsafe fn from_raw_parts_mut(data: *mut u8, len: usize) -> Self {
-        Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) })
+    pub unsafe fn from_raw_parts_mut(data: *mut u8, len: usize, bit_len: Option<usize>) -> Self {
+        Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) }, bit_len)
     }
 
     pub fn get(&self, bit: usize) -> Option<bool> {
-        if bit >= self.data.len() * 8 {
+        if bit >= self.bit_len {
             return None;
         }
 
@@ -37,7 +53,7 @@ impl<'a> BitmapRefMut<'a> {
     }
 
     pub fn set(&mut self, bit: usize, value: bool) {
-        assert!(bit < self.data.len() * 8);
+        assert!(bit < self.bit_len);
         let (byte, offset) = self.bit_pos(bit);
         self.data[byte] &= !(1 << offset);
         self.data[byte] |= (value as u8) << offset;
@@ -74,9 +90,9 @@ impl<'a> Iterator for BitmapRefMutIter<'a> {
 
 impl<'a> fmt::Display for BitmapRefMut<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in &*self.data {
+        for i in 0..self.bit_len {
             for offset in 0..8 {
-                write!(f, "{}", (byte & (1 << offset)) >> offset)?;
+                write!(f, "{}", (self.data[i] & (1 << offset)) >> offset)?;
             }
         }
 

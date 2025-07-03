@@ -24,8 +24,10 @@ pub unsafe trait FrameAllocator: Send + Sync {
     fn deallocate_frame(&self, frame: Frame);
 
     /// Get all memory regions that MUST not be touched by the page allocator.
-    fn prohibited_memory_ranges(&self) -> Option<&[ProhibitedMemoryRange]>;
+    fn prohibited_memory_ranges<'a>(&self) -> Option<&[ProhibitedMemoryRange]>;
 }
 
 /// The global frame allocator.
+// TODO: a good idea would be to create a simple mechanism that would allow an easy way to switch the frame allocator
+// even different allocators for different tests and "runners"
 pub static FRAME_ALLOCATOR: BitmapFrameAllocator = BitmapFrameAllocator::new();

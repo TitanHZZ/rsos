@@ -1,3 +1,5 @@
+use crate::memory::AddrOps;
+
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::ptr::{addr_of, slice_from_raw_parts};
 
@@ -38,6 +40,21 @@ impl MemoryMapEntry {
             5 => MemoryMapEntryType::DefectiveRAM,
             other => MemoryMapEntryType::Reserved(other)
         }
+    }
+
+    /// Get the amount of bytes in `self.length` that can hold data aligned to `align` and of size `align`.
+    /// Align **must** be a power of 2 or else, it will panic.
+    /// 
+    /// To get the aligned `base_addr`, you will have to use **aligned_base_addr()**.
+    pub fn aligned_length(&self, align: usize) -> u64 {
+        let start_addr          = (self.base_addr as usize).align_up(align);
+        let addr_after_end_addr = ((self.base_addr + self.length) as usize).align_down(align);
+        (addr_after_end_addr - start_addr) as u64
+    }
+
+    /// Get the `base_addr` aligned to `align`.
+    pub fn aligned_base_addr(&self, align: usize) -> u64 {
+        (self.base_addr as usize).align_up(align) as u64
     }
 }
 
@@ -84,6 +101,13 @@ impl IntoIterator for MemoryMapEntries {
             entries: self.0,
             curr_mem_entry_idx: 0,
         }
+    }
+}
+
+impl MemoryMapEntries {
+    /// Get the areas with an entry type of **MemoryMapEntryType::AvailableRAM**.
+    pub fn usable_areas(&self) -> impl Iterator<Item = &'static MemoryMapEntry> {
+        self.into_iter().filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM)
     }
 }
 
