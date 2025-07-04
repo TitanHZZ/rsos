@@ -4,8 +4,6 @@ use crate::{serial_println, multiboot2::memory_map::MemoryMap};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
-const PROHIBITED_MEM_RANGES_LEN: usize = 1;
-
 struct BitmapFrameAllocatorInner<'a> {
     mem_map_entries: Option<MemoryMapEntries>,
 
@@ -13,17 +11,12 @@ struct BitmapFrameAllocatorInner<'a> {
     bitmap: Option<BitmapRefMut<'a>>,
     next_free_frame: usize,
 
-    prohibited_mem_ranges: [ProhibitedMemoryRange; PROHIBITED_MEM_RANGES_LEN],
+    prohibited_mem_range: ProhibitedMemoryRange,
 }
 
 unsafe impl<'a> Send for BitmapFrameAllocatorInner<'a> {}
 
-pub struct BitmapFrameAllocator<'a> {
-    bitmap: Mutex<BitmapFrameAllocatorInner<'a>>,
-
-    // this is read only, so it *cannot* cause race conditions
-    prohibited_mem_ranges: [ProhibitedMemoryRange; PROHIBITED_MEM_RANGES_LEN],
-}
+pub struct BitmapFrameAllocator<'a>(Mutex<BitmapFrameAllocatorInner<'a>>);
 
 impl<'a> BitmapFrameAllocatorInner<'a> {
     fn addr_to_bit_idx(&self, addr: PhysicalAddress) -> Option<usize> {
@@ -89,17 +82,14 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
 
 impl<'a> BitmapFrameAllocator<'a> {
     pub const fn new() -> Self {
-        BitmapFrameAllocator {
-            bitmap: Mutex::new(BitmapFrameAllocatorInner {
-                mem_map_entries: None,
+        BitmapFrameAllocator (Mutex::new(BitmapFrameAllocatorInner {
+            mem_map_entries: None,
 
-                bitmap: None,
-                next_free_frame: 0,
+            bitmap: None,
+            next_free_frame: 0,
 
-                prohibited_mem_ranges: [ProhibitedMemoryRange::empty(); PROHIBITED_MEM_RANGES_LEN],
-            }),
-            prohibited_mem_ranges: [ProhibitedMemoryRange::empty(); PROHIBITED_MEM_RANGES_LEN],
-        }
+            prohibited_mem_range: ProhibitedMemoryRange::empty(),
+        }))
     }
 
     /// # Safety
@@ -108,7 +98,7 @@ impl<'a> BitmapFrameAllocator<'a> {
     /// 
     /// However, it must be called (before any allocation) as the allocator expects it.
     pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
-        let allocator = &mut *self.bitmap.lock();
+        let allocator = &mut *self.0.lock();
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
 
         allocator.mem_map_entries = Some(mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?);
@@ -190,10 +180,8 @@ impl<'a> BitmapFrameAllocator<'a> {
         allocator.next_free_frame = 0;
         allocator.next_free_frame = allocator.get_next_free_frame().ok_or(MemoryError::NotEnoughPhyMemory)?;
 
-        // let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
-        // self.prohibited_mem_ranges = [
-        //     ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr),
-        // ];
+        let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
+        allocator.prohibited_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
 
         serial_println!("Bitmap created!");
 
@@ -203,7 +191,7 @@ impl<'a> BitmapFrameAllocator<'a> {
 
 unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     fn allocate_frame(&self) -> Result<Frame, MemoryError> {
-        let allocator = &mut *self.bitmap.lock();
+        let allocator = &mut *self.0.lock();
         let frame = allocator.bit_idx_to_frame(allocator.next_free_frame).ok_or(MemoryError::NotEnoughPhyMemory)?;
         allocator.next_free_frame = allocator.get_next_free_frame().ok_or(MemoryError::NotEnoughPhyMemory)?;
 
@@ -216,8 +204,8 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         todo!()
     }
 
-    fn prohibited_memory_ranges(&self) -> Option<&[ProhibitedMemoryRange]> {
-        // Some(&self.bitmap.lock().prohibited_mem_ranges)
-        todo!()
+    fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+        let allocator = &mut *self.0.lock();
+        Some(allocator.prohibited_mem_range)
     }
 }

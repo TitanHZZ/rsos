@@ -31,9 +31,7 @@ impl SimpleFrameAllocator {
             kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
         }))
     }
-}
 
-impl SimpleFrameAllocator {
     /// Resets the frame allocator state.
     /// 
     /// # Safety
@@ -85,7 +83,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         unimplemented!();
     }
 
-    fn prohibited_memory_ranges(&self) -> Option<&[ProhibitedMemoryRange]> {
+    fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {
         None
     }
 }

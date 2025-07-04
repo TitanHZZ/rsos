@@ -95,10 +95,9 @@ pub enum MemoryError {
     MemoryMapErr(MemoryMapError),   // elf section specific errors
 }
 
-/*
- * Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
- * If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
- */
+/// Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
+/// 
+/// If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
 pub fn kernel_remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
 where
     A: FrameAllocator

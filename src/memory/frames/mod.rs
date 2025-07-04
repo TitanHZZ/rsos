@@ -18,13 +18,16 @@ impl Frame {
     }
 }
 
+// TODO: this should probably also require init()
 /// A Frame allocator to be used OS wide.
 pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate_frame(&self) -> Result<Frame, MemoryError>;
     fn deallocate_frame(&self, frame: Frame);
 
-    /// Get all memory regions that MUST not be touched by the page allocator.
-    fn prohibited_memory_ranges<'a>(&self) -> Option<&[ProhibitedMemoryRange]>;
+    /// Get the memory region that **MUST** not be touched by the page allocator.
+    /// 
+    /// This region **must be left untouched** meaning that this region cannot be used for allocations in the virtual (page allocator) memory space.
+    fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
 
 /// The global frame allocator.
