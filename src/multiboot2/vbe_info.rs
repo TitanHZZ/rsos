@@ -1,10 +1,9 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
-/*
- * AFAIK, EFI systems (including this one) should not have this tag.
- * But i am not sure, so this will stay here.
- */
+// AFAIK, EFI systems (including this one) should not have this tag.
+// But i am not sure, so this will stay here.
 #[repr(C)]
+#[allow(dead_code)]
 pub(crate) struct VbeInfo {
     header: MbTagHeader,
     pub(crate) vbe_mode: u16,

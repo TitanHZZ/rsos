@@ -4,7 +4,7 @@ pub mod frames;
 mod cr3;
 
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{kernel::Kernel, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}, memory_map::MemoryMapError}};
+use crate::{kernel::Kernel, memory::frames::FRAME_ALLOCATOR, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}, memory_map::MemoryMapError}};
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -47,8 +47,8 @@ pub struct ProhibitedMemoryRange {
 impl ProhibitedMemoryRange {
     /// Creates a `ProhibitedMemoryRange`.
     pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> ProhibitedMemoryRange {
-        assert!(start_addr % FRAME_PAGE_SIZE == 0);
-        assert!((end_addr == 0) || ((end_addr + 1) % FRAME_PAGE_SIZE == 0));
+        assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
+        assert!((end_addr == 0) || (end_addr + 1).is_multiple_of(FRAME_PAGE_SIZE));
 
         ProhibitedMemoryRange {
             start_addr,
@@ -104,7 +104,7 @@ where
 {
     ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
         let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
-        let elf_sections = elf_symbols.sections().map_err(|e| MemoryError::ElfSectionErr(e))?;
+        let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
 
         for elf_section in elf_sections {
             // if the section is not in memory, we don't need to map it
@@ -118,7 +118,7 @@ where
             let end_addr   = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
 
             // make sure that kernel elf sections are FRAME_PAGE_SIZE aligned
-            if start_addr % FRAME_PAGE_SIZE != 0 {
+            if !start_addr.is_multiple_of(FRAME_PAGE_SIZE) {
                 return Err(MemoryError::MisalignedKernelSection);
             }
 
@@ -139,6 +139,17 @@ where
         for addr in (kernel.mb_start()..=kernel.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
+        }
+
+        // identity map the frame allocator prohibited region
+        if FRAME_ALLOCATOR.prohibited_memory_range().is_none() {
+            return Ok(());
+        }
+
+        let prohibited_mem_range = FRAME_ALLOCATOR.prohibited_memory_range().unwrap();
+        for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
+            let frame = Frame::from_phy_addr(addr);
+            active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
         }
 
         Ok(())

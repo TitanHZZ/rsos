@@ -1,8 +1,9 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use crate::memory::{frames::{bitmap_frame_allocator::BitmapFrameAllocator, simple_frame_allocator::SimpleFrameAllocator}, ProhibitedMemoryRange};
+use crate::{kernel::Kernel, memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator}};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
+use crate::memory::ProhibitedMemoryRange;
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -18,11 +19,18 @@ impl Frame {
     }
 }
 
-// TODO: this should probably also require init()
 /// A Frame allocator to be used OS wide.
 pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate_frame(&self) -> Result<Frame, MemoryError>;
     fn deallocate_frame(&self, frame: Frame);
+
+    /// Resets the frame allocator state.
+    /// 
+    /// # Safety
+    /// 
+    /// This must be called (before any allocation) as the allocator expects it.
+    /// In the case that it does not get called, memory corruption is the most likely outcome.
+    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError>;
 
     /// Get the memory region that **MUST** not be touched by the page allocator.
     /// 

@@ -4,9 +4,9 @@ use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryR
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at addr 0x0 that are identity mapped when the Rust code first starts.
 /// 
-/// It is guaranteed to be a multiple of 4096.
+/// It is guaranteed to be a multiple of FRAME_PAGE_SIZE.
 pub const ORIGINALLY_IDENTITY_MAPPED: usize = 4096 * 512 * 512;
-const _: () = assert!(ORIGINALLY_IDENTITY_MAPPED % 4096 == 0);
+const _: () = assert!(ORIGINALLY_IDENTITY_MAPPED.is_multiple_of(FRAME_PAGE_SIZE));
 
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
@@ -68,10 +68,10 @@ impl Kernel {
         ]
     }
 
-    pub fn identity_mapped_regions(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN - 1] {
-        // we are just ignoring the first entry in the prohibited_memory_ranges() output because it cannot be identity mapped to avoid problems with ptrs
-        self.prohibited_memory_ranges()[1..KERNEL_PROHIBITED_MEM_RANGES_LEN].try_into().unwrap()
-    }
+    // pub fn identity_mapped_regions(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN - 1] {
+    //     // we are just ignoring the first entry in the prohibited_memory_ranges() output because it cannot be identity mapped to avoid problems with ptrs
+    //     self.prohibited_memory_ranges()[1..KERNEL_PROHIBITED_MEM_RANGES_LEN].try_into().unwrap()
+    // }
 
     pub fn unusable_memory_ranges(&self) {
     }

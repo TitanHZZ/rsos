@@ -1,6 +1,7 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
+#[allow(dead_code)]
 pub(crate) struct BasicMemoryInfo {
     header: MbTagHeader,
     pub(crate) mem_lower: u32,

@@ -18,6 +18,12 @@ unsafe impl<'a> Send for BitmapFrameAllocatorInner<'a> {}
 
 pub struct BitmapFrameAllocator<'a>(Mutex<BitmapFrameAllocatorInner<'a>>);
 
+impl<'a> Default for BitmapFrameAllocator<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> BitmapFrameAllocatorInner<'a> {
     fn addr_to_bit_idx(&self, addr: PhysicalAddress) -> Option<usize> {
         self.frame_to_bit_idx(Frame::from_phy_addr(addr))
@@ -65,7 +71,7 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
         let next_free_frame = bitmap.iter()
             .skip(self.next_free_frame + 1)
             .enumerate()
-            .find(|(_, bit)| *bit == false)
+            .find(|(_, bit)| !(*bit))
             .map(|(idx, _)| idx + self.next_free_frame + 1);
 
         if next_free_frame.is_some() {
@@ -75,7 +81,7 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
         bitmap.iter()
             .take(self.next_free_frame)
             .enumerate()
-            .find(|(_, bit)| *bit == false)
+            .find(|(_, bit)| !(*bit))
             .map(|(idx, _)| idx)
     }
 }
@@ -91,17 +97,14 @@ impl<'a> BitmapFrameAllocator<'a> {
             prohibited_mem_range: ProhibitedMemoryRange::empty(),
         }))
     }
+}
 
-    /// # Safety
-    /// 
-    /// Resets the frame allocator state.
-    /// 
-    /// However, it must be called (before any allocation) as the allocator expects it.
-    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
+    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
 
-        allocator.mem_map_entries = Some(mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?);
+        allocator.mem_map_entries = Some(mem_map.entries().map_err(MemoryError::MemoryMapErr)?);
         let mem_map_entries = allocator.mem_map_entries.unwrap();
 
         // get the amount of frames available in valid RAM
@@ -187,12 +190,11 @@ impl<'a> BitmapFrameAllocator<'a> {
 
         Ok(())
     }
-}
 
-unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     fn allocate_frame(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
         let frame = allocator.bit_idx_to_frame(allocator.next_free_frame).ok_or(MemoryError::NotEnoughPhyMemory)?;
+        allocator.bitmap.as_mut().unwrap().set(allocator.next_free_frame, true);
         allocator.next_free_frame = allocator.get_next_free_frame().ok_or(MemoryError::NotEnoughPhyMemory)?;
 
         serial_println!("Allocated frame: {:#x}", frame.0);
@@ -200,8 +202,16 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         Ok(frame)
     }
 
-    fn deallocate_frame(&self, _frame: Frame) {
-        todo!()
+    // TODO: maybe it would make sense to check if the frame to be deallocated is in the kernel prohibited ranges
+    fn deallocate_frame(&self, frame: Frame) {
+        let allocator = &mut *self.0.lock();
+        let bit_idx = allocator.frame_to_bit_idx(frame).unwrap_or_else(|| panic!("Got Invalid frame for deallocation: {:#x}", frame.0));
+
+        let bitmap = allocator.bitmap.as_mut().unwrap();
+        assert!(bitmap.get(bit_idx) == Some(true)); // make sure that the frame was previously allocated
+        bitmap.set(bit_idx, false);
+
+        serial_println!("Deallocated frame: {:#x}", frame.0);
     }
 
     fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {

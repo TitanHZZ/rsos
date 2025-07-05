@@ -9,6 +9,12 @@ pub struct Bitmap<const BLOCKS: usize> {
     data: [u8; BLOCKS],
 }
 
+impl<const BLOCKS: usize> Default for Bitmap<BLOCKS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<const BLOCKS: usize> Bitmap<BLOCKS> {
     pub const fn new() -> Self {
         Bitmap {
@@ -36,7 +42,7 @@ impl<const BLOCKS: usize> Bitmap<BLOCKS> {
         self.data[byte] |= (value as u8) << offset;
     }
 
-    pub fn iter(&self) -> BitmapIter<BLOCKS> {
+    pub fn iter(&self) -> BitmapIter<'_, BLOCKS> {
         BitmapIter {
             curr_bit_idx: 0,
             bitmap: self,

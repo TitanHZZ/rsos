@@ -20,6 +20,12 @@ unsafe impl Send for SimpleFrameAllocatorInner {}
 
 pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
 
+impl Default for SimpleFrameAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SimpleFrameAllocator {
     pub const fn new() -> Self {
         SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
@@ -31,18 +37,14 @@ impl SimpleFrameAllocator {
             kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
         }))
     }
+}
 
-    /// Resets the frame allocator state.
-    /// 
-    /// # Safety
-    /// 
-    /// This must be called (before any allocation) as the allocator expects it.
-    /// In the case that it does not get called, memory corruption is the most likely outcome.
-    pub unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+unsafe impl FrameAllocator for SimpleFrameAllocator {
+    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
-        let mem_map_entries = mem_map.entries().map_err(|e| MemoryError::MemoryMapErr(e))?;
+        let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
 
         allocator.areas = Some(mem_map_entries);
         allocator.kernel_prohibited_memory_ranges = kernel.prohibited_memory_ranges();
@@ -61,9 +63,7 @@ impl SimpleFrameAllocator {
 
         Ok(())
     }
-}
 
-unsafe impl FrameAllocator for SimpleFrameAllocator {
     fn allocate_frame(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
 
@@ -71,7 +71,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         allocator.get_next_free_frame()?;
 
         // physical address needs to be page aligned (just used to make sure that the frame allocator is behaving)
-        if frame.addr() % FRAME_PAGE_SIZE != 0 {
+        if !frame.addr().is_multiple_of(FRAME_PAGE_SIZE) {
             return Err(MemoryError::FrameInvalidAllocatorAddr);
         }
 

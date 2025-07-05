@@ -1,6 +1,6 @@
-use crate::{memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}}, serial_print, serial_println};
+use crate::{memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}}};
+use crate::{memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_print, serial_println};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
-use crate::memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use spin::Mutex;
 
 struct FreedBlock {
@@ -8,7 +8,7 @@ struct FreedBlock {
     next_freed_block: Option<NonNull<FreedBlock>>
 }
 
-struct SimplePageAllocatorInner {
+struct SimpleHeapAllocatorInner {
     heap_start: VirtualAddress,
     heap_size: usize,
 
@@ -20,13 +20,13 @@ struct SimplePageAllocatorInner {
     apc: Option<&'static ActivePagingContext>,
 }
 
-unsafe impl Send for SimplePageAllocatorInner {}
+unsafe impl Send for SimpleHeapAllocatorInner {}
 
-pub struct SimplePageAllocator(Mutex<SimplePageAllocatorInner>);
+pub struct SimpleHeapAllocator(Mutex<SimpleHeapAllocatorInner>);
 
 // This just sets some default values that will get initialized in init().
 #[global_allocator]
-pub static HEAP_ALLOCATOR: SimplePageAllocator = SimplePageAllocator(Mutex::new(SimplePageAllocatorInner { 
+pub static HEAP_ALLOCATOR: SimpleHeapAllocator = SimpleHeapAllocator(Mutex::new(SimpleHeapAllocatorInner { 
     heap_start     : 0x0,
     heap_size      : 0,
     next_block     : 0x0,
@@ -35,14 +35,14 @@ pub static HEAP_ALLOCATOR: SimplePageAllocator = SimplePageAllocator(Mutex::new(
     apc: None,
 }));
 
-impl SimplePageAllocator {
+impl SimpleHeapAllocator {
     /// # Safety
     /// 
     /// Can only be called once or the allocator might get into an inconsistent state.  
     /// However, it must be called as the allocator expects it.
     pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, apc: &'static ActivePagingContext) -> Result<(), MemoryError> {
-        assert!(heap_start % FRAME_PAGE_SIZE == 0);
-        assert!(heap_size % FRAME_PAGE_SIZE == 0);
+        assert!(heap_start.is_multiple_of(FRAME_PAGE_SIZE));
+        assert!(heap_size.is_multiple_of(FRAME_PAGE_SIZE));
 
         let allocator = &mut *self.0.lock();
         allocator.heap_start = heap_start;
@@ -87,7 +87,7 @@ impl SimplePageAllocator {
 
 // TODO: write tests for all of this
 // TODO: do all these functions really need to be unsafe??
-impl SimplePageAllocatorInner {
+impl SimpleHeapAllocatorInner {
     /// # Safety
     /// 
     /// The caller must ensure that `addr` is valid and points to usable memory.
@@ -182,7 +182,7 @@ impl SimplePageAllocatorInner {
             let current_block = unsafe { addr_current_block.as_mut() };
 
             // the block must have matching alignment
-            if addr_current_block.as_ptr() as VirtualAddress % real_align != 0 {
+            if !(addr_current_block.as_ptr() as VirtualAddress).is_multiple_of(real_align) {
                 option_current_block = current_block.next_freed_block;
                 continue;
             }
@@ -201,7 +201,7 @@ impl SimplePageAllocatorInner {
                 let free_block_size = current_block.size - real_size;
                 unsafe { self.add_to_list(free_block_addr, free_block_size) }
 
-                assert!(free_block_addr % size_of::<FreedBlock>() == 0);
+                assert!(free_block_addr.is_multiple_of(size_of::<FreedBlock>()));
                 assert!(free_block_size >= size_of::<FreedBlock>());
 
                 return Some(addr_current_block.as_ptr() as *mut u8);
@@ -246,10 +246,10 @@ impl SimplePageAllocatorInner {
     }
 }
 
-unsafe impl GlobalAlloc for SimplePageAllocator {
+unsafe impl GlobalAlloc for SimpleHeapAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let allocator = &mut *self.0.lock();
-        assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
+        assert!(allocator.next_block.is_multiple_of(size_of::<FreedBlock>()));
 
         let real_align = max(size_of::<FreedBlock>(), layout.align());
         let real_size  = max(layout.size().align_up(real_align), size_of::<FreedBlock>()); // buffer overflows??
@@ -293,8 +293,8 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
         }
 
         assert!(allocator.max_mapped_addr >= allocator.next_block);
-        assert!(allocator.next_block % size_of::<FreedBlock>() == 0);
-        assert!((allocator.max_mapped_addr + 1) % FRAME_PAGE_SIZE == 0);
+        assert!(allocator.next_block.is_multiple_of(size_of::<FreedBlock>()));
+        assert!((allocator.max_mapped_addr + 1).is_multiple_of(FRAME_PAGE_SIZE));
 
         if freed_block_needed {
             // add the FreedBlock to the linked list
@@ -305,8 +305,8 @@ unsafe impl GlobalAlloc for SimplePageAllocator {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        assert!(ptr as usize % size_of::<FreedBlock>() == 0);
-        assert!(ptr as usize % layout.align() == 0);
+        assert!((ptr as usize).is_multiple_of(size_of::<FreedBlock>()));
+        assert!((ptr as usize).is_multiple_of(layout.align()));
 
         let allocator = &mut *self.0.lock();
         let real_align = max(size_of::<FreedBlock>(), layout.align());

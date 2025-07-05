@@ -2,6 +2,7 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C, packed)]
+#[allow(dead_code)]
 struct RsdpV2 {
     signature: [u8; 8],
     checksum: u8,

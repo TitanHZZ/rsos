@@ -1,16 +1,16 @@
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
-/*
- * I don't think this tag will even exist in this context as the kernel is 64bit.
- * Maybe it could be removed?
- */
+// I don't think this tag will even exist in this context as the kernel is 64bit.
+// Maybe it could be removed?
 #[repr(C)]
+#[allow(dead_code)]
 pub(crate) struct Efi32BitSystemTablePtr {
     header: MbTagHeader,
     pub(crate) pointer: u32,
 }
 
 #[repr(C)]
+#[allow(dead_code)]
 pub(crate) struct Efi64BitSystemTablePtr {
     header: MbTagHeader,
     pub(crate) pointer: u64,

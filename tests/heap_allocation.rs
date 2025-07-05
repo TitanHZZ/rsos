@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+use rsos::memory::frames::FrameAllocator;
 use rsos::memory::pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX};
 use rsos::multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated, MbBootInfo};
 use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};

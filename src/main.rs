@@ -8,14 +8,16 @@
 
 extern crate alloc;
 
-use rsos::{data_structures::bitmap::Bitmap, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::Kernel, memory::{frames::{simple_frame_allocator::SimpleFrameAllocator, Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags}, multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::{MemoryMap, MemoryMapEntryType}}, serial_print, serial_println};
-use rsos::interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}};
+use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
+use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
+use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
+use rsos::memory::{frames::{Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags};
 use rsos::{memory::frames::FRAME_ALLOCATOR, interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
 use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
-use rsos::multiboot2::MbBootInfo;
 use rsos::{log, memory};
 use alloc::boxed::Box;
 
@@ -88,10 +90,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         log!(ok, "Frame allocator allocation initialized.");
     }
 
-    let b = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
-    };
-
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     { // this scope makes sure that the inactive context does not get used again
@@ -109,11 +107,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
         ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
-
-    rsos::hlt();
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
@@ -141,29 +134,29 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
     code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
 
-    // let mut tss_seg = SystemSegmentDescriptor::new();
-    // tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
+    let mut tss_seg = SystemSegmentDescriptor::new();
+    tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
 
-    // let mut tss = Box::new(TSS::new());
-    // tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
-    // tss_seg.set_base(Box::leak(tss));
-    // tss_seg.set_limit(TSS_SIZE);
+    let mut tss = Box::new(TSS::new());
+    tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
+    tss_seg.set_base(Box::leak(tss));
+    tss_seg.set_limit(TSS_SIZE);
 
     // the unwraps() *should* be fine as we know that the gdt as space left for these 2 descriptors
     let mut gdt = Box::new(GDT::new());
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
-    // let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
+    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
 
     // set up the IDT
     let mut idt = Box::new(InterruptDescriptorTable::new());
     idt.breakpoint.set_fn(breakpoint_handler);
     idt.double_fault.set_fn(double_fault_handler);
-    // idt.double_fault.set_ist(TssStackNumber::TssStack1);
+    idt.double_fault.set_ist(TssStackNumber::TssStack1);
 
     interrupts::disable_pics();
     unsafe {
         GDT::load(Box::leak(gdt));
-        // TSS::load(tss_seg_sel);
+        TSS::load(tss_seg_sel);
         gdt::reload_seg_regs(code_seg_sel);
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
@@ -185,14 +178,15 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
-    let mut bitmap: Bitmap<2> = Bitmap::new();
-    bitmap.set(0, true);
-    bitmap.set(8, true);
-    bitmap.set(9, true);
-    serial_println!("bitmap: {}", bitmap);
-
     #[cfg(test)]
     test_main();
+
+    let b = unsafe  {
+        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+    };
+
+    // if this fails, the mb2 memory got corrupted
+    assert!(a == b);
 
     serial_println!("Hello, World!");
     rsos::hlt();

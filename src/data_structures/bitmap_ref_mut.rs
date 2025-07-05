@@ -59,7 +59,7 @@ impl<'a> BitmapRefMut<'a> {
         self.data[byte] |= (value as u8) << offset;
     }
 
-    pub fn iter(&self) -> BitmapRefMutIter {
+    pub fn iter(&self) -> BitmapRefMutIter<'_> {
         BitmapRefMutIter {
             curr_bit_idx: 0,
             bitmap: self,

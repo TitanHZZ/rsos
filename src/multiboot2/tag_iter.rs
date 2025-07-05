@@ -29,7 +29,7 @@ impl Iterator for MbTagIter {
                 assert!(ptr_offset > 0);
 
                 self.curr_tag_addr = unsafe { self.curr_tag_addr.byte_offset(ptr_offset)};
-                assert!(self.curr_tag_addr as VirtualAddress % 8 == 0);
+                assert!((self.curr_tag_addr as VirtualAddress).is_multiple_of(8));
                 assert!(self.curr_tag_addr < self.max_tag_addr as *const MbTagHeader);
 
                 Some(curr_tag)

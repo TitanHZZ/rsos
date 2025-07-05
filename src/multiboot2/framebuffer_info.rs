@@ -1,5 +1,5 @@
-use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use crate::{memory::PhysicalAddress, serial_println};
+use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(u8)]
 #[derive(Debug, PartialEq, Eq)]
@@ -16,6 +16,7 @@ pub enum FrameBufferError {
 }
 
 #[repr(C)]
+#[allow(dead_code)]
 struct FrameBufferPalette {
     red_value: u8,
     green_value: u8,
@@ -23,6 +24,7 @@ struct FrameBufferPalette {
 }
 
 #[repr(C)]
+#[allow(dead_code)]
 struct ColorInfoIndexedColor {
     framebuffer_palette_num_colors: u32,
     framebuffer_palette: [FrameBufferPalette],
