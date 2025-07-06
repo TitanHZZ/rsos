@@ -73,8 +73,8 @@ impl Kernel {
     //     self.prohibited_memory_ranges()[1..KERNEL_PROHIBITED_MEM_RANGES_LEN].try_into().unwrap()
     // }
 
-    pub fn unusable_memory_ranges(&self) {
-    }
+    // pub fn unusable_memory_ranges(&self) {
+    // }
 
     pub fn k_start(&self) -> VirtualAddress {
         self.k_start
