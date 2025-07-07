@@ -1,7 +1,6 @@
 use core::{fmt, ptr::slice_from_raw_parts_mut};
 
 // TODO: write tests for this
-// TODO: fix the descriptions
 
 /// A bitmap with a mut ref to the bitmap itself.
 pub struct BitmapRefMut<'a> {
@@ -12,6 +11,12 @@ pub struct BitmapRefMut<'a> {
 impl<'a> BitmapRefMut<'a> {
     /// Creates a new **BitmapRefMut** that points to `data`.
     /// The data pointed to by `data` will be zeroed out.
+    /// 
+    /// `bit_len` is an optional parameter that specifies how many of the bits in `data` will actually be used.
+    /// 
+    /// If `bit_len` is bigger than the total number of bits in `data`, this will panic.
+    /// 
+    /// In case this parameter is **None**, all the bits available in `data` will be used.
     pub fn new(data: &'a mut [u8], bit_len: Option<usize>) -> Self {
         // get the real length
         let bit_len = match bit_len {
@@ -29,7 +34,12 @@ impl<'a> BitmapRefMut<'a> {
         }
     }
 
-    /// Creates a **BitmapRefMut** that starts at `data` and has `len` * 8 bits.
+    /// Creates a **BitmapRefMut** that starts at `data` and has `len` bytes and `len` * 8 bits or `bit_len` bits.
+    /// 
+    /// If `bit_len` is bigger than `len` * 8, this will panic.
+    /// 
+    /// In case `bit_len` is **None**, all the bits available in `data` will be used.
+    /// 
     /// The data pointed to by `data` with `len` elements will be zeroed out.
     /// 
     /// # Safety
@@ -39,6 +49,7 @@ impl<'a> BitmapRefMut<'a> {
         Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) }, bit_len)
     }
 
+    /// Get the value (true/false) in the position `bit` that works as an index in the array of bits.
     pub fn get(&self, bit: usize) -> Option<bool> {
         if bit >= self.bit_len {
             return None;
@@ -52,6 +63,8 @@ impl<'a> BitmapRefMut<'a> {
         }
     }
 
+    /// Set bit at position `bit` to `value`.
+    /// Panic if `bit` bigger than `len` * 8 or `bit_len` if provided.
     pub fn set(&mut self, bit: usize, value: bool) {
         assert!(bit < self.bit_len);
         let (byte, offset) = self.bit_pos(bit);
