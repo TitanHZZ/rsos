@@ -64,7 +64,10 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
         None
     }
 
-    // TODO: write the description
+    /// Obtain the bit index for the next free frame to be used when the allocator allocated again.
+    /// 
+    /// This assumes that the current **self.next_free_frame** (before calling this), will be marked as used so, it is ignored meaning that,
+    /// the value of **self.next_free_frame** is irrelevant.
     fn get_next_free_frame(&self) -> Option<usize> {
         let bitmap = self.bitmap.as_ref().unwrap();
 

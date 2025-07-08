@@ -64,7 +64,7 @@ impl<'a> BitmapRefMut<'a> {
     }
 
     /// Set bit at position `bit` to `value`.
-    /// Panic if `bit` bigger than `len` * 8 or `bit_len` if provided.
+    /// Panic if `bit` bigger than `len` * 8 or `bit_len` if provided during creation of the bitmap.
     pub fn set(&mut self, bit: usize, value: bool) {
         assert!(bit < self.bit_len);
         let (byte, offset) = self.bit_pos(bit);
