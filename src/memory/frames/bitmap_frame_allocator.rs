@@ -39,6 +39,8 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
             let start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
             let end   = start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
 
+            serial_println!("area: {:#x} -- {:#x}", start, end);
+
             if (frame.addr() >= start) && (frame.addr() <= end) {
                 let offset = (frame.addr() - start) / FRAME_PAGE_SIZE;
                 return Some(frame_acc + offset);
@@ -163,9 +165,12 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap_bytes_count, None)
         });
 
+        // TODO: apparently some ranges might not actually be in 'AvailableRAM' and the unwrap()s fail??
+
         // mark the prohibited kernel memory ranges as allocated
         for range in kernel.prohibited_memory_ranges() {
             // this *must* work
+            serial_println!("range start addr: {:#x}", range.start_addr());
             let start_bit_idx = allocator.addr_to_bit_idx(range.start_addr()).unwrap();
             let bitmap = allocator.bitmap.as_mut().unwrap();
 

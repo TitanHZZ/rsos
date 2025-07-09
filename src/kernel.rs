@@ -42,8 +42,8 @@ impl Kernel {
         let mb_end   = mb_info.addr() + mb_info.size() as usize - 1;
         let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-        serial_println!("kernel start: {}, kernel end: {}", k_start, k_end);
-        serial_println!("mb start: {}, mb end: {}", mb_start, mb_end);
+        serial_println!("kernel start: {:#x}, kernel end: {:#x}", k_start, k_end);
+        serial_println!("mb start: {:#x}, mb end: {:#x}", mb_start, mb_end);
 
         Kernel {
             k_start,
