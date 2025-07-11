@@ -1,3 +1,8 @@
+// https://www.reddit.com/r/rust/comments/req4w2/everything_you_never_wanted_to_know_about_linker/
+// https://wiki.osdev.org/Higher_Half_x86_Bare_Bones
+// https://mcyoung.xyz/2021/06/01/linker-script/
+// https://wiki.osdev.org/Higher_Half_Kernel
+
 #![no_std]
 #![no_main]
 #![feature(lazy_get)]
