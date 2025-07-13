@@ -1,4 +1,4 @@
-use crate::{multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, MbBootInfo}, serial_println};
+use crate::{memory::MemoryError, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo}, serial_println};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}};
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
@@ -52,6 +52,25 @@ impl Kernel {
             mb_info,
             mb_start,
             mb_end,
+        }
+    }
+
+    pub fn check_kernel_placement(&self) -> Result<(), MemoryError> {
+        let mem_map = self.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
+        let mem_map_entries = Some(mem_map.entries().map_err(MemoryError::MemoryMapErr)?).unwrap();
+
+        match self.prohibited_memory_ranges().iter().any(|range|
+            mem_map_entries.into_iter()
+            .filter(|area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
+            .any(|area| {
+                let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
+                let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
+
+                area_start <= range.end_addr() && range.start_addr() <= area_end
+            })
+        ) {
+            true => Err(MemoryError::BadKernelPlacement),
+            false => Ok(()),
         }
     }
 

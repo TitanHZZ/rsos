@@ -81,6 +81,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
     print_mem_status(&mb_info);
     let kernel = Kernel::new(mb_info);
+    kernel.check_kernel_placement().expect("The kernel must be well placed");
 
     let a = unsafe  {
         hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
