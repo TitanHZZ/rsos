@@ -87,7 +87,7 @@ pub enum MemoryError {
     MisalignedKernelSection,        // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
     MappingUsedTableEntry,          // the user is trying to map to a used page table entry
     FrameInvalidAllocatorAddr,      // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
-    BadKernelPlacement,             // the kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`
+    BadMemoryPlacement,             // the kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`
 
     // TODO: perhaps these should not be considered a memory error ??
     ElfSymbolsMbTagDoesNotExist,    // the `ElfSymbols` multiboot2 tag does not exist

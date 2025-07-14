@@ -55,21 +55,26 @@ impl Kernel {
         }
     }
 
-    pub fn check_kernel_placement(&self) -> Result<(), MemoryError> {
+    /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
+    /// place such as in an area that is not of type **AvailableRAM**.
+    /// 
+    /// If this is the case, **Err(MemoryError::BadMemoryPlacement)** will be returned.
+    pub fn check_placements(&self) -> Result<(), MemoryError> {
         let mem_map = self.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
-        let mem_map_entries = Some(mem_map.entries().map_err(MemoryError::MemoryMapErr)?).unwrap();
+        let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
 
+        // check kernel placement
         match self.prohibited_memory_ranges().iter().any(|range|
             mem_map_entries.into_iter()
-            .filter(|area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
-            .any(|area| {
-                let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
-                let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
+                .filter(|&area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
+                .any(|area| {
+                    let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
+                    let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
 
-                area_start <= range.end_addr() && range.start_addr() <= area_end
-            })
+                    area_start <= range.end_addr() && range.start_addr() <= area_end
+                })
         ) {
-            true => Err(MemoryError::BadKernelPlacement),
+            true => Err(MemoryError::BadMemoryPlacement),
             false => Ok(()),
         }
     }
