@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# TODO: tests cannot reboot qemu forever
-# TODO: add checks for runs that finish with a timeout
-
 TEST_MODE=false
 TESTS_TIMEOUT="5s"
 
@@ -40,6 +37,9 @@ if $TEST_MODE; then
 
     # hide qemu
     cmd+=(-display none)
+
+    # prevent qemu from rebooting forever in case of an OS crash
+    cmd+=(-no-reboot)
 else
     # copy the appropriate grub cfg file for normal use
     cp setup/grub.cfg target/isofiles/boot/grub
@@ -53,25 +53,39 @@ grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 if $TEST_MODE; then
     # run tests with a timeout
     timeout --foreground "$TESTS_TIMEOUT" "${cmd[@]}"
+
+    # get the exit code for the tests
+    ret=$?
+
+    # 33 is the success exit code for the tests --> (0x10 << 1) | 1 = 33
+    if [ $ret -eq 33 ]; then
+        # qemu and tests terminated properly
+        exit 0
+    # 35 is the failure exit code for the tests --> (0x11 << 1) | 1 = 35
+    elif [ $ret -eq 35 ]; then
+        # some test failed
+        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the test has failed"
+        exit 1
+    elif [ $ret -eq 1 ]; then
+        # qemu failed
+        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m qemu has failed"
+        exit 2
+    # because of the '-no-reboot' option for the tests, if the OS crashes, qemu just exits with code 0
+    elif [ $ret -eq 0 ]; then
+        # the OS crashed
+        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the OS has crashed"
+        exit 3
+    # 124 is the exit code for the `timeout` command when the command times out
+    elif [ $ret -eq 124 ]; then
+        # the test timed out
+        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the test timed out"
+        exit 4
+    else
+        # unknown error
+        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m an unknown error has occurred"
+        exit 5
+    fi
 else
     # non tests run freely
     "${cmd[@]}"
-fi
-
-ret=$?
-
-# 33 is the success exit code for the tests --> (0x10 << 1) | 1 = 33
-if [ $ret -eq 33 ]; then
-    # qemu and tests terminated properly
-    exit 0
-# 35 is the failure exit code for the tests --> (0x11 << 1) | 1 = 35
-elif [ $ret -eq 35 ]; then
-    # some test failed
-    exit 1
-elif [ $ret -eq 1 ]; then
-    # qemu failed
-    exit 2
-else
-    # unknown return code
-    exit 3
 fi
