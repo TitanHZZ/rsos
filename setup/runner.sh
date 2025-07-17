@@ -1,7 +1,15 @@
 #!/bin/bash
 
-TEST_MODE=false
-TESTS_TIMEOUT="5s"
+# globals
+TEST_MODE=false        # determines if cargo is running in test mode
+TESTS_TIMEOUT="5s"     # timeout for tests (if in test mode)
+GRUB_TIMEOUT_RELEASE=5 # grub timeout in cargo release mode
+GRUB_TIMEOUT_DEBUG=0   # grub timeout in cargo debug mode
+
+# colors
+BRed='\033[1;31m' # bold red
+NC='\033[0m'      # no color
+BNC='\033[1m'     # bold no color
 
 # check for 'test' mode
 if [[ "$1" == *"/deps/"* ]]; then
@@ -25,9 +33,12 @@ cp /usr/share/OVMF/OVMF_VARS.fd /tmp/OVMF_VARS.fd
 mkdir -p target/isofiles/boot/grub
 cp "$1" target/isofiles/boot/kernel.bin
 
+# copy the grub config file
+cp setup/grub.cfg target/isofiles/boot/grub
+
 if $TEST_MODE; then
-    # copy the appropriate grub cfg file for tests
-    cp setup/grub_test.cfg target/isofiles/boot/grub/grub.cfg
+    # set the appropriate grub timeout
+    sed -i "s/GRUB_TIMEOUT/${GRUB_TIMEOUT_DEBUG}/g" target/isofiles/boot/grub/grub.cfg
 
     # this is an I/O device that allows for a simple way to shutdown qemu (useful for tests)
     cmd+=(-device "isa-debug-exit,iobase=0xf4,iosize=0x04")
@@ -41,8 +52,8 @@ if $TEST_MODE; then
     # prevent qemu from rebooting forever in case of an OS crash
     cmd+=(-no-reboot)
 else
-    # copy the appropriate grub cfg file for normal use
-    cp setup/grub.cfg target/isofiles/boot/grub
+    # set the appropriate grub timeout
+    sed -i "s/GRUB_TIMEOUT/${GRUB_TIMEOUT_RELEASE}/g" target/isofiles/boot/grub/grub.cfg
 fi
 
 ### TEMPORARY
@@ -52,40 +63,40 @@ grub2-mkrescue -o target/rsos.iso target/isofiles 2> /dev/null
 
 if $TEST_MODE; then
     # run tests with a timeout
-    timeout --foreground "$TESTS_TIMEOUT" "${cmd[@]}"
+    timeout --foreground "$TESTS_TIMEOUT" "${cmd[@]}" | tail -n +3
 
     # get the exit code for the tests
-    ret=$?
+    status=${PIPESTATUS[0]} # error code from the timeout command
 
     # 33 is the success exit code for the tests --> (0x10 << 1) | 1 = 33
-    if [ $ret -eq 33 ]; then
+    if [ $status -eq 33 ]; then
         # qemu and tests terminated properly
         exit 0
     # 35 is the failure exit code for the tests --> (0x11 << 1) | 1 = 35
-    elif [ $ret -eq 35 ]; then
+    elif [ $status -eq 35 ]; then
         # some test failed
-        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the test has failed"
+        echo -e "${BRed}error${NC}${BNC}:${NC} the test has failed"
         exit 1
-    elif [ $ret -eq 1 ]; then
+    elif [ $status -eq 1 ]; then
         # qemu failed
-        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m qemu has failed"
+        echo -e "${BRed}error${NC}${BNC}:${NC} qemu has failed"
         exit 2
     # because of the '-no-reboot' option for the tests, if the OS crashes, qemu just exits with code 0
-    elif [ $ret -eq 0 ]; then
+    elif [ $status -eq 0 ]; then
         # the OS crashed
-        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the OS has crashed"
+        echo -e "${BRed}error${NC}${BNC}:${NC} the OS has crashed"
         exit 3
     # 124 is the exit code for the `timeout` command when the command times out
-    elif [ $ret -eq 124 ]; then
+    elif [ $status -eq 124 ]; then
         # the test timed out
-        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m the test timed out"
+        echo -e "${BRed}error${NC}${BNC}:${NC} the test timed out"
         exit 4
     else
         # unknown error
-        echo -e "\033[1;31merror\033[0m\033[1m:\033[0m an unknown error has occurred"
+        echo -e "${BRed}error${NC}${BNC}:${NC} an unknown error has occurred"
         exit 5
     fi
 else
     # non tests run freely
-    "${cmd[@]}"
+    "${cmd[@]}" | tail -n +3
 fi
