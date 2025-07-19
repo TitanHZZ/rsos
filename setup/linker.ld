@@ -18,35 +18,41 @@ SECTIONS
 	/* First put the multiboot 2 header, as it is required to be put very early
 	   in the image or the bootloader won't recognize the file format,
 	   and the, group all text (code) sections */
+
+
+	/* . = 0xFFFF800000000000; */
+
 	.text : ALIGN(4K)
 	{
-		*(.multiboot_header)
+		KEEP(*(.multiboot_header))
 		*(.text .text.*) /* group together all the text sections made by the rust compiler */
 	}
 
 	/* Read-only data */
 	.rodata : ALIGN(4K)
 	{
-		*(.rodata .rodata.*) /* group together all the rodata sections made by the rust compiler */
+		KEEP(*(.rodata .rodata.*)) /* group together all the rodata sections made by the rust compiler */
 	}
 
     /* group more rust compiler sections */
 	.data.rel.ro : ALIGN(4K)
     {
-        *(.data.rel.ro.local*) *(.data.rel.ro .data.rel.ro.*) *(.got)
+        KEEP(*(.data.rel.ro.local*))
+		KEEP(*(.data.rel.ro .data.rel.ro.*))
+		KEEP(*(.got))
     }
 
 	/* Read-write data (initialized) */
 	.data : ALIGN(4K)
 	{
-		*(.data .data.*)
+		KEEP(*(.data .data.*))
 	}
 
 	/* Read-write data (uninitialized) and stack */
 	.bss : ALIGN(4K)
 	{
-		*(COMMON)
-		*(.bss .bss.*)
+		KEEP(*(COMMON))
+		KEEP(*(.bss .bss.*))
 	}
 
 	/* Procedure Linkage Table */
@@ -67,8 +73,8 @@ SECTIONS
 		*(.debug_gdb_scripts)
 	}
 
-	/* The compiler may produce other sections, it will put them here.*/
-	.other : ALIGN(4K)
+	/* The compiler may produce other sections. They *shouldn't* be necessary */
+	/DISCARD/ :
 	{
 		*(*)
 	}

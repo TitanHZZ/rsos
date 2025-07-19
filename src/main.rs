@@ -3,6 +3,8 @@
 // https://mcyoung.xyz/2021/06/01/linker-script/
 // https://wiki.osdev.org/Higher_Half_Kernel
 
+// https://medium.com/@connorstack/how-does-a-higher-half-kernel-work-107194e46a64
+
 #![no_std]
 #![no_main]
 #![feature(lazy_get)]
@@ -13,7 +15,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::VirtualAddress};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -96,6 +98,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
         log!(ok, "Frame allocator allocation initialized.");
     }
+
+    serial_println!("is mapped: {:#?}", ACTIVE_PAGING_CTX.translate(0x1000000 as VirtualAddress));
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -194,6 +198,12 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
 
     // if this fails, the mb2 memory got corrupted
     assert!(a == b);
+
+    let page = Page::from_virt_addr(0xFFFF800000000000).unwrap();
+    serial_println!("p4 index: {}", page.p4_index());
+    serial_println!("p3 index: {}", page.p3_index());
+    serial_println!("p2 index: {}", page.p2_index());
+    serial_println!("p1 index: {}", page.p1_index());
 
     serial_println!("Hello, World!");
     rsos::hlt();

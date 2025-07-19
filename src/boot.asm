@@ -39,8 +39,9 @@ header_start:
 header_end:
 
 .global _start
-.section .text
+.section .text.lower_half
 
+# TODO: this does not work anymore because we are now using UEFI
 # prints `ERR: ` and the given error code to screen and hangs.
 # al -> error code (in ascii)
 error:
@@ -116,37 +117,44 @@ check_long_mode:
         movb $'2', %al # move ascii "2" into al
         jmp error
 
-# test if extended processor info in available
+# setup recursive mapping (useful for setting up more advanced paging in Rust)
+set_up_recursive_p4_table:
+    movl $p4_table, %eax
+    orl $0b11, %eax               # Present + Writable
+    movl %eax, p4_table + 511 * 8 # point the last P4 entry to the P4 table itself
+    ret
+
+# set up identity mapping (first 1GB)
 # taken from https://wiki.osdev.org/Setting_Up_Long_Mode#x86_or_x86-64
-set_up_page_tables:
-    # map first P4 entry to P3 table
-    movl $p3_table, %eax
+set_up_lower_half_page_tables:
+    # map the first P4 entry to the P3 table
+    movl $p3_table_lower_half, %eax
     orl $0b11, %eax # present + writable
     movl %eax, p4_table
 
-    # map first P3 entry to P2 table
-    movl $p2_table, %eax
+    # map the first P3 entry to the P2 table
+    movl $p2_table_lower_half, %eax
     orl $0b11, %eax # present + writable
-    movl %eax, p3_table
+    movl %eax, p3_table_lower_half
 
     # map each P2 entry to a P1 table
     movl $0, %ecx # counter variable
 
-    .map_p2_table:
+    .map_p2_table_lower_half:
         # map each ecx-th P2 entry to a P1 table
-        leal p1_tables(, %ecx, 8), %eax
-        shll $9, %eax   # eax => p1_tables + ecx * 4096
+        leal p1_tables_lower_half(, %ecx, 8), %eax
+        shll $9, %eax   # eax => p1_tables_lower_half + ecx * 4096
         orl $0b11, %eax # present + writable
-        movl %eax, p2_table(, %ecx, 8)
+        movl %eax, p2_table_lower_half(, %ecx, 8)
 
         # map each edx-th P1 entry to a standard 4KB frame
         movl $0, %edx # counter variable
 
-        .map_p1_table:
+        .map_p1_table_lower_half:
             # get the addr of the ecx-th P1 table
-            leal p1_tables(, %ecx, 8), %eax
-            shll $9, %eax   # eax => p1_tables + ecx * 4096
-            movl %eax, %ebx # ebx => p1_tables + ecx * 4096
+            leal p1_tables_lower_half(, %ecx, 8), %eax
+            shll $9, %eax   # eax => p1_tables_lower_half + ecx * 4096
+            movl %eax, %ebx # ebx => p1_tables_lower_half + ecx * 4096
 
             # get the addr of the frame to be mapped (ecx * 512 * 4096 + edx * 4096)
             movl %ecx, %eax # eax => ecx
@@ -158,11 +166,64 @@ set_up_page_tables:
 
             incl %edx         # increase counter
             cmpl $512, %edx   # if counter == 512, the whole P1 table is mapped
-            jne .map_p1_table # else map the next entry
+            jne .map_p1_table_lower_half # else map the next entry
 
         incl %ecx         # increase counter
         cmpl $512, %ecx   # if counter == 512, the whole P2 table is mapped
-        jne .map_p2_table # else map the next entry
+        jne .map_p2_table_lower_half # else map the next entry
+
+    ret
+
+# set up higher half mapping for the kernel (this assumes that the kernel will stay in the first 16MB of the higher half)
+set_up_higher_half_page_tables:
+    # map 256th P4 entry to the P3 table
+    movl $p3_table_higher_half, %eax
+    orl $0b11, %eax # present + writable
+    movl %eax, p4_table + 256 * 8
+
+    # map the first P3 entry to the P2 table
+    movl $p2_table_higher_half, %eax
+    orl $0b11, %eax # present + writable
+    movl %eax, p3_table_higher_half
+
+    # map the first 8 P2 entries to the P1 tables
+    movl $0, %ecx # counter variable
+
+    # only need to map from 16MB physical memory forward
+    movl $0x1000000, %esi
+
+    .map_p2_table_higher_half:
+        # map each ecx-th P2 entry to a P1 table
+        leal p1_tables_higher_half(, %ecx, 8), %eax
+        shll $9, %eax   # eax => p1_tables_higher_half + ecx * 4096 => &p1_tables_higher_half[ecx]
+        orl $0b11, %eax # present + writable
+        movl %eax, p2_table_higher_half(, %ecx, 8)
+
+        # map each edx-th P1 entry to a standard 4KB frame
+        movl $0, %edx # counter variable
+
+        .map_p1_table_higher_half:
+            # get the addr of the ecx-th P1 table
+            leal p1_tables_higher_half(, %ecx, 8), %eax
+            shll $9, %eax   # eax => p1_tables_higher_half + ecx * 4096 => &p1_tables_higher_half[ecx]
+            movl %eax, %ebx # ebx => p1_tables_higher_half + ecx * 4096 => &p1_tables_higher_half[ecx]
+
+            # get the addr of the frame to be mapped: 0x1000000 + (ecx * 512 * 4096 + edx * 4096)
+            movl %ecx, %eax # eax => ecx
+            shll $9, %eax   # eax => ecx * 512
+            addl %edx, %eax # eax => ecx * 512 + edx
+            shll $12, %eax  # eax => (ecx * 512 + edx) * 4096
+            addl %esi, %eax # eax => 0x1000000 + (ecx * 512 + edx) * 4096
+            orl $0b11, %eax # present + writable
+            movl %eax, (%ebx, %edx, 8)
+
+            incl %edx       # increase counter
+            cmpl $512, %edx # if counter == 512, the whole P1 table is mapped
+            jne .map_p1_table_higher_half # else map the next entry
+
+        incl %ecx           # increase counter
+        cmpl $8, %ecx       # if counter == 8, the P2 table is mapped
+        jne .map_p2_table_higher_half # else map the next entry
 
     ret
 
@@ -192,7 +253,7 @@ enable_paging:
 
     ret
 
-.section .text
+.section .text.lower_half
 .global _start
 _start:
     # at this point, the CPU is in 32-bit protected mode with paging disabled
@@ -206,12 +267,9 @@ _start:
     # after these checks, we know that the bootloader used was multiboot compliant
     # and the CPU supports 64-bit long mode. No changes to the CPU state were made yet.
 
-    call set_up_page_tables
-
-    # setup recursive mapping (useful for setting up more advanced paging in Rust)
-    movl $p4_table, %eax
-    orl $0b11, %eax               # Present + Writable
-    movl %eax, p4_table + 511 * 8 # point the last P4 entry to itself
+    call set_up_recursive_p4_table
+    call set_up_lower_half_page_tables
+    call set_up_higher_half_page_tables
 
     call enable_paging
 
@@ -223,18 +281,26 @@ _start:
 
     # far jump to load the code selector into the CS register
     # (0x08 >> 3) is the index to the long-mode code segment descriptor in the GDT
-    ljmp $0x08, $_start_long_mode
+    ljmp $0x08, $_start_long_mode_lower_half
 
-.section .bss
+.section .bss.lower_half
 .align 4096
 p4_table:
     .skip 4096
-p3_table:
+
+p3_table_lower_half:
     .skip 4096
-p2_table:
+p2_table_lower_half:
     .skip 4096
-p1_tables:
-    .skip 4096 * 512
+p1_tables_lower_half:
+    .skip 4096 * 512 # enough for identity mapping 1GB in the lower half
+
+p3_table_higher_half:
+    .skip 4096
+p2_table_higher_half:
+    .skip 4096
+p1_tables_higher_half:
+    .skip 4096 * 8   # enough for mapping 16MB in the higher half
 
 # The multiboot standard does not define the value of the stack pointer register
 # (esp), and it is up to the kernel to provide a stack. This allocates 16K bytes
@@ -245,7 +311,7 @@ stack_bottom:
     .skip 4096 * 4  # 16 KB -> 4 memory pages
 stack_top:
 
-.section .rodata
+.section .rodata.lower_half
 gdt64:
     .quad 0 # zero entry (is always required)
 
@@ -263,15 +329,15 @@ gdt64.pointer:
     .quad gdt64
 
 /*
- * +-------------------------------------------------------------------------+
- * |  All the code below is 64 bit with the cpu running in 64 bit long mode  |
- * +-------------------------------------------------------------------------+
+ * +-----------------------------------------------------------------------+
+ * | All the code below is 64 bit with the cpu running in 64 bit long mode |
+ * +-----------------------------------------------------------------------+
  */
 
 .code64
-.section .text
+.section .text.lower_half
 
-_start_long_mode:
+_start_long_mode_lower_half:
     # load 0 into all data segment registers (to avoid future problems)
     # even though they are ignored in the majority of instructions
     # (FS and GS could be used for something like they are in Linux/Windows)
@@ -282,5 +348,14 @@ _start_long_mode:
     movq %rax, %fs
     movq %rax, %gs
 
-    # call Rust main function
     call main
+    hlt
+
+    # jump to the higher half
+    # movabsq $_start_long_mode, %rax
+    # jmp *%rax
+
+.section .text
+_start_long_mode:
+    # call main
+    hlt
