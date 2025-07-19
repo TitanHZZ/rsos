@@ -1,6 +1,6 @@
 pub mod inactive_paging_context;
 
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
@@ -183,9 +183,7 @@ impl ActivePagingContext {
 
     /// Takes the `virtual address` and returns the respective physical address if it exists (if it is mapped).
     pub fn translate(&self, virtual_addr: VirtualAddress) -> Result<Option<PhysicalAddress>, MemoryError> {
-        serial_println!("before lock call to translate page");
         let apc = &mut *self.0.lock();
-        serial_println!("after lock call to translate page");
         apc.translate(virtual_addr)
     }
 

@@ -68,6 +68,7 @@ macro_rules! serial_println {
     }};
 }
 
+// TODO: if we print the result of a function that also calls print, we have a dead lock
 #[macro_export]
 macro_rules! serial_print {
     ( $fmt:expr, $($arg:tt)* ) => {{

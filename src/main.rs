@@ -86,6 +86,19 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     let kernel = Kernel::new(mb_info);
     kernel.check_placements().expect("The kernel/mb2 must be well placed");
 
+    serial_println!("kernel start: {}, kernel end: {}", kernel.k_start(), kernel.k_end());
+
+    let abc = ACTIVE_PAGING_CTX.translate(0xFFFF800000000000 as VirtualAddress);
+    serial_println!("is mapped: {:#?}", abc);
+
+    let idk = unsafe { (0xFFFF800000000000 as *const usize).as_ref() }.unwrap();
+    serial_println!("value: {}", *idk);
+
+    let idk = unsafe { (0x1000000 as *const usize).as_ref() }.unwrap();
+    serial_println!("value: {}", *idk);
+
+    rsos::hlt();
+
     let a = unsafe  {
         hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
     };
@@ -98,8 +111,6 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
         log!(ok, "Frame allocator allocation initialized.");
     }
-
-    serial_println!("is mapped: {:#?}", ACTIVE_PAGING_CTX.translate(0x1000000 as VirtualAddress));
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
@@ -189,15 +200,15 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
-    #[cfg(test)]
-    test_main();
-
     let b = unsafe  {
         hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
     };
 
     // if this fails, the mb2 memory got corrupted
     assert!(a == b);
+
+    #[cfg(test)]
+    test_main();
 
     let page = Page::from_virt_addr(0xFFFF800000000000).unwrap();
     serial_println!("p4 index: {}", page.p4_index());

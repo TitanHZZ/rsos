@@ -189,7 +189,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
         allocator.prohibited_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
 
-        serial_println!("Bitmap created! Starting ar addr : {:#x}", bitmap_start_addr as PhysicalAddress);
+        serial_println!("Bitmap created! Starting at addr : {:#x}", bitmap_start_addr as PhysicalAddress);
 
         Ok(())
     }

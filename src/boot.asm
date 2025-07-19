@@ -348,14 +348,16 @@ _start_long_mode_lower_half:
     movq %rax, %fs
     movq %rax, %gs
 
-    call main
-    hlt
-
     # jump to the higher half
-    # movabsq $_start_long_mode, %rax
-    # jmp *%rax
+    movabsq $_start_long_mode, %rax
+    jmp *%rax
 
 .section .text
+.extern KERNEL_LH_HH_OFFSET
 _start_long_mode:
+    # fix the stack pointer
+    movabsq $KERNEL_LH_HH_OFFSET, %rax
+    addq %rax, %rsp
+
     # call main
     hlt
