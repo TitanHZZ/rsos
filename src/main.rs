@@ -79,25 +79,12 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
 
-    // build the main Kernel structure
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
     print_mem_status(&mb_info);
 
+    // build the main Kernel structure
     let kernel = Kernel::new(mb_info);
-    kernel.check_placements().expect("The kernel/mb2 must be well placed");
-
-    serial_println!("kernel start: {}, kernel end: {}", kernel.k_start(), kernel.k_end());
-
-    let abc = ACTIVE_PAGING_CTX.translate(0xFFFF800000000000 as VirtualAddress);
-    serial_println!("is mapped: {:#?}", abc);
-
-    let idk = unsafe { (0xFFFF800000000000 as *const usize).as_ref() }.unwrap();
-    serial_println!("value: {}", *idk);
-
-    let idk = unsafe { (0x1000000 as *const usize).as_ref() }.unwrap();
-    serial_println!("value: {}", *idk);
-
-    rsos::hlt();
+    kernel.check_placements().expect("The kernel/mb2 must be well placed and mapped");
 
     let a = unsafe  {
         hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
@@ -111,6 +98,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
         log!(ok, "Frame allocator allocation initialized.");
     }
+
+    rsos::hlt();
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");

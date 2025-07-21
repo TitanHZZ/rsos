@@ -1,5 +1,7 @@
 .code32
 
+# TODO: fix the descriptions
+
 /*
  * Multiboot 2 header
  * +---------------+-----------------+-----------------------------------------+
@@ -175,6 +177,7 @@ set_up_lower_half_page_tables:
     ret
 
 # set up higher half mapping for the kernel (this assumes that the kernel will stay in the first 16MB of the higher half)
+.extern KERNEL_LH_START
 set_up_higher_half_page_tables:
     # map 256th P4 entry to the P3 table
     movl $p3_table_higher_half, %eax
@@ -189,8 +192,8 @@ set_up_higher_half_page_tables:
     # map the first 8 P2 entries to the P1 tables
     movl $0, %ecx # counter variable
 
-    # only need to map from 16MB physical memory forward
-    movl $0x1000000, %esi
+    # only need to map from $KERNEL_LH_START physical memory forward
+    movl $KERNEL_LH_START, %esi
 
     .map_p2_table_higher_half:
         # map each ecx-th P2 entry to a P1 table
@@ -359,5 +362,5 @@ _start_long_mode:
     movabsq $KERNEL_LH_HH_OFFSET, %rax
     addq %rax, %rsp
 
-    # call main
-    hlt
+    call main
+    hlt # just in case there is something very wrong with the Rust code

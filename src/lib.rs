@@ -18,7 +18,7 @@ pub mod serial;
 pub mod logger;
 pub mod kernel;
 
-use core::{panic::PanicInfo, arch::global_asm};
+use core::{panic::PanicInfo, arch::{global_asm, asm}};
 use crate::io_port::IoPort;
 
 // add all the necessary asm set up and boot code (some of this code could probably be ported to Rust)
@@ -49,9 +49,12 @@ impl<T: Fn()> Testable for T {
     }
 }
 
-#[allow(clippy::empty_loop)]
 pub fn hlt() -> ! {
-    loop {}
+    loop {
+        unsafe {
+            asm!("hlt", options(nomem, nostack, preserves_flags));
+        }
+    }
 }
 
 /// Safety: The `isa-debug-exit` I/O device must exist in qemu and be 32 bits in size

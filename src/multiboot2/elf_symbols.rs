@@ -3,20 +3,19 @@
 use crate::memory::PhysicalAddress;
 
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
-use core::ptr::slice_from_raw_parts;
+use core::{ptr::slice_from_raw_parts, ffi::CStr};
 use bitflags::bitflags;
-use core::ffi::CStr;
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
 pub struct ElfSymbols {
     header: MbTagHeader,
-    pub num: u32, // number of section headers
+    pub num: u32,    // number of section headers
     entry_size: u32, // size of each section header (needs to be 64 as that is the size of every entry for ELF64)
     string_table: u32,
 
     /*
-     * If this was `section_headers: [ElfSectionHeader]`, it would unalign the sections by 4 bytes
+     * If this was `section_headers: [ElfSectionHeader]`, it would misalign the sections by 4 bytes
      * as thus, make the reading completly wrong.
      * This means that the sections will all be unaligned by 4 bytes (but this is not a problem).
      * 
@@ -67,11 +66,11 @@ pub enum ElfSectionType {
 bitflags! {
     #[derive(Debug)]
     pub struct ElfSectionFlags: u64 {
-        const ELF_SECTION_WRITABLE      = 0x00000001; // section contains data that is writable
-        const ELF_SECTION_ALLOCATED     = 0x00000002; // section is in memory during execution
-        const ELF_SECTION_EXECUTABLE    = 0x00000004; // section contains executable code
-        // const ENVIRONMENT_SPECIFIC   = 0x0F000000;
-        // const PROCESSOR_SPECIFIC     = 0xF0000000;
+        const ELF_SECTION_WRITABLE    = 0x00000001; // section contains data that is writable
+        const ELF_SECTION_ALLOCATED   = 0x00000002; // section is in memory during execution
+        const ELF_SECTION_EXECUTABLE  = 0x00000004; // section contains executable code
+        // const ENVIRONMENT_SPECIFIC = 0x0F000000;
+        // const PROCESSOR_SPECIFIC   = 0xF0000000;
     }
 }
 
