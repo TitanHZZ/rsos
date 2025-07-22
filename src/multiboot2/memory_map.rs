@@ -58,7 +58,7 @@ impl MemoryMapEntry {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MemoryMapError {
     EntriesInvalidSize,
 }

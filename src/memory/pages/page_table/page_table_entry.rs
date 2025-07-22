@@ -17,11 +17,9 @@ bitflags! {
     }
 }
 
-/*
- * An entry in a page table is an addr with some flags.
- * That´s why this is not an addr and instead, a u64.
- * Also, an entry is exactly 64 bits (u64) and not usize.
- */
+/// An entry in a page table is an addr with some flags.
+/// That´s why this is not an addr and instead, a u64.
+/// Also, an entry is exactly 64 bits (u64) and not usize.
 #[derive(Clone, Copy)]
 pub struct Entry(u64);
 

@@ -7,23 +7,37 @@ use core::fmt;
 /// This owns the bitmap itself.
 pub struct Bitmap<const BLOCKS: usize> {
     data: [u8; BLOCKS],
-}
-
-impl<const BLOCKS: usize> Default for Bitmap<BLOCKS> {
-    fn default() -> Self {
-        Self::new()
-    }
+    bit_len: usize,
 }
 
 impl<const BLOCKS: usize> Bitmap<BLOCKS> {
-    pub const fn new() -> Self {
+    /// Creates a new **Bitmap** that holds a maximum of `BLOCKS` * 8 bits.
+    /// This bitmap will be zeroed out.
+    /// 
+    /// `bit_len` is an optional parameter that specifies how many of the bits from `BLOCKS` * 8 will actually be used.
+    /// 
+    /// If `bit_len` is bigger than the maximum number of bits, this will panic.
+    /// 
+    /// In case this parameter is **None**, all the bits available will be used.
+    pub const fn new(bit_len: Option<usize>) -> Self {
+        // get the real length
+        let bit_len = match bit_len {
+            Some(len) => len,
+            None => BLOCKS * 8,
+        };
+
+        // make sure that the real length is a valid value
+        assert!(bit_len <= BLOCKS * 8);
+
         Bitmap {
             data: [0; BLOCKS],
+            bit_len,
         }
     }
 
+    /// Get the value (true/false) in the position `bit` that works as an index in the array of bits.
     pub fn get(&self, bit: usize) -> Option<bool> {
-        if bit >= size_of::<[u8; BLOCKS]>() * 8 {
+        if bit >= self.bit_len {
             return  None;
         }
 
@@ -35,8 +49,10 @@ impl<const BLOCKS: usize> Bitmap<BLOCKS> {
         }
     }
 
+    /// Set bit at position `bit` to `value`.
+    /// Panic if `bit` bigger than `BLOCKS` * 8 or `bit_len` if provided during the creation of the bitmap.
     pub fn set(&mut self, bit: usize, value: bool) {
-        assert!(bit < size_of::<[u8; BLOCKS]>() * 8);
+        assert!(bit < self.bit_len);
         let (byte, offset) = self.bit_pos(bit);
         self.data[byte] &= !(1 << offset);
         self.data[byte] |= (value as u8) << offset;

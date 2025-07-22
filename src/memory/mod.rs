@@ -80,7 +80,7 @@ impl ProhibitedMemoryRange {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MemoryError {
     PageInvalidVirtualAddress,      // tried creating a page with an invalid x86_64 addr
     NotEnoughPhyMemory,             // a frame allocator ran out of memory
@@ -114,7 +114,7 @@ where
             }
 
             // get section addr range (from first byte of first frame to last byte of last frame)
-            let start_addr = elf_section.addr();
+            let start_addr = elf_section.load_addr();
             let end_addr   = start_addr + elf_section.size() as usize - 1;
             let end_addr   = end_addr.align_up(FRAME_PAGE_SIZE) - 1;
 

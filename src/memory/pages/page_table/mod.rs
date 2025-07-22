@@ -95,9 +95,7 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
     }
 
-    /*
-     * This function will always create a standard 4KB page as huge pages are not supported.
-     */
+    /// This function will always create a standard 4KB page as huge pages are not supported.
     pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &A) -> Result<&mut Table<L::NextLevel>, MemoryError> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {

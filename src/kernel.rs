@@ -38,11 +38,10 @@ impl Kernel {
 
         // get the kernel start and end addrs
         let k_start = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
-            .map(|s: _| s.addr()).min().expect("Elf sections is empty").align_down(FRAME_PAGE_SIZE);
+            .map(|s: _| s.load_addr()).min().expect("Elf sections is empty").align_down(FRAME_PAGE_SIZE);
 
         let k_end   = elf_sections.filter(|s: _| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED))
-            .map(|s: _| s.addr() + s.size() as usize).max().expect("Elf sections is empty")
-            .align_up(FRAME_PAGE_SIZE) - Self::k_lh_hh_offset() - 1;
+            .map(|s: _| s.load_addr() + s.size() as usize).max().expect("Elf sections is empty").align_up(FRAME_PAGE_SIZE) - 1;
 
         // get the mb2 info start and end addrs
         let mb_start = mb_info.addr().align_down(FRAME_PAGE_SIZE);

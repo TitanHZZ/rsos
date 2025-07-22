@@ -1,6 +1,6 @@
 // https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
 // https://refspecs.linuxfoundation.org/elf/elf.pdf
-use crate::memory::PhysicalAddress;
+use crate::{kernel::Kernel, memory::PhysicalAddress};
 
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::{ptr::slice_from_raw_parts, ffi::CStr};
@@ -74,7 +74,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ElfSectionError {
     Invalid32BitSectionHeaders,
     StringSectionNotLoaded,
@@ -155,8 +155,18 @@ impl ElfSection {
         ElfSectionFlags::from_bits_truncate(self.header.flags)
     }
 
-    pub fn addr(&self) -> PhysicalAddress {
+    /// Get the virtual address of the section (where it is virtually located).
+    pub fn virt_addr(&self) -> PhysicalAddress {
         self.header.addr as _
+    }
+
+    /// Get the load address of the section (where it is located in physical memory).
+    pub fn load_addr(&self) -> PhysicalAddress {
+        if (self.header.addr as usize) < Kernel::k_hh_start() {
+            return self.header.addr as _;
+        }
+
+        (self.header.addr as usize) - Kernel::k_lh_hh_offset()
     }
 
     pub fn size(&self) -> u64 {

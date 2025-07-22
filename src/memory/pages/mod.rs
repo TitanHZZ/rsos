@@ -1,3 +1,4 @@
+pub mod temporary_page_allocator;
 pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
@@ -60,4 +61,10 @@ impl Page {
     pub fn p1_index(&self) -> usize {
         (self.0 >> 0) & 0o777
     }
+}
+
+/// A Frame allocator to be used OS wide.
+pub unsafe trait PageAllocator: Send + Sync {
+    fn allocate_page(&self) -> Result<Page, MemoryError>;
+    fn deallocate_page(&self, page: Page);
 }

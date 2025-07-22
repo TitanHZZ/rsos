@@ -1,4 +1,4 @@
-use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page}, MemoryError};
+use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page}, MemoryError}, serial_println};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -8,18 +8,20 @@ pub struct InactivePagingContext {
 
 // TODO: - we are missing a page allocator. so for now we just use a big address to map the frame
 impl InactivePagingContext {
-    /*
-     * This creates a new recursively mapped (inactive) paging context.
-     */
+    /// This creates a new recursively mapped (inactive) paging context.
     pub fn new<A: FrameAllocator>(active_paging: &ActivePagingContext, frame_allocator: &A) -> Result<Self, MemoryError> {
         let p4_frame = frame_allocator.allocate_frame()?;
         let p4_page = Page::from_virt_addr(0xdeadbeef)?;
 
+        // TODO: perhaps a temporary page allocator with predefined pages or addrs is not a bad idea
+        // make sure that the virtual address is not being used
+        assert_eq!(active_paging.translate(p4_page.addr()), Ok(None));
+
         // map the p4 frame
         active_paging.map_page_to_frame(p4_page, p4_frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
-        // recursive map the table
-        // the unsafe block is safe as we know that the page is valid
+        // recursively map the table
+        // the unsafe block *is* safe as we know that the page is valid
         let table = unsafe { &mut *(p4_page.addr() as *mut Table<Level4>) };
         table.set_unused();
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
