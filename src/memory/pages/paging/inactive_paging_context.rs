@@ -1,4 +1,4 @@
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page}, MemoryError}, serial_println};
+use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, Page, PageAllocator}, MemoryError}, serial_println};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -6,19 +6,18 @@ pub struct InactivePagingContext {
     p4_frame: Frame,
 }
 
-// TODO: - we are missing a page allocator. so for now we just use a big address to map the frame
 impl InactivePagingContext {
     /// This creates a new recursively mapped (inactive) paging context.
-    pub fn new<A: FrameAllocator>(active_paging: &ActivePagingContext, frame_allocator: &A) -> Result<Self, MemoryError> {
-        let p4_frame = frame_allocator.allocate_frame()?;
-        let p4_page = Page::from_virt_addr(0xdeadbeef)?;
+    pub fn new<F: FrameAllocator, P: PageAllocator>(active_paging: &ActivePagingContext, fa: &F, pa: &P) -> Result<Self, MemoryError> {
+        let p4_frame = fa.allocate_frame()?;
+        let p4_page = pa.allocate_page()?;
 
         // TODO: perhaps a temporary page allocator with predefined pages or addrs is not a bad idea
         // make sure that the virtual address is not being used
         assert_eq!(active_paging.translate(p4_page.addr()), Ok(None));
 
         // map the p4 frame
-        active_paging.map_page_to_frame(p4_page, p4_frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        active_paging.map_page_to_frame(p4_page, p4_frame, fa, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // recursively map the table
         // the unsafe block *is* safe as we know that the page is valid
@@ -26,8 +25,11 @@ impl InactivePagingContext {
         table.set_unused();
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
+        // deallocate the page
+        pa.deallocate_page(p4_page);
+
         // don't deallocate the frame because we need it to remain valid
-        active_paging.unmap_page(p4_page, frame_allocator, false);
+        active_paging.unmap_page(p4_page, fa, false);
         Ok(InactivePagingContext { p4_frame })
     }
 

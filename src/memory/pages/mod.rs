@@ -3,8 +3,8 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
+use crate::memory::{pages::paging::ActivePagingContext, FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
-use crate::memory::FRAME_PAGE_SIZE;
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -63,8 +63,16 @@ impl Page {
     }
 }
 
-/// A Frame allocator to be used OS wide.
+/// A Page allocator.
 pub unsafe trait PageAllocator: Send + Sync {
     fn allocate_page(&self) -> Result<Page, MemoryError>;
     fn deallocate_page(&self, page: Page);
+
+    /// Resets the page allocator state.
+    /// 
+    /// # Safety
+    /// 
+    /// This must be called (before any allocation) as the allocator expects it.
+    /// In the case that it does not get called, memory corruption is the most likely outcome.
+    unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError>;
 }

@@ -58,6 +58,10 @@ impl<const BLOCKS: usize> Bitmap<BLOCKS> {
         self.data[byte] |= (value as u8) << offset;
     }
 
+    pub fn len(&self) -> usize {
+        self.bit_len
+    }
+
     pub fn iter(&self) -> BitmapIter<'_, BLOCKS> {
         BitmapIter {
             curr_bit_idx: 0,

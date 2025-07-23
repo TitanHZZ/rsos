@@ -82,12 +82,22 @@ impl ProhibitedMemoryRange {
 
 #[derive(Debug, PartialEq)]
 pub enum MemoryError {
-    PageInvalidVirtualAddress,      // tried creating a page with an invalid x86_64 addr
-    NotEnoughPhyMemory,             // a frame allocator ran out of memory
-    MisalignedKernelSection,        // a kernel ELF section that is not FRAME_PAGE_SIZE aligned
-    MappingUsedTableEntry,          // the user is trying to map to a used page table entry
-    FrameInvalidAllocatorAddr,      // the allocator gave an addr that is not FRAME_PAGE_SIZE aligned
-    BadMemoryPlacement,             // the kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`
+    /// Tried creating a page with an invalid x86_64 addr (non canonical address).
+    PageInvalidVirtualAddress,
+    /// A frame allocator ran out of memory.
+    NotEnoughPhyMemory,
+    /// A page allocator ran out of memory.
+    NotEnoughVirMemory,
+    /// A kernel ELF section that is not FRAME_PAGE_SIZE aligned.
+    MisalignedKernelSection,
+    /// The user is trying to map to a used page table entry.
+    MappingUsedTableEntry,
+    /// The allocator gave an addr that is not FRAME_PAGE_SIZE aligned.
+    FrameInvalidAllocatorAddr,
+    /// The kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`.
+    BadMemoryPlacement,
+    /// The start address given to the temporary page allocator conflicts with other mappings.
+    BadTemporaryPageAllocator,
 
     // TODO: perhaps these should not be considered a memory error ??
     ElfSymbolsMbTagDoesNotExist,    // the `ElfSymbols` multiboot2 tag does not exist
