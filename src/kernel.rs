@@ -1,4 +1,4 @@
-use crate::{memory::MemoryError, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::{MemoryMap, MemoryMapEntryType}}};
+use crate::{memory::{frames::{FrameAllocator, FRAME_ALLOCATOR}, MemoryError}, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::{MemoryMap, MemoryMapEntryType}}};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}, multiboot2::MbBootInfo, serial_println};
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
@@ -48,7 +48,8 @@ impl Kernel {
         let mb_end   = mb_info.addr() + mb_info.size() as usize - 1;
         let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-        serial_println!("kernel start: {:#x}, kernel end: {:#x}", k_start, k_end);
+        serial_println!("kernel start (lower half):  {:#x}, kernel end: {:#x}", k_start, k_end);
+        serial_println!("kernel start (higher half): {:#x}, kernel end: {:#x}", k_start + Self::k_lh_hh_offset(), k_end + Self::k_lh_hh_offset());
         serial_println!("mb start: {:#x}, mb end: {:#x}", mb_start, mb_end);
 
         Kernel {
@@ -131,7 +132,7 @@ impl Kernel {
         k_hh_start
     }
 
-    /// Get the offset between the higher half mapping and the lower half mapping.
+    /// Get the offset between the higher half kernel mapping and the lower half kernel mapping.
     pub fn k_lh_hh_offset() -> usize {
         // symbol defined in the linker script
         unsafe extern "C" {
@@ -143,10 +144,12 @@ impl Kernel {
         k_lh_hh_offset
     }
 
+    /// Kernel start address in physical memory.
     pub fn k_start(&self) -> VirtualAddress {
         self.k_start
     }
 
+    /// Kernel end address in physical memory.
     pub fn k_end(&self) -> VirtualAddress {
         self.k_end
     }
@@ -155,11 +158,27 @@ impl Kernel {
         &self.mb_info
     }
 
+    /// Multiboot2 info start address in physical memory.
     pub fn mb_start(&self) -> VirtualAddress {
         self.mb_start
     }
 
+    /// Multiboot2 info end address in physical memory.
     pub fn mb_end(&self) -> VirtualAddress {
         self.mb_end
+    }
+
+    /// Get the offset between the higher half multiboot2 mapping and the lower half multiboot2 mapping.
+    pub fn mb2_lh_hh_offset(&self) -> usize {
+        (self.k_end() + Self::k_lh_hh_offset() - self.mb_start()).align_up(FRAME_PAGE_SIZE)
+    }
+
+    /// Get the offset between the higher half frame allocator mapping and the lower half frame allocator mapping.
+    /// 
+    /// This **will** panic if `FRAME_ALLOCATOR.prohibited_memory_range()` is **None**.
+    pub fn fa_lh_hh_offset(&self) -> usize {
+        let prohibited_mem_range = FRAME_ALLOCATOR.prohibited_memory_range()
+            .expect("fa_lh_hh_offset() can only be called when using a frame allocator with prohibited memory ranges");
+        (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - prohibited_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
     }
 }

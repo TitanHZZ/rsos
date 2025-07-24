@@ -12,10 +12,6 @@ impl InactivePagingContext {
         let p4_frame = fa.allocate_frame()?;
         let p4_page = pa.allocate_page()?;
 
-        // TODO: perhaps a temporary page allocator with predefined pages or addrs is not a bad idea
-        // make sure that the virtual address is not being used
-        assert_eq!(active_paging.translate(p4_page.addr()), Ok(None));
-
         // map the p4 frame
         active_paging.map_page_to_frame(p4_page, p4_frame, fa, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 

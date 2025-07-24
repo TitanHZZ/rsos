@@ -74,12 +74,12 @@ fn print_mem_status(mb_info: &MbBootInfo) {
 /// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
 /// This function may only be called once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
+pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping
     log!(ok, "Rust kernel code started.");
 
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_addr) }.expect("Invalid multiboot2 data");
+    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
     print_mem_status(&mb_info);
 
     // build the main Kernel structure
@@ -108,10 +108,8 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
     { // this scope makes sure that the inactive context does not get used again
         let inactive_paging: _ = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR, &page_allocator).unwrap();
 
-        rsos::hlt();
-
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::kernel_remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
+        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
             .expect("Could not remap the kernel");
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);
@@ -122,6 +120,17 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
         ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
+
+    // use the new higher half mapped multiboot2
+    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + kernel.mb2_lh_hh_offset()) as *const u8;
+    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
+
+    // rebuild the main Kernel structure (with the new multiboot2)
+    let kernel = Kernel::new(mb_info);
+
+    // TODO: fix the frame allocator
+
+    rsos::hlt();
 
     // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel

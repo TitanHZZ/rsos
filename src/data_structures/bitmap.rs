@@ -58,6 +58,7 @@ impl<const BLOCKS: usize> Bitmap<BLOCKS> {
         self.data[byte] |= (value as u8) << offset;
     }
 
+    /// Get the bitmap len in bits.
     pub fn len(&self) -> usize {
         self.bit_len
     }

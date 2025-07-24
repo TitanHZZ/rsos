@@ -30,7 +30,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
     unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
-        for i in 0..allocator.start_addr {
+        for i in 0..allocator.bitmap.len() {
             let addr = allocator.start_addr + i * FRAME_PAGE_SIZE;
             active_paging.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
         }

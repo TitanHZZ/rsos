@@ -59,7 +59,7 @@ pub unsafe extern "C" fn main(mb_boot_info_addr: *const u8) -> ! {
         let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::kernel_remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
+        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
             .expect("Could not remap the kernel");
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);

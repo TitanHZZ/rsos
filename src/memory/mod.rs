@@ -3,8 +3,9 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
+use crate::{kernel::Kernel, memory::{frames::FRAME_ALLOCATOR, pages::Page}, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
-use crate::{kernel::Kernel, memory::frames::FRAME_ALLOCATOR, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}, memory_map::MemoryMapError}};
+use crate::multiboot2::memory_map::MemoryMapError;
 use frames::{Frame, FrameAllocator};
 
 // the size of the pages and frames
@@ -106,23 +107,19 @@ pub enum MemoryError {
     MemoryMapErr(MemoryMapError),   // elf section specific errors
 }
 
-/// Remaps (identity maps) the kernel, vga buffer and multiboot2 info into an InactivePagingContext.
-/// 
-/// If nothing goes wrong, it *should* be safe to switch to the InactivePagingContext afterwards.
-pub fn kernel_remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
+/// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
+/// from the frame allocator into an InactivePagingContext.
+pub fn remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
 where
     A: FrameAllocator
 {
     ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
+        // get the kernel elf sections
         let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
         let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
 
-        for elf_section in elf_sections {
-            // if the section is not in memory, we don't need to map it
-            if !elf_section.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED) {
-                continue;
-            }
-
+        // remap the kernel (just the allocated sections)
+        for elf_section in elf_sections.filter(|s| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED)) {
             // get section addr range (from first byte of first frame to last byte of last frame)
             let start_addr = elf_section.load_addr();
             let end_addr   = start_addr + elf_section.size() as usize - 1;
@@ -133,34 +130,39 @@ where
                 return Err(MemoryError::MisalignedKernelSection);
             }
 
-            // identity map every section
+            // map every section to the kernel higher half (defined in the linker script)
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
                 let frame = Frame::from_phy_addr(addr);
+                let page = Page::from_virt_addr(addr + Kernel::k_lh_hh_offset())?;
                 let flags = EntryFlags::from_elf_section_flags(elf_section.flags());
-                active_ctx.identity_map(frame, frame_allocator, flags)?;
+                active_ctx.map_page_to_frame(page, frame, frame_allocator, flags)?;
             }
         }
 
-        // identity map the vga buffer
-        let vga_buff_frame = Frame::from_phy_addr(0xb8000);
-        let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
-        active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
+        // // identity map the vga buffer
+        // let vga_buff_frame = Frame::from_phy_addr(0xb8000);
+        // let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
+        // active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
 
-        // identity map the multiboot2 info
+        // higher half map the multiboot2 info
+        let mb2_lh_hh_offset = kernel.mb2_lh_hh_offset();
         for addr in (kernel.mb_start()..=kernel.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
-            active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
+            let page = Page::from_virt_addr(addr + mb2_lh_hh_offset)?;
+            active_ctx.map_page_to_frame(page, frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }
 
-        // identity map the frame allocator prohibited region
+        // higher half map the frame allocator prohibited physical memory region
         if FRAME_ALLOCATOR.prohibited_memory_range().is_none() {
             return Ok(());
         }
 
+        let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
         let prohibited_mem_range = FRAME_ALLOCATOR.prohibited_memory_range().unwrap();
         for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
-            active_ctx.identity_map(frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
+            let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;
+            active_ctx.map_page_to_frame(page, frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
         }
 
         Ok(())
