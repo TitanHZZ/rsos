@@ -128,7 +128,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // rebuild the main Kernel structure (with the new multiboot2)
     let kernel = Kernel::new(mb_info);
 
-    // TODO: fix the frame allocator
+    // fix the frame allocator
+    unsafe { FRAME_ALLOCATOR.remap(&kernel) };
 
     rsos::hlt();
 

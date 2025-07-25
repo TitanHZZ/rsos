@@ -32,9 +32,16 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// In the case that it does not get called, memory corruption is the most likely outcome.
     unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError>;
 
-    /// Get the memory region that **MUST** not be touched by the page allocator.
+    /// Remaps the frame allocator to use the new mapping to its underlying control structure.
     /// 
-    /// This region **must be left untouched** meaning that this region cannot be used for allocations in the virtual (page allocator) memory space.
+    /// # Safety
+    /// 
+    /// This **does not** recreate the frame allocator, it simply adjusts the internal ptr to the control structure so,
+    /// if the new mapping is wrong, this *will* result in **undefined behavior**.
+    /// **Must** be called right after changing the mapping and before any more frame allocations to avoid problems.
+    unsafe fn remap(&self, kernel: &Kernel);
+
+    /// Get the physical memory region that **MUST** be mapped and cannot be used for allocations by frame allocators.
     fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
 

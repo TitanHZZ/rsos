@@ -72,6 +72,26 @@ impl<'a> BitmapRefMut<'a> {
         self.data[byte] |= (value as u8) << offset;
     }
 
+    /// Get the real bitmap len in bytes.
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Get the bitmap len in bits.
+    pub fn bit_len(&self) -> usize {
+        self.bit_len
+    }
+
+    /// Get a const ptr to the data.
+    pub fn data_ptr(&self) -> *const u8 {
+        self.data.as_ptr()
+    }
+
+    /// Get a mut ptr to the data.
+    pub fn data_ptr_mut(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr()
+    }
+
     pub fn iter(&self) -> BitmapRefMutIter<'_> {
         BitmapRefMutIter {
             curr_bit_idx: 0,

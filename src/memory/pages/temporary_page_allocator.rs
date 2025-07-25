@@ -2,6 +2,8 @@ use crate::memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, A
 use crate::data_structures::bitmap::Bitmap;
 use spin::mutex::Mutex;
 
+// TODO: make all temporary page allocations use this
+
 struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
     start_addr: VirtualAddress,
@@ -30,6 +32,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
     unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
+        // make sure that the pages are not being used
         for i in 0..allocator.bitmap.len() {
             let addr = allocator.start_addr + i * FRAME_PAGE_SIZE;
             active_paging.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;

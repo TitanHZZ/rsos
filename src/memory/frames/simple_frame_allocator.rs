@@ -86,6 +86,8 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
     fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {
         None
     }
+
+    unsafe fn remap(&self, _kernel: &Kernel) {}
 }
 
 impl SimpleFrameAllocatorInner {
