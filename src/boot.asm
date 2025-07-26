@@ -1,6 +1,6 @@
 .code32
 
-# TODO: fix the descriptions
+# TODO: make sure that the mb2 ptr is non null
 
 /*
  * Multiboot 2 header
@@ -43,14 +43,9 @@ header_end:
 .global _start
 .section .text.lower_half
 
-# TODO: this does not work anymore because we are now using UEFI
-# prints `ERR: ` and the given error code to screen and hangs.
+# this is called in case of an error (not much is done since we don't have any subsystem initialized)
 # al -> error code (in ascii)
 error:
-    movl $0x4f524f45, 0xb8000
-    movl $0x4f3a4f52, 0xb8004
-    movl $0x4f204f20, 0xb8008
-    movb %al, 0xb800a
     hlt
 
 check_multiboot:
@@ -268,7 +263,7 @@ _start:
     call check_long_mode
 
     # after these checks, we know that the bootloader used was multiboot compliant
-    # and the CPU supports 64-bit long mode. No changes to the CPU state were made yet.
+    # and the CPU supports 64-bit long mode. No changes to the CPU state were made as of yet.
 
     call set_up_recursive_p4_table
     call set_up_lower_half_page_tables
@@ -278,6 +273,7 @@ _start:
 
     # at this point, we are in 32-bit compatibility submode with paging enabled
     # Identity Paging --> Virtual addresses map to physical addresses of the same value
+    # we also have 16MB mapped to the kernel in the higher half
 
     # load the 64-bit GDT
     lgdt gdt64.pointer

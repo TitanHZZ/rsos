@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{kernel::Kernel, memory::{frames::FRAME_ALLOCATOR, pages::Page}, multiboot2::{elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}}};
+use crate::{kernel::Kernel, memory::{frames::FRAME_ALLOCATOR, pages::{Page, PageAllocator}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::{Frame, FrameAllocator};
@@ -109,11 +109,12 @@ pub enum MemoryError {
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
 /// from the frame allocator into an InactivePagingContext.
-pub fn remap<A>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fr_alloc: &A) -> Result<(), MemoryError>
+pub fn remap<F, P>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fa: &F, pa: &P) -> Result<(), MemoryError>
 where
-    A: FrameAllocator
+    F: FrameAllocator,
+    P: PageAllocator,
 {
-    ctx.update_inactive_context(new_ctx, fr_alloc, |active_ctx, frame_allocator| {
+    ctx.update_inactive_context(new_ctx, fa, pa, |active_ctx, frame_allocator| {
         // get the kernel elf sections
         let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
         let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
@@ -138,11 +139,6 @@ where
                 active_ctx.map_page_to_frame(page, frame, frame_allocator, flags)?;
             }
         }
-
-        // // identity map the vga buffer
-        // let vga_buff_frame = Frame::from_phy_addr(0xb8000);
-        // let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
-        // active_ctx.identity_map(vga_buff_frame, frame_allocator, flags)?;
 
         // higher half map the multiboot2 info
         let mb2_lh_hh_offset = kernel.mb2_lh_hh_offset();

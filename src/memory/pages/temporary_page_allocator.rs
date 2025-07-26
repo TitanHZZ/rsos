@@ -1,8 +1,6 @@
-use crate::memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::{memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
 use spin::mutex::Mutex;
-
-// TODO: make all temporary page allocations use this
 
 struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
@@ -48,7 +46,10 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         let idx = allocator.bitmap.iter().enumerate().find(|(_, bit)| !bit).ok_or(MemoryError::NotEnoughVirMemory)?.0;
         allocator.bitmap.set(idx, true);
 
-        return Ok(Page::from_virt_addr(allocator.start_addr + idx * FRAME_PAGE_SIZE)?);
+        let page = Page::from_virt_addr(allocator.start_addr + idx * FRAME_PAGE_SIZE)?;
+        serial_println!("Allocated page: {:#x}", page.0);
+
+        Ok(page)
     }
 
     fn deallocate_page(&self, page: Page) {
@@ -63,5 +64,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
 
         // deallocate
         allocator.bitmap.set(bit_idx, false);
+
+        serial_println!("Deallocated page: {:#x}", page.0);
     }
 }

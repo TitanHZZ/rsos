@@ -1,6 +1,6 @@
 pub mod inactive_paging_context;
 
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}};
+use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
@@ -190,18 +190,19 @@ impl ActivePagingContext {
     /// 
     /// This does not affect hardware translations and thus, is totally safe to use as long as the
     /// caller makes sure that the inactive paging context is in a valid state before being switched to.
-    pub(in crate::memory) fn update_inactive_context<F, A>(&self, inactive_context: &InactivePagingContext, frame_allocator: &A, f: F)
+    pub(in crate::memory) fn update_inactive_context<F, P, O>(&self, inactive_context: &InactivePagingContext, fa: &F, pa: &P, f: O)
         -> Result<(), MemoryError>
     where
-        F: FnOnce(&mut ActivePagingContextInner, &A) -> Result<(), MemoryError>,
-        A: FrameAllocator
+        F: FrameAllocator,
+        P: PageAllocator,
+        O: FnOnce(&mut ActivePagingContextInner, &F) -> Result<(), MemoryError>,
     {
         let apc = &mut *self.0.lock();
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
-        let p4_page = Page::from_virt_addr(0xdeadbeef)?;
-        apc.map_page_to_frame(p4_page, p4_frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        let p4_page = pa.allocate_page()?;
+        apc.map_page_to_frame(p4_page, p4_frame, fa, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
         apc.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
@@ -211,16 +212,20 @@ impl ActivePagingContext {
         // we need them pointing to the inactive context (hardware translations would still work)
         CR3::invalidate_all();
 
-        f(apc, frame_allocator)?;
+        f(apc, fa)?;
 
         // restore the active paging context recusive mapping
         let table = unsafe { &mut *(p4_page.addr() as *mut Table<Level4>) };
         table.entries[ENTRY_COUNT - 1].set_phy_addr(p4_frame);
 
-        // invalidate the entries so that the recursive mapping works again (we don't use cached addrs)
-        // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
+        // invalidate the entries so that the recursive mapping works again (so that we don't use cached addrs)
         CR3::invalidate_all();
-        apc.unmap_page(p4_page, frame_allocator, false);
+
+        // deallocate the page
+        pa.deallocate_page(p4_page);
+
+        // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
+        apc.unmap_page(p4_page, fa, false);
 
         Ok(())
     }

@@ -71,12 +71,12 @@ fn print_mem_status(mb_info: &MbBootInfo) {
 // TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
 /// # Safety
 /// 
-/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
+/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.
 /// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
-    // paging is enabled (including the NXE and WP bits) and we are using identity mapping
+    // paging is enabled (including the NXE and WP bits) and we are using identity mapping with some higher half mappings
     log!(ok, "Rust kernel code started.");
 
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
@@ -109,14 +109,13 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         let inactive_paging: _ = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR, &page_allocator).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR)
+        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR, &page_allocator)
             .expect("Could not remap the kernel");
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
-        // this creates the guard page for the kernel stack
-        // the unwrap is fine as we know that the addr is valid
-        // NOTE: the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
+        // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
+        // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
         ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
     }
