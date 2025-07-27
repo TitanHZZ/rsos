@@ -6,7 +6,7 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-// TODO: the tests forr this file now fail in release mode with the changes to the linker script and kernel placement checks
+// TODO: the tests for this file now fail in release mode with the changes to the linker script and kernel placement checks
 
 pub mod data_structures;
 pub mod multiboot2;

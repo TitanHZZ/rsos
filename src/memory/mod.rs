@@ -100,11 +100,15 @@ pub enum MemoryError {
     /// The start address given to the temporary page allocator conflicts with other mappings.
     BadTemporaryPageAllocator,
 
-    // TODO: perhaps these should not be considered a memory error ??
-    ElfSymbolsMbTagDoesNotExist,    // the `ElfSymbols` multiboot2 tag does not exist
-    MemoryMapMbTagDoesNotExist,     // the `MemoryMap` multiboot2 tag does not exist
-    ElfSectionErr(ElfSectionError), // elf section specific errors
-    MemoryMapErr(MemoryMapError),   // elf section specific errors
+    // TODO: perhaps these should be considered multiboot2 errors??
+    /// The `ElfSymbols` multiboot2 tag does not exist.
+    ElfSymbolsMbTagDoesNotExist,
+    /// The `MemoryMap` multiboot2 tag does not exist.
+    MemoryMapMbTagDoesNotExist,
+    /// Elf section specific errors.
+    ElfSectionErr(ElfSectionError),
+    /// Elf section specific errors.
+    MemoryMapErr(MemoryMapError),
 }
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions

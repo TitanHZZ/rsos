@@ -20,6 +20,10 @@ impl Frame {
 }
 
 /// A Frame allocator to be used OS wide.
+/// 
+/// # Safety
+/// 
+/// Whoever implements this must ensure its correctness since the compiler has no way of ensuring that memory will be correctly managed.
 pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate_frame(&self) -> Result<Frame, MemoryError>;
     fn deallocate_frame(&self, frame: Frame);

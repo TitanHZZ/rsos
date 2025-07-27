@@ -69,8 +69,8 @@ impl ActivePagingContextInner {
         self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
     }
 
-    // TODO: - free P1, P2 and P3 if they get empty
-    //       - deallocate the frame
+    // TODO: - free P1, P2 and P3 if they get empty (still need to find the best way to do this)
+    // TODO: maybe this should give out an error when we try to unmap a page that was never mapped (invalid page)
     /// This will unmap a page and the respective frame.
     /// 
     /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
@@ -90,7 +90,7 @@ impl ActivePagingContextInner {
                 if deallocate_frame {
                     frame_allocator.deallocate_frame(frame);
                 }
-            }
+        }
 
         // invalidate the TLB entry
         CR3::invalidate_entry(page.addr());

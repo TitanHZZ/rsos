@@ -64,6 +64,10 @@ impl Page {
 }
 
 /// A Page allocator.
+/// 
+/// # Safety
+/// 
+/// Whoever implements this must ensure its correctness since the compiler has no way of ensuring that memory will be correctly managed.
 pub unsafe trait PageAllocator: Send + Sync {
     fn allocate_page(&self) -> Result<Page, MemoryError>;
     fn deallocate_page(&self, page: Page);

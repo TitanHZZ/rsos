@@ -1,7 +1,5 @@
 .code32
 
-# TODO: make sure that the mb2 ptr is non null
-
 /*
  * Multiboot 2 header
  * +---------------+-----------------+-----------------------------------------+

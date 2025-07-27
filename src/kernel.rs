@@ -1,5 +1,6 @@
-use crate::{memory::{frames::{FrameAllocator, FRAME_ALLOCATOR}, MemoryError}, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}, memory_map::{MemoryMap, MemoryMapEntryType}}};
+use crate::{memory::{frames::{FrameAllocator, FRAME_ALLOCATOR}, MemoryError}, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}}};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}, multiboot2::MbBootInfo, serial_println};
+use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType};
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
@@ -29,10 +30,8 @@ pub struct Kernel {
 }
 
 impl Kernel {
-    // TODO: this could return a Result<>
     pub fn new(mb_info: MbBootInfo) -> Self {
         // get the necessary mb2 tags and data
-        // let mem_map: &MemoryMap          = mb_info.get_tag::<MemoryMap>().expect("Memory map tag is not present");
         let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
         let elf_sections: ElfSymbolsIter = elf_symbols.sections().expect("Elf sections are invalid");
 

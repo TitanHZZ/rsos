@@ -13,6 +13,9 @@
 #![test_runner(rsos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+// TODO: look into stack probes
+// TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
+
 extern crate alloc;
 
 use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{temporary_page_allocator::TemporaryPageAllocator, PageAllocator}, VirtualAddress}};
@@ -67,12 +70,11 @@ fn print_mem_status(mb_info: &MbBootInfo) {
     );
 }
 
-// TODO: look into stack probes
-// TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
+/// This is the Rust entry point nto the OS.
+/// 
 /// # Safety
 /// 
-/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.
-/// This function may only be called once.
+/// The caller must ensure that the function never gets called more than once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
@@ -106,7 +108,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
     { // this scope makes sure that the inactive context does not get used again
-        let inactive_paging: _ = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR, &page_allocator).unwrap();
+        let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR, &page_allocator).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
         memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &FRAME_ALLOCATOR, &page_allocator)
