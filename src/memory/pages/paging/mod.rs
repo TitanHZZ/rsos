@@ -1,6 +1,6 @@
 pub mod inactive_paging_context;
 
-use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
@@ -39,15 +39,28 @@ impl ActivePagingContextInner {
     pub(in crate::memory) fn map_page_to_frame<A: FrameAllocator>(&mut self, page: Page, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
         let p4 = self.p4_mut();
         let p3 = p4.create_next_table(page.p4_index(), frame_allocator)?;
-        let p2 = p3.create_next_table(page.p3_index(), frame_allocator)?;
-        let p1 = p2.create_next_table(page.p2_index(), frame_allocator)?;
+        let p2 = p3.0.create_next_table(page.p3_index(), frame_allocator)?;
+        let p1 = p2.0.create_next_table(page.p2_index(), frame_allocator)?;
 
         // the entry must be unused
-        if p1.entries[page.p1_index()].is_used() {
+        if p1.0.entries[page.p1_index()].is_used() {
             return Err(MemoryError::MappingUsedTableEntry);
         }
 
-        p1.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
+        // add the new entry to the p1 table
+        p1.0.entries[page.p1_index()].set(frame, flags | EntryFlags::PRESENT);
+        p1.0.set_used_entries_count(p1.0.used_entries_count() + 1); // a new entry was added
+
+        // if the p1 table was created, we need to increment the entry count on the p2 table
+        if p1.1 {
+            p2.0.set_used_entries_count(p2.0.used_entries_count() + 1);
+        }
+
+        // if the p2 table was created, we need to increment the entry count on the p3 table
+        if p2.1 {
+            p3.0.set_used_entries_count(p3.0.used_entries_count() + 1);
+        }
+
         Ok(())
     }
 
@@ -71,7 +84,7 @@ impl ActivePagingContextInner {
 
     // TODO: - free P1, P2 and P3 if they get empty (still need to find the best way to do this)
     // TODO: maybe this should give out an error when we try to unmap a page that was never mapped (invalid page)
-    /// This will unmap a page and the respective frame.
+    /// This will unmap a page and deallocate the respective frame, if requested.
     /// 
     /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
     pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, deallocate_frame: bool) {

@@ -61,6 +61,24 @@ impl Entry {
         self.set_phy_addr(frame);
         self.set_flags(flags);
     }
+
+    pub fn entries_count_metadata(&self) -> usize {
+        // use bits 9 and 10 (these bits are available for OS use) as metadata for page table deallocation
+        ((self.0 & 0x0000_0000_0000_0600) >> 9) as usize
+    }
+
+    /// Sets the metadata for this entry that gets used to determine how many entries
+    /// are being used in the page table that this entry belongs to.
+    /// 
+    /// # Panics
+    /// 
+    /// If `count` is bigger than 3 as each entry stores just 2 bits of metadata.
+    pub fn set_entries_count_metadata(&mut self, count: usize) {
+        assert!(count < 4);
+
+        // use bits 9 and 10 (these bits are available for OS use) as metadata for page table deallocation
+        self.0 = (self.0 & !0x0000_0000_0000_0600) | (count as u64) << 9;
+    }
 }
 
 impl EntryFlags {

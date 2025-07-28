@@ -1,5 +1,7 @@
 .code32
 
+# TODO: this is missing the page table entries count metadata
+
 /*
  * Multiboot 2 header
  * +---------------+-----------------+-----------------------------------------+

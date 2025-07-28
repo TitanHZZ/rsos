@@ -57,6 +57,12 @@ impl HierarchicalLevel for Level2 {
     type NextLevel = Level1;
 }
 
+pub trait RemovableLevel : TableLevel {}
+
+impl RemovableLevel for Level3 {}
+impl RemovableLevel for Level2 {}
+impl RemovableLevel for Level1 {}
+
 pub struct Table<L: TableLevel> {
     pub entries: [Entry; ENTRY_COUNT],
     _level: PhantomData<L>,
@@ -95,8 +101,11 @@ impl<L: HierarchicalLevel> Table<L> {
         Some(unsafe { &mut *(self.next_table_addr(table_index)? as *mut _) })
     }
 
-    /// This function will always create a standard 4KB page as huge pages are not supported.
-    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &A) -> Result<&mut Table<L::NextLevel>, MemoryError> {
+    /// This will create and return a 4KB page table (huge pages are not supported) at `table_index` in the case it is not already present.
+    /// In the case that it is, the table will simply be returned.
+    /// 
+    /// This also returns a bool indicating whether or not a new page table was created.
+    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &A) -> Result<(&mut Table<L::NextLevel>, bool), MemoryError> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // page table is not yet created so allocate a new frame to hold the new page table
@@ -106,10 +115,36 @@ impl<L: HierarchicalLevel> Table<L> {
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
             // this unwrap() *should* never fail as we just set the entry above
-            self.next_table_mut(table_index).unwrap().set_unused();
+            let next_table = self.next_table_mut(table_index).unwrap();
+            next_table.set_unused();
+
+            return Ok((next_table, true));
         }
 
         // at this point, we *should* have a valid entry at `table_index` so this unwrap() *should* be fine
-        Ok(self.next_table_mut(table_index).unwrap())
+        Ok((self.next_table_mut(table_index).unwrap(), false))
+    }
+}
+
+impl<L: RemovableLevel> Table<L> {
+    pub fn used_entries_count(&self) -> usize {
+        (self.entries[0].entries_count_metadata() << 0) |
+        (self.entries[1].entries_count_metadata() << 2) |
+        (self.entries[2].entries_count_metadata() << 4) |
+        (self.entries[3].entries_count_metadata() << 6) |
+        (self.entries[4].entries_count_metadata() << 8)
+    }
+
+    /// # Panics
+    /// 
+    /// If `count` is bigger than 512 as this is the maximum number of entries in a page table.
+    pub fn set_used_entries_count(&mut self, count: usize) {
+        assert!(count <= 512);
+
+        self.entries[0].set_entries_count_metadata((count & 0b0000000011) >> 0);
+        self.entries[1].set_entries_count_metadata((count & 0b0000001100) >> 2);
+        self.entries[2].set_entries_count_metadata((count & 0b0000110000) >> 4);
+        self.entries[3].set_entries_count_metadata((count & 0b0011000000) >> 6);
+        self.entries[4].set_entries_count_metadata((count & 0b1100000000) >> 8);
     }
 }
