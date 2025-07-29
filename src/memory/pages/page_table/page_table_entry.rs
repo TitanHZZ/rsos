@@ -24,13 +24,19 @@ bitflags! {
 pub struct Entry(u64);
 
 impl Entry {
+    pub const fn new(&mut self) {
+        // set all bits to zero
+        self.0 = 0;
+    }
+
     pub fn is_used(&self) -> bool {
-        // an entry equal to 0 is unused otherwise, it´s used
-        self.0 != 0
+        // an entry equal to 0 (ignoring the metadata bits) is unused otherwise, it´s used
+        (self.0 & !0x0000_0000_0000_0600) != 0
     }
 
     pub fn set_unused(&mut self) {
-        self.0 = 0;
+        // set all bits to zero except for the metadata bits
+        self.0 &= 0x0000_0000_0000_0600;
     }
 
     pub fn flags(&self) -> EntryFlags {

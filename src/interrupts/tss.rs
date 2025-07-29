@@ -110,7 +110,7 @@ impl TSS {
 
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR, true);
+            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR, true).map_err(TssError::Memory)?;
         }
 
         Ok(())

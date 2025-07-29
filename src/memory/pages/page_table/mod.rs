@@ -71,7 +71,7 @@ pub struct Table<L: TableLevel> {
 impl<L: TableLevel> Table<L> {
     pub fn set_unused(&mut self) {
         for entry in &mut self.entries {
-            entry.set_unused();
+            entry.new();
         }
     }
 }

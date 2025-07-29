@@ -118,8 +118,9 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
         // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
         // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
-        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr()).unwrap();
-        ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false);
+        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
+        ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, &FRAME_ALLOCATOR, false)
+            .expect("Could not unmap a page for the kernel stack guard page");
     }
 
     // use the new higher half mapped multiboot2

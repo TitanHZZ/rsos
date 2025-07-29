@@ -82,31 +82,51 @@ impl ActivePagingContextInner {
         self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
     }
 
-    // TODO: - free P1, P2 and P3 if they get empty (still need to find the best way to do this)
-    // TODO: maybe this should give out an error when we try to unmap a page that was never mapped (invalid page)
+    // TODO: fix the description
+    // TODO: - free P1, P2 and P3 if they get empty
     /// This will unmap a page and deallocate the respective frame, if requested.
     /// 
     /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
-    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, deallocate_frame: bool) {
-        // set the entry in p1 as unused and free the respective frame
-        if let Some(frame) = self.p4_mut().next_table(page.p4_index())
+    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, deallocate_frame: bool) -> Result<(), MemoryError> {
+        let p1 = self.p4_mut().next_table(page.p4_index())
             .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
             .and_then(|p2: _| p2.next_table_mut(page.p2_index()))
-            .and_then(|p1: _| {
-                let entry = &mut p1.entries[page.p1_index()];
-                let frame = entry.pointed_frame();
-                entry.set_unused();
+            .and_then(|p1: _| Some(p1)).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
 
-                frame
-            }) {
-                // deallocate the frame
-                if deallocate_frame {
-                    frame_allocator.deallocate_frame(frame);
-                }
+        let entry = &mut p1.entries[page.p1_index()];
+        let frame = entry.pointed_frame().ok_or(MemoryError::UnmappingUnusedTableEntry)?;
+
+        entry.set_unused();
+        p1.set_used_entries_count(p1.used_entries_count() - 1);
+
+        if deallocate_frame {
+            frame_allocator.deallocate_frame(frame);
         }
+
+        let a = self.p4_mut().next_table_mut(page.p4_index())
+            .and_then(|p3| {
+                let dealloc_p2_table = p3.next_table_mut(page.p3_index()).and_then(|p2| {
+                    let dealloc_p1_table = p2.next_table_mut(page.p2_index()).unwrap().used_entries_count() == 0;
+                    if dealloc_p1_table {
+                        let entry = &mut p2.entries[page.p2_index()];
+                        let frame = entry.pointed_frame().unwrap();
+
+                        entry.set_unused();
+                        p2.set_used_entries_count(p2.used_entries_count() - 1);
+
+                        frame_allocator.deallocate_frame(frame);
+                    }
+
+                    Some(p2.used_entries_count() == 0)
+                }).unwrap();
+
+                Some(())
+            });
 
         // invalidate the TLB entry
         CR3::invalidate_entry(page.addr());
+
+        Ok(())
     }
 
     /// This takes a Page and returns the respective Frame if the address is mapped.
@@ -167,9 +187,9 @@ impl ActivePagingContext {
     /// This will unmap a `page` and the respective frame.
     /// 
     /// If an invalid `page` is given, it will simply be ignored as there is nothing to unmap.
-    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, deallocate_frame: bool) {
+    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, deallocate_frame: bool) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.unmap_page(page, frame_allocator, deallocate_frame);
+        apc.unmap_page(page, frame_allocator, deallocate_frame)
     }
 
     /// This takes a Page and returns the respective Frame if the address is mapped.
@@ -238,8 +258,6 @@ impl ActivePagingContext {
         pa.deallocate_page(p4_page);
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
-        apc.unmap_page(p4_page, fa, false);
-
-        Ok(())
+        apc.unmap_page(p4_page, fa, false)
     }
 }

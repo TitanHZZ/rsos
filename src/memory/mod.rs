@@ -93,6 +93,8 @@ pub enum MemoryError {
     MisalignedKernelSection,
     /// The user is trying to map to a used page table entry.
     MappingUsedTableEntry,
+    /// The user is trying to unmap an unused page table entry.
+    UnmappingUnusedTableEntry,
     /// The allocator gave an addr that is not FRAME_PAGE_SIZE aligned.
     FrameInvalidAllocatorAddr,
     /// The kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`.

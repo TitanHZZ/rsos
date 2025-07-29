@@ -25,7 +25,7 @@ impl InactivePagingContext {
         pa.deallocate_page(p4_page);
 
         // don't deallocate the frame because we need it to remain valid
-        active_paging.unmap_page(p4_page, fa, false);
+        active_paging.unmap_page(p4_page, fa, false)?;
         Ok(InactivePagingContext { p4_frame })
     }
 
