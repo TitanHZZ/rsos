@@ -103,28 +103,53 @@ impl ActivePagingContextInner {
             frame_allocator.deallocate_frame(frame);
         }
 
-        let a = self.p4_mut().next_table_mut(page.p4_index())
-            .and_then(|p3| {
-                let dealloc_p2_table = p3.next_table_mut(page.p3_index()).and_then(|p2| {
-                    let dealloc_p1_table = p2.next_table_mut(page.p2_index()).unwrap().used_entries_count() == 0;
-                    if dealloc_p1_table {
-                        let entry = &mut p2.entries[page.p2_index()];
-                        let frame = entry.pointed_frame().unwrap();
+        serial_println!("before unmap");
 
-                        entry.set_unused();
-                        p2.set_used_entries_count(p2.used_entries_count() - 1);
+        let dealloc_p3_table = self.p4_mut().next_table_mut(page.p4_index()).and_then(|p3| {
+            let dealloc_p2_table = p3.next_table_mut(page.p3_index()).and_then(|p2| {
+                let dealloc_p1_table = p2.next_table_mut(page.p2_index()).unwrap().used_entries_count() == 0;
+                if dealloc_p1_table {
+                    let entry = &mut p2.entries[page.p2_index()];
+                    let frame = entry.pointed_frame().unwrap();
 
-                        frame_allocator.deallocate_frame(frame);
-                    }
+                    entry.set_unused();
+                    p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-                    Some(p2.used_entries_count() == 0)
-                }).unwrap();
+                    frame_allocator.deallocate_frame(frame);
+                    serial_println!("Deallocated a P1 table.");
+                }
 
-                Some(())
-            });
+                Some(p2.used_entries_count() == 0)
+            }).unwrap();
+
+            if dealloc_p2_table {
+                let entry = &mut p3.entries[page.p3_index()];
+                let frame = entry.pointed_frame().unwrap();
+
+                entry.set_unused();
+                p3.set_used_entries_count(p3.used_entries_count() - 1);
+
+                frame_allocator.deallocate_frame(frame);
+                serial_println!("Deallocated a P2 table.");
+            }
+
+            Some(p3.used_entries_count() == 0)
+        }).unwrap();
+
+        if dealloc_p3_table {
+            let entry = &mut self.p4_mut().entries[page.p4_index()];
+            let frame = entry.pointed_frame().unwrap();
+
+            entry.set_unused();
+            frame_allocator.deallocate_frame(frame);
+            serial_println!("Deallocated a P3 table.");
+        }
+
+        serial_println!("after unmap");
 
         // invalidate the TLB entry
-        CR3::invalidate_entry(page.addr());
+        // CR3::invalidate_entry(page.addr());
+        CR3::invalidate_all();
 
         Ok(())
     }
