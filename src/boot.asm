@@ -129,9 +129,10 @@ set_up_lower_half_page_tables:
     orl $0b11, %eax # present + writable
     movl %eax, p4_table
 
-    # map the first P3 entry to the P2 table
+    # map the first P3 entry to the P2 table (and set the metadata)
     movl $p2_table_lower_half, %eax
-    orl $0b11, %eax # present + writable
+    orl $0b11, %eax              # present + writable
+    orl $0b0000000001 << 9, %eax # only a single entry is being used
     movl %eax, p3_table_lower_half
 
     # map each P2 entry to a P1 table
@@ -164,6 +165,11 @@ set_up_lower_half_page_tables:
             incl %edx         # increase counter
             cmpl $512, %edx   # if counter == 512, the whole P1 table is mapped
             jne .map_p1_table_lower_half # else map the next entry
+
+            # set the metadata
+            movl 32(%ebx), %eax
+            orl $0b1000000000 << 9, %eax # the whole 512 entries are being used
+            movl %eax, 32(%ebx)
 
         incl %ecx         # increase counter
         cmpl $512, %ecx   # if counter == 512, the whole P2 table is mapped
