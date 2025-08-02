@@ -3,10 +3,8 @@ use core::arch::asm;
 
 pub struct CR3;
 
-/*
- * Safety: This unsafe blocks are safe as we know that the asm is valid
- * and the code will always run in kernel mode so it will always have access to the cr3 register.
- */
+// Safety: This unsafe blocks are safe as we know that the asm is valid
+// and the code will always run in kernel mode so it will always have access to the cr3 register.
 impl CR3 {
     pub fn invalidate_entry(virt_addr: VirtualAddress) {
         // invalidate the TLB entry

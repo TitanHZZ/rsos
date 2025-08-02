@@ -1,7 +1,5 @@
 .code32
 
-# TODO: this is missing the page table entries count metadata
-
 /*
  * Multiboot 2 header
  * +---------------+-----------------+-----------------------------------------+
@@ -190,9 +188,10 @@ set_up_higher_half_page_tables:
     orl $0b11, %eax # present + writable
     movl %eax, p4_table + 256 * 8
 
-    # map the first P3 entry to the P2 table
+    # map the first P3 entry to the P2 table ( and set the metadata)
     movl $p2_table_higher_half, %eax
     orl $0b11, %eax # present + writable
+    orl $0b0000000001 << 9, %eax # only a single entry is being used
     movl %eax, p3_table_higher_half
 
     # map the first 8 P2 entries to the P1 tables
@@ -230,9 +229,19 @@ set_up_higher_half_page_tables:
             cmpl $512, %edx # if counter == 512, the whole P1 table is mapped
             jne .map_p1_table_higher_half # else map the next entry
 
+            # set the metadata (all the 512 entries are being used)
+            movl 32(%ebx), %eax
+            orl $0b1000000000 << 1, %eax # $0b1000000000 << 1 --> ($0b1000000000 >> 8) << 9
+            movl %eax, 32(%ebx)
+
         incl %ecx           # increase counter
         cmpl $8, %ecx       # if counter == 8, the P2 table is mapped
         jne .map_p2_table_higher_half # else map the next entry
+
+        # set the metadata (only 8 entries are being used)
+        movl p2_table_higher_half + 32, %eax
+        orl $0b0000001000 << 7, %eax # $0b0000001000 << 7 --> ($0b0000001000 >> 2) << 9
+        movl %eax, p2_table_higher_half + 32
 
     ret
 

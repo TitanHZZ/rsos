@@ -82,16 +82,14 @@ impl ActivePagingContextInner {
         self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
     }
 
-    // TODO: fix the description
-    // TODO: - free P1, P2 and P3 if they get empty
-    /// This will unmap a page and deallocate the respective frame, if requested.
+    /// This will unmap a page and deallocate the respective frame, if requested. In the event that a page table gets emptied, it will also be deallocated.
     /// 
-    /// If an invalid page is given, it will simply be ignored as there is nothing to unmap.
-    pub(in crate::memory) fn unmap_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, deallocate_frame: bool) -> Result<(), MemoryError> {
-        let p1 = self.p4_mut().next_table(page.p4_index())
-            .and_then(|p3: _| p3.next_table_mut(page.p3_index()))
-            .and_then(|p2: _| p2.next_table_mut(page.p2_index()))
-            .and_then(|p1: _| Some(p1)).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
+    /// If an invalid page is given, `MemoryError::UnmappingUnusedTableEntry` will be returned.
+    pub(in crate::memory) fn unmap_page<F: FrameAllocator>(&mut self, page: Page, frame_allocator: &F, deallocate_frame: bool) -> Result<(), MemoryError> {
+        let p4 = self.p4_mut();
+        let p3 = p4.next_table_mut(page.p4_index()).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
+        let p2 = p3.next_table_mut(page.p3_index()).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
+        let p1 = p2.next_table_mut(page.p2_index()).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
 
         let entry = &mut p1.entries[page.p1_index()];
         let frame = entry.pointed_frame().ok_or(MemoryError::UnmappingUnusedTableEntry)?;
@@ -103,41 +101,39 @@ impl ActivePagingContextInner {
             frame_allocator.deallocate_frame(frame);
         }
 
-        serial_println!("before unmap");
+        if p1.used_entries_count() == 0 {
+            // invalidate the TLB entry for the P1 page table
+            CR3::invalidate_entry(p1 as *const _ as VirtualAddress);
 
-        let dealloc_p3_table = self.p4_mut().next_table_mut(page.p4_index()).and_then(|p3| {
-            let dealloc_p2_table = p3.next_table_mut(page.p3_index()).and_then(|p2| {
-                let dealloc_p1_table = p2.next_table_mut(page.p2_index()).unwrap().used_entries_count() == 0;
-                if dealloc_p1_table {
-                    let entry = &mut p2.entries[page.p2_index()];
-                    let frame = entry.pointed_frame().unwrap();
+            let entry = &mut p2.entries[page.p2_index()];
+            let frame = entry.pointed_frame().unwrap();
 
-                    entry.set_unused();
-                    p2.set_used_entries_count(p2.used_entries_count() - 1);
+            entry.set_unused();
+            p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-                    frame_allocator.deallocate_frame(frame);
-                    serial_println!("Deallocated a P1 table.");
-                }
+            frame_allocator.deallocate_frame(frame);
+            serial_println!("Deallocated a P1 table.");
+        }
 
-                Some(p2.used_entries_count() == 0)
-            }).unwrap();
+        if p2.used_entries_count() == 0 {
+            // invalidate the TLB entry for the P2 page table
+            CR3::invalidate_entry(p2 as *const _ as VirtualAddress);
 
-            if dealloc_p2_table {
-                let entry = &mut p3.entries[page.p3_index()];
-                let frame = entry.pointed_frame().unwrap();
+            let entry = &mut p3.entries[page.p3_index()];
+            let frame = entry.pointed_frame().unwrap();
 
-                entry.set_unused();
-                p3.set_used_entries_count(p3.used_entries_count() - 1);
+            entry.set_unused();
+            p3.set_used_entries_count(p3.used_entries_count() - 1);
 
-                frame_allocator.deallocate_frame(frame);
-                serial_println!("Deallocated a P2 table.");
-            }
+            frame_allocator.deallocate_frame(frame);
+            serial_println!("Deallocated a P2 table.");
+        }
 
-            Some(p3.used_entries_count() == 0)
-        }).unwrap();
+        if p3.used_entries_count() == 0 {
+            // invalidate the TLB entry for the P3 page table
+            CR3::invalidate_entry(p3 as *const _ as VirtualAddress);
 
-        if dealloc_p3_table {
-            let entry = &mut self.p4_mut().entries[page.p4_index()];
+            let entry = &mut p4.entries[page.p4_index()];
             let frame = entry.pointed_frame().unwrap();
 
             entry.set_unused();
@@ -145,11 +141,8 @@ impl ActivePagingContextInner {
             serial_println!("Deallocated a P3 table.");
         }
 
-        serial_println!("after unmap");
-
-        // invalidate the TLB entry
-        // CR3::invalidate_entry(page.addr());
-        CR3::invalidate_all();
+        // invalidate the TLB entry for the original page
+        CR3::invalidate_entry(page.addr());
 
         Ok(())
     }

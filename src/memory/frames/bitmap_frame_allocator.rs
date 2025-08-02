@@ -158,7 +158,6 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         }
 
         // create the actual bitmap
-        // TODO: shouldn't this be using the bit_len option?
         let (_, _, bitmap_start_addr) = suitable_area.unwrap();
         allocator.bitmap = Some(unsafe {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap_bytes_count, Some(usable_frame_count))
