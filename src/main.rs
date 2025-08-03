@@ -5,6 +5,8 @@
 
 // https://medium.com/@connorstack/how-does-a-higher-half-kernel-work-107194e46a64
 
+// https://simonis.github.io/Memory/
+
 #![no_std]
 #![no_main]
 #![feature(lazy_get)]
@@ -89,7 +91,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     kernel.check_placements().expect("The kernel/mb2 must be well placed and mapped");
 
     let a = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+        hash_memory_region(kernel.mb_start(), kernel.mb_end() - kernel.mb_start() + 1)
     };
 
     // EFI boot services are not supported
@@ -106,7 +108,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { page_allocator.init(&ACTIVE_PAGING_CTX) }.expect("Could not initialize a temporary page allocator");
 
     // get the current paging context and create a new (empty) one
-    log!(ok, "Remapping the kernel memory, vga buffer and mb2 info.");
+    log!(ok, "Remapping the kernel memory and the multiboot2 info.");
     { // this scope makes sure that the inactive context does not get used again
         let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &FRAME_ALLOCATOR, &page_allocator).unwrap();
 
@@ -207,7 +209,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
     let b = unsafe  {
-        hash_memory_region(kernel.mb_start() as *const u8, kernel.mb_end() - kernel.mb_start() + 1)
+        hash_memory_region(kernel.mb_start(), kernel.mb_end() - kernel.mb_start() + 1)
     };
 
     // if this fails, the mb2 memory got corrupted
@@ -226,12 +228,11 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     rsos::hlt();
 }
 
-unsafe fn hash_memory_region(ptr: *const u8, len: usize) -> [u8; 32] {
-    let data = unsafe { slice::from_raw_parts(ptr, len) };
+// TODO: this should probably be part of the kernel so we could check integrity at any point
+unsafe fn hash_memory_region(ptr: VirtualAddress, len: usize) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(data);
-    let hash = hasher.finalize();
-    *hash.as_bytes()
+    hasher.update(unsafe { slice::from_raw_parts(ptr as _, len) });
+    *hasher.finalize().as_bytes()
 }
 
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {

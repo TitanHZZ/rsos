@@ -71,7 +71,7 @@ pub struct Table<L: TableLevel> {
 impl<L: TableLevel> Table<L> {
     pub fn set_unused(&mut self) {
         for entry in &mut self.entries {
-            entry.new();
+            entry.clear();
         }
     }
 }
@@ -127,6 +127,7 @@ impl<L: HierarchicalLevel> Table<L> {
 }
 
 impl<L: RemovableLevel> Table<L> {
+    #[allow(clippy::identity_op)]
     pub fn used_entries_count(&self) -> usize {
         (self.entries[0].entries_count_metadata() << 0) |
         (self.entries[1].entries_count_metadata() << 2) |
@@ -138,6 +139,7 @@ impl<L: RemovableLevel> Table<L> {
     /// # Panics
     /// 
     /// If `count` is bigger than 512 as this is the maximum number of entries in a page table.
+    #[allow(clippy::identity_op)]
     pub fn set_used_entries_count(&mut self, count: usize) {
         assert!(count <= 512);
 

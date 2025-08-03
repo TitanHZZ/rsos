@@ -24,16 +24,19 @@ bitflags! {
 pub struct Entry(u64);
 
 impl Entry {
-    pub const fn new(&mut self) {
+    /// Sets all bits to zero (including metadata).
+    pub const fn clear(&mut self) {
         // set all bits to zero
         self.0 = 0;
     }
 
+    /// Checks if any of the bits are one, except for metadata bits (these are ignored).
     pub fn is_used(&self) -> bool {
         // an entry equal to 0 (ignoring the metadata bits) is unused otherwise, it´s used
         (self.0 & !0x0000_0000_0000_0600) != 0
     }
 
+    /// Clears all the bits, leaving the metadata bits untouched.
     pub fn set_unused(&mut self) {
         // set all bits to zero except for the metadata bits
         self.0 &= 0x0000_0000_0000_0600;
@@ -68,6 +71,9 @@ impl Entry {
         self.set_flags(flags);
     }
 
+    /// Get the metadata bits value.
+    /// 
+    /// This is only expected to be used in entries 0 - 4 in page tables of type P1, P2 and P3.
     pub fn entries_count_metadata(&self) -> usize {
         // use bits 9 and 10 (these bits are available for OS use) as metadata for page table deallocation
         ((self.0 & 0x0000_0000_0000_0600) >> 9) as usize
@@ -75,6 +81,8 @@ impl Entry {
 
     /// Sets the metadata for this entry that gets used to determine how many entries
     /// are being used in the page table that this entry belongs to.
+    /// 
+    /// This is only expected to be used in entries 0 - 4 in page tables of type P1, P2 and P3.
     /// 
     /// # Panics
     /// 
