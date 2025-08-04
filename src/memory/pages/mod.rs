@@ -3,7 +3,7 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
-use crate::memory::{pages::paging::ActivePagingContext, FRAME_PAGE_SIZE};
+use crate::memory::{pages::{paging::ActivePagingContext, simple_page_allocator::BitmapPageAllocator}, FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
 
 #[derive(Clone, Copy)]
@@ -63,6 +63,7 @@ impl Page {
     }
 }
 
+// TODO: this needs an option to allocate consecutive pages
 /// A Page allocator.
 /// 
 /// # Safety
@@ -80,3 +81,6 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// In the case that it does not get called, memory corruption is the most likely outcome.
     unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError>;
 }
+
+/// The global page allocator.
+pub static PAGE_ALLOCATOR: BitmapPageAllocator = BitmapPageAllocator::new();

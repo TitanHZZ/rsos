@@ -61,6 +61,7 @@ impl Kernel {
         }
     }
 
+    // TODO: use different error for different problems :)
     /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
     /// place such as in an area that is not of type **AvailableRAM**.
     /// This will also check if the kernel fits well in the original (temporary) higher half mapping.

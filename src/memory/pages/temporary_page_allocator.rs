@@ -2,6 +2,9 @@ use crate::{memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, 
 use crate::data_structures::bitmap::Bitmap;
 use spin::mutex::Mutex;
 
+/// A page allocator meant to be used until a proper page allocator is initialized.
+/// 
+/// This is NOT meant to be a global page allocator but instead, created just when needed.
 struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
     start_addr: VirtualAddress,
