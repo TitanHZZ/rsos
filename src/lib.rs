@@ -10,6 +10,7 @@ pub mod data_structures;
 pub mod multiboot2;
 // pub mod vga_buffer;
 pub mod interrupts;
+pub mod globals;
 pub mod io_port;
 pub mod memory;
 pub mod serial;

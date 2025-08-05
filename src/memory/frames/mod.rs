@@ -1,9 +1,10 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use crate::{kernel::Kernel, memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator}};
+use core::ops::Deref;
+
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
-use crate::memory::ProhibitedMemoryRange;
+use crate::{memory::ProhibitedMemoryRange, kernel::Kernel};
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -49,7 +50,27 @@ pub unsafe trait FrameAllocator: Send + Sync {
     fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
 
-/// The global frame allocator.
 // TODO: a good idea would be to create a simple mechanism that would allow an easy way to switch the frame allocator
 // even different allocators for different tests and "runners"
-pub static FRAME_ALLOCATOR: BitmapFrameAllocator = BitmapFrameAllocator::new();
+// pub static FRAME_ALLOCATOR: BitmapFrameAllocator = BitmapFrameAllocator::new();
+
+/// The global frame allocator.
+pub struct GlobalFrameAllocator {
+    fa: Option<&'static dyn FrameAllocator>,
+}
+
+impl GlobalFrameAllocator {
+    pub const fn new(fa: &'static dyn FrameAllocator) -> Self {
+        GlobalFrameAllocator {
+            fa: Some(fa)
+        }
+    }
+}
+
+impl Deref for GlobalFrameAllocator {
+    type Target = dyn FrameAllocator;
+
+    fn deref(&self) -> &Self::Target {
+        self.fa.unwrap()
+    }
+}

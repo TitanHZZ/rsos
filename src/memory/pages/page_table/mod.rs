@@ -1,6 +1,6 @@
 pub mod page_table_entry;
 
-use crate::memory::{frames::FrameAllocator, MemoryError};
+use crate::{globals::FRAME_ALLOCATOR, memory::MemoryError};
 use page_table_entry::{Entry, EntryFlags};
 use core::marker::PhantomData;
 
@@ -105,11 +105,11 @@ impl<L: HierarchicalLevel> Table<L> {
     /// In the case that it is, the table will simply be returned.
     /// 
     /// This also returns a bool indicating whether or not a new page table was created.
-    pub fn create_next_table<A: FrameAllocator>(&mut self, table_index: usize, frame_allocator: &A) -> Result<(&mut Table<L::NextLevel>, bool), MemoryError> {
+    pub fn create_next_table(&mut self, table_index: usize) -> Result<(&mut Table<L::NextLevel>, bool), MemoryError> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // page table is not yet created so allocate a new frame to hold the new page table
-            let frame = frame_allocator.allocate_frame()?;
+            let frame = FRAME_ALLOCATOR.allocate_frame()?;
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);

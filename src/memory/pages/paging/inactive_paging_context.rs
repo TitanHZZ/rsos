@@ -1,4 +1,4 @@
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, PageAllocator}, MemoryError}};
+use crate::{globals::FRAME_ALLOCATOR, memory::{cr3::CR3, frames::Frame, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, PageAllocator}, MemoryError}};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -8,12 +8,12 @@ pub struct InactivePagingContext {
 
 impl InactivePagingContext {
     /// This creates a new recursively mapped (inactive) paging context.
-    pub fn new<F: FrameAllocator, P: PageAllocator>(active_paging: &ActivePagingContext, fa: &F, pa: &P) -> Result<Self, MemoryError> {
-        let p4_frame = fa.allocate_frame()?;
+    pub fn new<P: PageAllocator>(active_paging: &ActivePagingContext, pa: &P) -> Result<Self, MemoryError> {
+        let p4_frame = FRAME_ALLOCATOR.allocate_frame()?;
         let p4_page = pa.allocate_page()?;
 
         // map the p4 frame
-        active_paging.map_page_to_frame(p4_page, p4_frame, fa, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        active_paging.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // recursively map the table
         // the unsafe block *is* safe as we know that the page is valid
@@ -25,7 +25,7 @@ impl InactivePagingContext {
         pa.deallocate_page(p4_page);
 
         // don't deallocate the frame because we need it to remain valid
-        active_paging.unmap_page(p4_page, fa, false)?;
+        active_paging.unmap_page(p4_page, false)?;
         Ok(InactivePagingContext { p4_frame })
     }
 

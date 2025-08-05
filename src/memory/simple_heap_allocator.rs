@@ -1,5 +1,5 @@
-use crate::{memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}}};
 use crate::{memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_print, serial_println};
+use crate::{memory::pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
 use spin::Mutex;
 
@@ -53,7 +53,7 @@ impl SimpleHeapAllocator {
 
         // we are going to lazily allocate the required frames (for now we allocate just the first one)
         allocator.max_mapped_addr = heap_start + FRAME_PAGE_SIZE - 1;
-        apc.map(heap_start, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+        apc.map(heap_start, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
     }
 
     // DEBUG fn
@@ -285,7 +285,7 @@ unsafe impl GlobalAlloc for SimpleHeapAllocator {
             let end_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE) - 1;
 
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
-                allocator.apc.unwrap().map(addr, &FRAME_ALLOCATOR, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+                allocator.apc.unwrap().map(addr, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
                     .expect("Could not allocate more frames for the heap memory.");
             }
 

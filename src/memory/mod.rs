@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{kernel::Kernel, memory::{frames::FRAME_ALLOCATOR, pages::{Page, PageAllocator}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::pages::{Page, PageAllocator}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::{Frame, FrameAllocator};
@@ -115,12 +115,8 @@ pub enum MemoryError {
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
 /// from the frame allocator into an InactivePagingContext.
-pub fn remap<F, P>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, fa: &F, pa: &P) -> Result<(), MemoryError>
-where
-    F: FrameAllocator,
-    P: PageAllocator,
-{
-    ctx.update_inactive_context(new_ctx, fa, pa, |active_ctx, frame_allocator| {
+pub fn remap<P: PageAllocator>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, pa: &P) -> Result<(), MemoryError> {
+    ctx.update_inactive_context(new_ctx, pa, |active_ctx| {
         // get the kernel elf sections
         let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
         let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
@@ -142,7 +138,7 @@ where
                 let frame = Frame::from_phy_addr(addr);
                 let page = Page::from_virt_addr(addr + Kernel::k_lh_hh_offset())?;
                 let flags = EntryFlags::from_elf_section_flags(elf_section.flags());
-                active_ctx.map_page_to_frame(page, frame, frame_allocator, flags)?;
+                active_ctx.map_page_to_frame(page, frame, flags)?;
             }
         }
 
@@ -151,7 +147,7 @@ where
         for addr in (kernel.mb_start()..=kernel.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + mb2_lh_hh_offset)?;
-            active_ctx.map_page_to_frame(page, frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
+            active_ctx.map_page_to_frame(page, frame, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }
 
         // higher half map the frame allocator prohibited physical memory region
@@ -164,7 +160,7 @@ where
         for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;
-            active_ctx.map_page_to_frame(page, frame, frame_allocator, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
+            active_ctx.map_page_to_frame(page, frame, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
         }
 
         Ok(())

@@ -1,4 +1,4 @@
-use crate::{memory::{frames::{FrameAllocator, FRAME_ALLOCATOR}, MemoryError}, multiboot2::{elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}}};
+use crate::{globals::FRAME_ALLOCATOR, memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
 use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}, multiboot2::MbBootInfo, serial_println};
 use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType};
 

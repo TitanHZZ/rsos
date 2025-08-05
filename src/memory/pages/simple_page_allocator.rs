@@ -40,7 +40,7 @@ impl<'a> BitmapPageAllocator<'a> {
 }
 
 unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
-    unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
+    unsafe fn init(&self, _active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
         todo!()
     }
 
@@ -48,7 +48,7 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         todo!()
     }
 
-    fn deallocate_page(&self, page: Page) {
+    fn deallocate_page(&self, _page: Page) {
         todo!()
     }
 }

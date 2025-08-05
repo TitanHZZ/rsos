@@ -1,5 +1,5 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::memory::{frames::FRAME_ALLOCATOR, pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
+use crate::{memory::pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
 use crate::memory::{pages::Page, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
@@ -93,7 +93,7 @@ impl TSS {
             if self.previous_stack[stack_number as usize].1 {
                 let guard_page_addr = previous_stack_ptr as VirtualAddress;
                 let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
-                ACTIVE_PAGING_CTX.map(guard_page_addr, &FRAME_ALLOCATOR, flags).map_err(TssError::Memory)?;
+                ACTIVE_PAGING_CTX.map(guard_page_addr, flags).map_err(TssError::Memory)?;
             }
 
             unsafe { HEAP_ALLOCATOR.dealloc(previous_stack_ptr, previous_stack_layout) };
@@ -110,7 +110,7 @@ impl TSS {
 
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), &FRAME_ALLOCATOR, true).map_err(TssError::Memory)?;
+            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), true).map_err(TssError::Memory)?;
         }
 
         Ok(())

@@ -1,6 +1,6 @@
 pub mod inactive_paging_context;
 
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{globals::FRAME_ALLOCATOR, memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
@@ -36,11 +36,11 @@ impl ActivePagingContextInner {
     }
 
     /// Maps a specific Page to a specific Frame.
-    pub(in crate::memory) fn map_page_to_frame<A: FrameAllocator>(&mut self, page: Page, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub(in crate::memory) fn map_page_to_frame(&mut self, page: Page, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         let p4 = self.p4_mut();
-        let p3 = p4.create_next_table(page.p4_index(), frame_allocator)?;
-        let p2 = p3.0.create_next_table(page.p3_index(), frame_allocator)?;
-        let p1 = p2.0.create_next_table(page.p2_index(), frame_allocator)?;
+        let p3 = p4.create_next_table(page.p4_index())?;
+        let p2 = p3.0.create_next_table(page.p3_index())?;
+        let p1 = p2.0.create_next_table(page.p2_index())?;
 
         // the entry must be unused
         if p1.0.entries[page.p1_index()].is_used() {
@@ -65,27 +65,27 @@ impl ActivePagingContextInner {
     }
 
     /// Maps a specific Page to a (random) Frame.
-    pub(in crate::memory) fn map_page<A: FrameAllocator>(&mut self, page: Page, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub(in crate::memory) fn map_page(&mut self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
-        let frame = frame_allocator.allocate_frame()?;
-        self.map_page_to_frame(page, frame, frame_allocator, flags)
+        let frame = FRAME_ALLOCATOR.allocate_frame()?;
+        self.map_page_to_frame(page, frame, flags)
     }
 
     /// Maps the Page containing the `virtual_addr` to a (random) Frame.
-    pub(in crate::memory) fn map<A: FrameAllocator>(&mut self, virtual_addr: VirtualAddress, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub(in crate::memory) fn map(&mut self, virtual_addr: VirtualAddress, flags: EntryFlags) -> Result<(), MemoryError> {
         let page = Page::from_virt_addr(virtual_addr)?;
-        self.map_page(page, frame_allocator, flags)
+        self.map_page(page, flags)
     }
 
     /// Maps a Frame to a Page with same addr (identity mapping).
-    pub(in crate::memory) fn identity_map<A: FrameAllocator>(&mut self, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
-        self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, frame_allocator, flags)
+    pub(in crate::memory) fn identity_map(&mut self, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
+        self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, flags)
     }
 
     /// This will unmap a page and deallocate the respective frame, if requested. In the event that a page table gets emptied, it will also be deallocated.
     /// 
     /// If an invalid page is given, `MemoryError::UnmappingUnusedTableEntry` will be returned.
-    pub(in crate::memory) fn unmap_page<F: FrameAllocator>(&mut self, page: Page, frame_allocator: &F, deallocate_frame: bool) -> Result<(), MemoryError> {
+    pub(in crate::memory) fn unmap_page(&mut self, page: Page, deallocate_frame: bool) -> Result<(), MemoryError> {
         let p4 = self.p4_mut();
         let p3 = p4.next_table_mut(page.p4_index()).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
         let p2 = p3.next_table_mut(page.p3_index()).ok_or(MemoryError::UnmappingUnusedTableEntry)?;
@@ -98,7 +98,7 @@ impl ActivePagingContextInner {
         p1.set_used_entries_count(p1.used_entries_count() - 1);
 
         if deallocate_frame {
-            frame_allocator.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate_frame(frame);
         }
 
         if p1.used_entries_count() == 0 {
@@ -111,7 +111,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-            frame_allocator.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate_frame(frame);
             serial_println!("Deallocated a P1 table.");
         }
 
@@ -125,7 +125,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p3.set_used_entries_count(p3.used_entries_count() - 1);
 
-            frame_allocator.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate_frame(frame);
             serial_println!("Deallocated a P2 table.");
         }
 
@@ -137,7 +137,7 @@ impl ActivePagingContextInner {
             let frame = entry.pointed_frame().unwrap();
 
             entry.set_unused();
-            frame_allocator.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate_frame(frame);
             serial_println!("Deallocated a P3 table.");
         }
 
@@ -179,35 +179,35 @@ impl ActivePagingContextInner {
 
 impl ActivePagingContext {
     /// Maps a specific Page to a specific Frame.
-    pub fn map_page_to_frame<A: FrameAllocator>(&self, page: Page, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map_page_to_frame(&self, page: Page, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.map_page_to_frame(page, frame, frame_allocator, flags)
+        apc.map_page_to_frame(page, frame, flags)
     }
 
     /// Maps a specific Page to a (random) Frame.
-    pub fn map_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map_page<A: FrameAllocator>(&self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.map_page(page, frame_allocator, flags)
+        apc.map_page(page, flags)
     }
 
     /// Maps the Page containing the `virtual_addr` to a (random) Frame.
-    pub fn map<A: FrameAllocator>(&self, virtual_addr: VirtualAddress, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map(&self, virtual_addr: VirtualAddress, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.map(virtual_addr, frame_allocator, flags)
+        apc.map(virtual_addr, flags)
     }
 
     /// Maps a Frame to a Page with same addr (identity mapping).
-    pub fn identity_map<A: FrameAllocator>(&self, frame: Frame, frame_allocator: &A, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn identity_map(&self, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.identity_map(frame, frame_allocator, flags)
+        apc.identity_map(frame, flags)
     }
 
     /// This will unmap a `page` and the respective frame.
     /// 
     /// If an invalid `page` is given, it will simply be ignored as there is nothing to unmap.
-    pub fn unmap_page<A: FrameAllocator>(&self, page: Page, frame_allocator: &A, deallocate_frame: bool) -> Result<(), MemoryError> {
+    pub fn unmap_page(&self, page: Page, deallocate_frame: bool) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
-        apc.unmap_page(page, frame_allocator, deallocate_frame)
+        apc.unmap_page(page, deallocate_frame)
     }
 
     /// This takes a Page and returns the respective Frame if the address is mapped.
@@ -241,19 +241,18 @@ impl ActivePagingContext {
     /// 
     /// This does not affect hardware translations and thus, is totally safe to use as long as the
     /// caller makes sure that the inactive paging context is in a valid state before being switched to.
-    pub(in crate::memory) fn update_inactive_context<F, P, O>(&self, inactive_context: &InactivePagingContext, fa: &F, pa: &P, f: O)
+    pub(in crate::memory) fn update_inactive_context<P, O>(&self, inactive_context: &InactivePagingContext, pa: &P, f: O)
         -> Result<(), MemoryError>
     where
-        F: FrameAllocator,
         P: PageAllocator,
-        O: FnOnce(&mut ActivePagingContextInner, &F) -> Result<(), MemoryError>,
+        O: FnOnce(&mut ActivePagingContextInner) -> Result<(), MemoryError>,
     {
         let apc = &mut *self.0.lock();
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
         let p4_page = pa.allocate_page()?;
-        apc.map_page_to_frame(p4_page, p4_frame, fa, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
         apc.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
@@ -263,7 +262,7 @@ impl ActivePagingContext {
         // we need them pointing to the inactive context (hardware translations would still work)
         CR3::invalidate_all();
 
-        f(apc, fa)?;
+        f(apc)?;
 
         // restore the active paging context recusive mapping
         let table = unsafe { &mut *(p4_page.addr() as *mut Table<Level4>) };
@@ -276,6 +275,6 @@ impl ActivePagingContext {
         pa.deallocate_page(p4_page);
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
-        apc.unmap_page(p4_page, fa, false)
+        apc.unmap_page(p4_page, false)
     }
 }
