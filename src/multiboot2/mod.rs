@@ -77,9 +77,7 @@ impl MbTagHeader {
 pub struct MbBootInfo {
     header: MbBootInformationHeader,
 
-    /*
-     * Not using NonNull<MbTagHeader> as it expects mut ptrs.
-     */
+    // Not using NonNull<MbTagHeader> as it expects mut ptrs.
     tags_ptr: *const MbTagHeader,
 }
 

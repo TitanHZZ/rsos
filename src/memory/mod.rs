@@ -115,8 +115,8 @@ pub enum MemoryError {
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
 /// from the frame allocator into an InactivePagingContext.
-pub fn remap<P: PageAllocator>(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext, pa: &P) -> Result<(), MemoryError> {
-    ctx.update_inactive_context(new_ctx, pa, |active_ctx| {
+pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Result<(), MemoryError> {
+    ctx.update_inactive_context(new_ctx, |active_ctx| {
         // get the kernel elf sections
         let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
         let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;

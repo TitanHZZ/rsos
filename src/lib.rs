@@ -74,10 +74,11 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     exit_qemu(0x10);
 }
 
+/// This is the Rust entry point nto the OS.
+/// 
 /// # Safety
 /// 
-/// The caller (the asm) must ensure that `mb_boot_info` is non null and points to a valid Mb2 struct.  
-/// This function may only be called once.
+/// The caller must ensure that the function never gets called more than once.
 #[cfg(test)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(_mb_boot_info_addr: *const u8) -> ! {

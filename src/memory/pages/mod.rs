@@ -3,6 +3,8 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
+use core::ops::Deref;
+
 use crate::memory::{pages::{paging::ActivePagingContext, simple_page_allocator::BitmapPageAllocator}, FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
 
@@ -82,5 +84,23 @@ pub unsafe trait PageAllocator: Send + Sync {
     unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError>;
 }
 
-/// The global page allocator.
-pub static PAGE_ALLOCATOR: BitmapPageAllocator = BitmapPageAllocator::new();
+/// The global frame allocator.
+pub struct GlobalPageAllocator {
+    pa: Option<&'static dyn PageAllocator>,
+}
+
+impl GlobalPageAllocator {
+    pub const fn new(pa: &'static dyn PageAllocator) -> Self {
+        GlobalPageAllocator {
+            pa: Some(pa)
+        }
+    }
+}
+
+impl Deref for GlobalPageAllocator {
+    type Target = dyn PageAllocator;
+
+    fn deref(&self) -> &Self::Target {
+        self.pa.unwrap()
+    }
+}

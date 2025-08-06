@@ -1,5 +1,5 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::{memory::pages::{page_table::page_table_entry::EntryFlags, paging::ACTIVE_PAGING_CTX}};
+use crate::{globals::ACTIVE_PAGING_CTX, memory::pages::page_table::page_table_entry::EntryFlags};
 use crate::memory::{pages::Page, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};

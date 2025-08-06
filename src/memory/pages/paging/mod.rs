@@ -1,7 +1,8 @@
 pub mod inactive_paging_context;
 
-use crate::{globals::FRAME_ALLOCATOR, memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
+use crate::{globals::{FRAME_ALLOCATOR, PAGE_ALLOCATOR}, serial_println};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
 use spin::Mutex;
@@ -19,12 +20,6 @@ pub(in crate::memory) struct ActivePagingContextInner {
 unsafe impl Send for ActivePagingContextInner {}
 
 pub struct ActivePagingContext(Mutex<ActivePagingContextInner>);
-
-pub static ACTIVE_PAGING_CTX: ActivePagingContext = ActivePagingContext(Mutex::new(ActivePagingContextInner {
-    // this can be unchecked as we know that the ptr is non null
-    p4: unsafe { NonNull::new_unchecked(P4) },
-    _marker: PhantomData,
-}));
 
 impl ActivePagingContextInner {
     fn p4(&self) -> &Table<Level4> {
@@ -178,6 +173,15 @@ impl ActivePagingContextInner {
 }
 
 impl ActivePagingContext {
+    // TODO: this should not be public
+    pub const fn new() -> Self {
+        ActivePagingContext(Mutex::new(ActivePagingContextInner {
+            // this can be unchecked as we know that the ptr is non null
+            p4: unsafe { NonNull::new_unchecked(P4) },
+            _marker: PhantomData,
+        }))
+    }
+
     /// Maps a specific Page to a specific Frame.
     pub fn map_page_to_frame(&self, page: Page, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         let apc = &mut *self.0.lock();
@@ -241,17 +245,15 @@ impl ActivePagingContext {
     /// 
     /// This does not affect hardware translations and thus, is totally safe to use as long as the
     /// caller makes sure that the inactive paging context is in a valid state before being switched to.
-    pub(in crate::memory) fn update_inactive_context<P, O>(&self, inactive_context: &InactivePagingContext, pa: &P, f: O)
-        -> Result<(), MemoryError>
+    pub(in crate::memory) fn update_inactive_context<O>(&self, inactive_context: &InactivePagingContext, f: O) -> Result<(), MemoryError>
     where
-        P: PageAllocator,
         O: FnOnce(&mut ActivePagingContextInner) -> Result<(), MemoryError>,
     {
         let apc = &mut *self.0.lock();
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
-        let p4_page = pa.allocate_page()?;
+        let p4_page = PAGE_ALLOCATOR.allocate_page()?;
         apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
@@ -272,7 +274,7 @@ impl ActivePagingContext {
         CR3::invalidate_all();
 
         // deallocate the page
-        pa.deallocate_page(p4_page);
+        PAGE_ALLOCATOR.deallocate_page(p4_page);
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         apc.unmap_page(p4_page, false)

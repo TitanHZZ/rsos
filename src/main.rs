@@ -20,14 +20,14 @@
 
 extern crate alloc;
 
-use rsos::{globals::FRAME_ALLOCATOR, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{temporary_page_allocator::TemporaryPageAllocator, PageAllocator}, VirtualAddress}};
+use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR, PAGE_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{paging::ActivePagingContext, temporary_page_allocator::TemporaryPageAllocator, PageAllocator}, VirtualAddress}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext, ACTIVE_PAGING_CTX}};
-use rsos::memory::{frames::{Frame, FrameAllocator}, pages::page_table::page_table_entry::EntryFlags};
 use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
+use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext}};
+use rsos::memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
 use rsos::{log, memory};
@@ -104,24 +104,26 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // initialize a temporary page allocator that starts right after the temporary identity mapping
-    let page_allocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-    unsafe { page_allocator.init(&ACTIVE_PAGING_CTX) }.expect("Could not initialize a temporary page allocator");
+    // let page_allocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+    unsafe { PAGE_ALLOCATOR.init(&ACTIVE_PAGING_CTX) }.expect("Could not initialize a temporary page allocator");
+
+    let adssd = ActivePagingContext::new();
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory and the multiboot2 info.");
     { // this scope makes sure that the inactive context does not get used again
-        let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX, &page_allocator).unwrap();
+        let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging, &page_allocator).expect("Could not remap the kernel");
+        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging).expect("Could not remap the kernel");
 
         ACTIVE_PAGING_CTX.switch(inactive_paging);
 
         // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
         // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
-        serial_println!("guard_page_addr: {:#x}", guard_page_addr.addr());
         ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
+        serial_println!("guard_page_addr: {:#x}", guard_page_addr.addr());
     }
 
     // use the new higher half mapped multiboot2

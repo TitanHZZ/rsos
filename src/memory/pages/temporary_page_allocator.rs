@@ -1,4 +1,4 @@
-use crate::{memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
 use spin::mutex::Mutex;
 
@@ -23,9 +23,13 @@ impl TemporaryPageAllocatorInner {
 }
 
 impl TemporaryPageAllocator {
-    /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at `start_addr` aligned down to `FRAME_PAGE_SIZE`.
-    pub fn new(start_addr: VirtualAddress) -> Self {
-        TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner::new(start_addr.align_down(FRAME_PAGE_SIZE))))
+    /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at `start_addr`.
+    /// 
+    /// # Panics
+    /// If `start_addr` is not a multiple of **FRAME_PAGE_SIZE**.
+    pub const fn new(start_addr: VirtualAddress) -> Self {
+        assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
+        TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner::new(start_addr)))
     }
 }
 
