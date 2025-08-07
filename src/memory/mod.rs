@@ -3,10 +3,10 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::pages::{Page, PageAllocator}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::pages::Page, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
-use frames::{Frame, FrameAllocator};
+use frames::Frame;
 
 // the size of the pages and frames
 pub const FRAME_PAGE_SIZE: usize = 4096;

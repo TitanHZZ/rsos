@@ -5,7 +5,7 @@ pub mod paging;
 
 use core::ops::Deref;
 
-use crate::memory::{pages::{paging::ActivePagingContext, simple_page_allocator::BitmapPageAllocator}, FRAME_PAGE_SIZE};
+use crate::memory::{pages::{paging::ActivePagingContext}, FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
 
 #[derive(Clone, Copy)]

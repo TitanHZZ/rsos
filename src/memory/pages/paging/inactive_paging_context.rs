@@ -1,4 +1,5 @@
-use crate::{globals::{FRAME_ALLOCATOR, PAGE_ALLOCATOR}, memory::{cr3::CR3, frames::Frame, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, PageAllocator}, MemoryError}};
+use crate::memory::{pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}}, MemoryError};
+use crate::{globals::{FRAME_ALLOCATOR, PAGE_ALLOCATOR}, memory::{cr3::CR3, frames::Frame}};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
