@@ -8,6 +8,8 @@ use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_c
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
 
+// TODO: create the concept of a "MemorySubsystem"
+
 // the size of the pages and frames
 pub const FRAME_PAGE_SIZE: usize = 4096;
 

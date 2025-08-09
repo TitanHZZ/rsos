@@ -20,16 +20,26 @@ impl Frame {
     }
 }
 
-/// A Frame allocator to be used OS wide.
+// TODO: look into more advanced docs
+// TODO: fix the prohibited_memory_range name and description
+/// Represents a frame allocator to be used OS wide.
 /// 
 /// # Safety
 /// 
-/// Whoever implements this must ensure its correctness since the compiler has no way of ensuring that memory will be correctly managed.
+/// A correct implementation must follow these rules:
+/// 
+/// - The client **should** be created very early on, and it should, preferably, be static.
+/// - [init()](FrameAllocator::init()) **must** be called very early on, preferably before remapping the [`Kernel`] and multiboot2 to the higher half.
+/// - The frame allocator must ensure that the [`Kernel`] prohibited memory ranges are **never** violated.
+/// - Only valid RAM can be used for metadata.
+/// - No more than one frame allocator is expected to ever exist at runtime.
+/// - The allocator may rely on [`ORIGINALLY_IDENTITY_MAPPED`] for its metadata that **needs** to later be remapped with [remap()](FrameAllocator::remap()).
+/// - The use of a [Page Allocator](crate::memory::pages::PageAllocator) is **prohibited** to ensure that no recursive state is reached.
 pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate_frame(&self) -> Result<Frame, MemoryError>;
     fn deallocate_frame(&self, frame: Frame);
 
-    /// Resets the frame allocator state.
+    /// Initializes/Resets the frame allocator state.
     /// 
     /// # Safety
     /// 
@@ -37,16 +47,19 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// In the case that it does not get called, memory corruption is the most likely outcome.
     unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError>;
 
-    /// Remaps the frame allocator to use the new mapping to its underlying control structure.
+    /// Remaps the frame allocator to use higher half mapping with its underlying control structure.
     /// 
     /// # Safety
     /// 
-    /// This **does not** recreate the frame allocator, it simply adjusts the internal ptr to the control structure so,
+    /// This **does not** recreate the frame allocator, it simply adjusts the internal metadata/control structure so,
     /// if the new mapping is wrong, this *will* result in **undefined behavior**.
+    /// 
     /// **Must** be called right after changing the mapping and before any more frame allocations to avoid problems.
     unsafe fn remap(&self, kernel: &Kernel);
 
-    /// Get the physical memory region that **MUST** be mapped and cannot be used for allocations by frame allocators.
+    /// Get the physical memory region that **MUST** be correctly mapped and cannot be used for allocations by other frame allocators.
+    /// 
+    /// The addresses are virtual and so, they change from before higher half remapping to after it.
     fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
 
