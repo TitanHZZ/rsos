@@ -152,13 +152,13 @@ pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagin
             active_ctx.map_page_to_frame(page, frame, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
         }
 
-        // higher half map the frame allocator prohibited physical memory region
-        if FRAME_ALLOCATOR.prohibited_memory_range().is_none() {
+        // higher half map the frame allocator metadata memory region
+        if FRAME_ALLOCATOR.metadata_memory_range().is_none() {
             return Ok(());
         }
 
         let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
-        let prohibited_mem_range = FRAME_ALLOCATOR.prohibited_memory_range().unwrap();
+        let prohibited_mem_range = FRAME_ALLOCATOR.metadata_memory_range().unwrap();
         for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;

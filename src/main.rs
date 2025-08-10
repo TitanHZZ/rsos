@@ -2,10 +2,11 @@
 // https://wiki.osdev.org/Higher_Half_x86_Bare_Bones
 // https://mcyoung.xyz/2021/06/01/linker-script/
 // https://wiki.osdev.org/Higher_Half_Kernel
-
 // https://medium.com/@connorstack/how-does-a-higher-half-kernel-work-107194e46a64
-
 // https://simonis.github.io/Memory/
+
+// Rust Docs problem tracking issue:
+// https://github.com/rust-lang/rust-analyzer/issues/20356#issue-3284255455
 
 #![no_std]
 #![no_main]

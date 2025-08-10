@@ -93,8 +93,9 @@ impl Kernel {
         Ok(())
     }
 
-    /// Returns all the memory ranges that **must be left untouched** meaning that these regions
+    /// All the memory ranges that **must be left untouched** meaning that these regions
     /// cannot be used for allocations in the physical (frame allocator) memory space.
+    /// 
     /// These ranges live in available RAM.
     /// 
     /// There are no order guarantees for the memory ranges.
@@ -177,7 +178,7 @@ impl Kernel {
     /// 
     /// This **will** panic if `FRAME_ALLOCATOR.prohibited_memory_range()` is **None**.
     pub fn fa_lh_hh_offset(&self) -> usize {
-        let prohibited_mem_range = FRAME_ALLOCATOR.prohibited_memory_range()
+        let prohibited_mem_range = FRAME_ALLOCATOR.metadata_memory_range()
             .expect("fa_lh_hh_offset() can only be called when using a frame allocator with prohibited memory ranges");
         (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - prohibited_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
     }

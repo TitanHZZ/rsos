@@ -105,7 +105,7 @@ impl IntoIterator for MemoryMapEntries {
 }
 
 impl MemoryMapEntries {
-    /// Get the areas with an entry type of **MemoryMapEntryType::AvailableRAM**.
+    /// Get the areas with an entry type of [`MemoryMapEntryType::AvailableRAM`].
     pub fn usable_areas(&self) -> impl Iterator<Item = &'static MemoryMapEntry> {
         self.into_iter().filter(|&area| area.entry_type() == MemoryMapEntryType::AvailableRAM)
     }

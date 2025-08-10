@@ -66,6 +66,7 @@ impl Page {
 }
 
 // TODO: this needs an option to allocate consecutive pages
+// TODO: the docs for this need to improve by a lot
 /// A Page allocator.
 /// 
 /// # Safety

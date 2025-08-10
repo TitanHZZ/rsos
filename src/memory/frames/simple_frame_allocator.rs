@@ -83,7 +83,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         unimplemented!();
     }
 
-    fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
         None
     }
 

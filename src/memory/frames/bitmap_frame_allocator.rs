@@ -217,7 +217,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         serial_println!("Deallocated frame: {:#x}", frame.0);
     }
 
-    fn prohibited_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
         let allocator = &mut *self.0.lock();
         Some(allocator.prohibited_mem_range)
     }
