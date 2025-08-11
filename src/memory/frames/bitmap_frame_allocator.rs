@@ -194,7 +194,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         Ok(())
     }
 
-    fn allocate_frame(&self) -> Result<Frame, MemoryError> {
+    fn allocate(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
         let frame = allocator.bit_idx_to_frame(allocator.next_free_frame).ok_or(MemoryError::NotEnoughPhyMemory)?;
         allocator.bitmap.as_mut().unwrap().set(allocator.next_free_frame, true);
@@ -206,7 +206,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     }
 
     // TODO: maybe it would make sense to check if the frame to be deallocated is in the kernel prohibited ranges
-    fn deallocate_frame(&self, frame: Frame) {
+    fn deallocate(&self, frame: Frame) {
         let allocator = &mut *self.0.lock();
         let bit_idx = allocator.frame_to_bit_idx(frame).unwrap_or_else(|| panic!("Got Invalid frame for deallocation: {:#x}", frame.0));
 
@@ -218,7 +218,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     }
 
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
-        let allocator = &mut *self.0.lock();
+        let allocator = &*self.0.lock();
         Some(allocator.prohibited_mem_range)
     }
 

@@ -1,4 +1,4 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, MemoryError}};
+use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{Page, PageAllocator}, MemoryError}};
 use spin::mutex::Mutex;
 
 // This page allocator manages the entire higher half of the 48 bit address space, 2 ** 48 // 2 bytes.
@@ -40,15 +40,19 @@ impl<'a> BitmapPageAllocator<'a> {
 }
 
 unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
-    unsafe fn init(&self, _active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
+    unsafe fn init(&self) -> Result<(), MemoryError> {
         todo!()
     }
 
-    fn allocate_page(&self) -> Result<Page, MemoryError> {
+    fn allocate(&self) -> Result<Page, MemoryError> {
         todo!()
     }
 
-    fn deallocate_page(&self, _page: Page) {
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
+        todo!()
+    }
+
+    fn deallocate(&self, _page: Page) {
         todo!()
     }
 }

@@ -106,9 +106,10 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // initialize a temporary page allocator that starts right after the temporary identity mapping
     // let page_allocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-    unsafe { PAGE_ALLOCATOR.init(&ACTIVE_PAGING_CTX) }.expect("Could not initialize a temporary page allocator");
+    unsafe { PAGE_ALLOCATOR.init() }.expect("Could not initialize a temporary page allocator");
 
-    let adssd = ActivePagingContext::new();
+    // TODO: this CANNOT be allowed (but it is now)
+    // let adssd = ActivePagingContext::new();
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory and the multiboot2 info.");

@@ -62,7 +62,7 @@ impl ActivePagingContextInner {
     /// Maps a specific Page to a (random) Frame.
     pub(in crate::memory) fn map_page(&mut self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
-        let frame = FRAME_ALLOCATOR.allocate_frame()?;
+        let frame = FRAME_ALLOCATOR.allocate()?;
         self.map_page_to_frame(page, frame, flags)
     }
 
@@ -93,7 +93,7 @@ impl ActivePagingContextInner {
         p1.set_used_entries_count(p1.used_entries_count() - 1);
 
         if deallocate_frame {
-            FRAME_ALLOCATOR.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate(frame);
         }
 
         if p1.used_entries_count() == 0 {
@@ -106,7 +106,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-            FRAME_ALLOCATOR.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate(frame);
             serial_println!("Deallocated a P1 table.");
         }
 
@@ -120,7 +120,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p3.set_used_entries_count(p3.used_entries_count() - 1);
 
-            FRAME_ALLOCATOR.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate(frame);
             serial_println!("Deallocated a P2 table.");
         }
 
@@ -132,7 +132,7 @@ impl ActivePagingContextInner {
             let frame = entry.pointed_frame().unwrap();
 
             entry.set_unused();
-            FRAME_ALLOCATOR.deallocate_frame(frame);
+            FRAME_ALLOCATOR.deallocate(frame);
             serial_println!("Deallocated a P3 table.");
         }
 
@@ -253,7 +253,7 @@ impl ActivePagingContext {
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
-        let p4_page = PAGE_ALLOCATOR.allocate_page()?;
+        let p4_page = PAGE_ALLOCATOR.allocate()?;
         apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
@@ -274,7 +274,7 @@ impl ActivePagingContext {
         CR3::invalidate_all();
 
         // deallocate the page
-        PAGE_ALLOCATOR.deallocate_page(p4_page);
+        PAGE_ALLOCATOR.deallocate(p4_page);
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         apc.unmap_page(p4_page, false)

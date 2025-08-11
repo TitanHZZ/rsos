@@ -64,7 +64,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         Ok(())
     }
 
-    fn allocate_frame(&self) -> Result<Frame, MemoryError> {
+    fn allocate(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
 
         let frame = Ok(allocator.next_frame)?;
@@ -79,7 +79,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
     }
 
     /// This allocator does not support deallocation, what means that this will panic.
-    fn deallocate_frame(&self, _frame: Frame) {
+    fn deallocate(&self, _frame: Frame) {
         unimplemented!();
     }
 

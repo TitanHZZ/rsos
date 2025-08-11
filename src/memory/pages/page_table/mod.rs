@@ -109,7 +109,7 @@ impl<L: HierarchicalLevel> Table<L> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // page table is not yet created so allocate a new frame to hold the new page table
-            let frame = FRAME_ALLOCATOR.allocate_frame()?;
+            let frame = FRAME_ALLOCATOR.allocate()?;
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);

@@ -1,10 +1,8 @@
-use crate::{memory::{pages::{paging::ActivePagingContext, Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
 use spin::mutex::Mutex;
 
-/// A page allocator meant to be used until a proper page allocator is initialized.
-/// 
-/// This is NOT meant to be a global page allocator but instead, created just when needed.
+/// A page allocator meant to be used until a permanent page allocator is initialized.
 struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
     start_addr: VirtualAddress,
@@ -34,19 +32,19 @@ impl TemporaryPageAllocator {
 }
 
 unsafe impl PageAllocator for TemporaryPageAllocator {
-    unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError> {
+    unsafe fn init(&self) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
 
         // make sure that the pages are not being used
         for i in 0..allocator.bitmap.len() {
             let addr = allocator.start_addr + i * FRAME_PAGE_SIZE;
-            active_paging.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
+            ACTIVE_PAGING_CTX.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
         }
 
         Ok(())
     }
 
-    fn allocate_page(&self) -> Result<Page, MemoryError> {
+    fn allocate(&self) -> Result<Page, MemoryError> {
         let allocator = &mut *self.0.lock();
 
         // look for the first free page and return it
@@ -59,7 +57,11 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         Ok(page)
     }
 
-    fn deallocate_page(&self, page: Page) {
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
+        todo!()
+    }
+
+    fn deallocate(&self, page: Page) {
         let allocator = &mut *self.0.lock();
 
         // make sure that the address is valid and within range

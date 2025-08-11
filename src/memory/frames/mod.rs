@@ -20,8 +20,6 @@ impl Frame {
     }
 }
 
-// TODO: fix the prohibited_memory_range name and description
-
 /// Represents a frame allocator to be used OS wide.
 /// 
 /// # Safety
@@ -34,13 +32,15 @@ impl Frame {
 /// - If metadata is used, it will **need** to be remapped with [remap()](FrameAllocator::remap) as soon as the higher half remapping is completed.
 /// - No more than one frame allocator is expected to ever exist at runtime.
 /// - The allocator may rely on [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED) to safely create it's metadata.
-/// - The use of a [Page Allocator](crate::memory::pages::PageAllocator) is **prohibited** to ensure that no recursive state is ever reached.
-/// - The use of a [Paging Context](crate::globals::ACTIVE_PAGING_CTX) is also **prohibited** to ensure that no recursive state is ever reached.
+/// - The use of the [Page Allocator](crate::memory::pages::PageAllocator) is **prohibited** to ensure that no recursive state is ever reached.
+/// - The use of the [Paging Context](crate::globals::ACTIVE_PAGING_CTX) is also **prohibited** to ensure that no recursive state is ever reached.
 pub unsafe trait FrameAllocator: Send + Sync {
-    fn allocate_frame(&self) -> Result<Frame, MemoryError>;
-    fn deallocate_frame(&self, frame: Frame);
+    fn allocate(&self) -> Result<Frame, MemoryError>;
+    fn deallocate(&self, frame: Frame);
 
     /// Initializes/Resets the frame allocator state.
+    /// 
+    /// Any possible metadata **must** be initialized here.
     /// 
     /// # Safety
     /// 

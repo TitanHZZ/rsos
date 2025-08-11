@@ -5,8 +5,8 @@ pub mod paging;
 
 use core::ops::Deref;
 
-use crate::memory::{pages::{paging::ActivePagingContext}, FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
+use crate::memory::{FRAME_PAGE_SIZE};
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -65,24 +65,39 @@ impl Page {
     }
 }
 
-// TODO: this needs an option to allocate consecutive pages
 // TODO: the docs for this need to improve by a lot
-/// A Page allocator.
+
+/// Represents a page allocator to be used OS wide.
 /// 
 /// # Safety
 /// 
-/// Whoever implements this must ensure its correctness since the compiler has no way of ensuring that memory will be correctly managed.
+/// Implementors must adhere to the following rules:
+/// - The client **should** only be created after the [Frame Allocator](super::frames::FrameAllocator) is available, and it should, preferably, be static.
+/// - Frame allocations are allowed as well as the use of the [Paging Context](crate::globals::ACTIVE_PAGING_CTX) for metadata creation.
+/// - No more than one page allocator can be [initialized](PageAllocator::init) at the same time but, it is expected to have a two stage system
+///   where a temporary page allocator is created that then gives place to a permanent one.
+/// - The page allocator must ensure that the [kernel prohibited memory ranges](crate::kernel::Kernel::prohibited_memory_ranges) are **never** violated.
+/// - If a two stage system is used:
+///   - The temporary page allocator might or might not rely on [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED) for metadata but,
+///     the permanent allocator **must** not.
+///   - The temporary allocator **must** assume that it will be used just until the higher half remapping is performed at what point the switch
+///     to the permanent allocator will happen.
+///   - The permanent allocator **must** assume that it will be used after the higher half remapping is completed where,
+///     only the higher half needs to be "allocatable". This is, 127.5TB as the paging system is recursive and so, we loose 512GB of virtual memory.
 pub unsafe trait PageAllocator: Send + Sync {
-    fn allocate_page(&self) -> Result<Page, MemoryError>;
-    fn deallocate_page(&self, page: Page);
+    fn allocate(&self) -> Result<Page, MemoryError>;
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
+    fn deallocate(&self, page: Page);
 
     /// Resets the page allocator state.
+    /// 
+    /// Any possible metadata **must** be initialized here.
     /// 
     /// # Safety
     /// 
     /// This must be called (before any allocation) as the allocator expects it.
     /// In the case that it does not get called, memory corruption is the most likely outcome.
-    unsafe fn init(&self, active_paging: &ActivePagingContext) -> Result<(), MemoryError>;
+    unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
 /// The global frame allocator.
