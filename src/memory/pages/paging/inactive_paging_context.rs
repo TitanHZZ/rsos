@@ -1,5 +1,5 @@
-use crate::memory::{pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}}, MemoryError};
-use crate::{globals::{FRAME_ALLOCATOR, PAGE_ALLOCATOR}, memory::{cr3::CR3, frames::Frame}};
+use crate::memory::{pages::page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, MemoryError, MEMORY_SUBSYSTEM};
+use crate::{globals::{FRAME_ALLOCATOR}, memory::{cr3::CR3, frames::Frame}};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -10,8 +10,10 @@ pub struct InactivePagingContext {
 impl InactivePagingContext {
     /// This creates a new recursively mapped (inactive) paging context.
     pub fn new(active_paging: &ActivePagingContext) -> Result<Self, MemoryError> {
+        let page_allocator = MEMORY_SUBSYSTEM.page_allocator();
+
         let p4_frame = FRAME_ALLOCATOR.allocate()?;
-        let p4_page = PAGE_ALLOCATOR.allocate()?;
+        let p4_page = page_allocator.allocate()?;
 
         // map the p4 frame
         active_paging.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
@@ -23,7 +25,7 @@ impl InactivePagingContext {
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
         // deallocate the page
-        PAGE_ALLOCATOR.deallocate(p4_page);
+        page_allocator.deallocate(p4_page);
 
         // don't deallocate the frame because we need it to remain valid
         active_paging.unmap_page(p4_page, false)?;

@@ -3,13 +3,10 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use core::ops::DerefMut;
-
-use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::pages::{Page, PageAllocator}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{globals::FRAME_ALLOCATOR, kernel::{Kernel}, memory::pages::{GlobalPageAllocator, Page, PageAllocator, FIRST_STAGE_PA}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
-use spin::{Mutex, MutexGuard};
 
 // TODO: create the concept of a "MemorySubsystem"
 
@@ -118,28 +115,26 @@ pub enum MemoryError {
     MemoryMapErr(MemoryMapError),
 }
 
-struct MemorySubsystem {
-    pa: Mutex<&'static dyn PageAllocator>,
+pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new(&FIRST_STAGE_PA);
+
+pub struct MemorySubsystem {
+    pa: GlobalPageAllocator,
 }
 
 impl MemorySubsystem {
-    const fn new(pa: &'static dyn PageAllocator) -> Self {
+    const fn new(pa: &'static mut dyn PageAllocator) -> Self {
         MemorySubsystem {
-            pa: Mutex::new(pa),
+            pa: GlobalPageAllocator::new(pa),
         }
     }
 
-    fn page_allocator(&self) -> MutexGuard<'_, &'static dyn PageAllocator> {
-        self.pa.lock()
-    }
-
-    fn switch_to_permanent_page_allocator(&self) {
+    /// Retieve the global page allocator.
+    /// 
+    /// This **does not** lock the allocator.
+    pub fn page_allocator(&self) -> &GlobalPageAllocator {
+        &self.pa
     }
 }
-
-// MEMORY_SUBSYSTEM.page_allocator.allocate()
-// MEMORY_SUBSYSTEM.page_alloc()
-// MEMORY_SUBSYSTEM.frame_alloc()
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
 /// from the frame allocator into an InactivePagingContext.

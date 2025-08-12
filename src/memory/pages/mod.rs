@@ -3,10 +3,11 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
-use core::ops::Deref;
+use core::ops::DerefMut;
 
+use crate::{kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
 use super::{MemoryError, VirtualAddress};
-use crate::memory::{FRAME_PAGE_SIZE};
+use spin::Mutex;
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -65,8 +66,6 @@ impl Page {
     }
 }
 
-// TODO: the docs for this need to improve by a lot
-
 /// Represents a page allocator to be used OS wide.
 /// 
 /// # Safety
@@ -84,10 +83,10 @@ impl Page {
 ///     to the permanent allocator will happen.
 ///   - The permanent allocator **must** assume that it will be used after the higher half remapping is completed where,
 ///     only the higher half needs to be "allocatable". This is, 127.5TB as the paging system is recursive and so, we loose 512GB of virtual memory.
-pub unsafe trait PageAllocator: Send + Sync {
-    fn allocate(&self) -> Result<Page, MemoryError>;
-    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
-    fn deallocate(&self, page: Page);
+pub unsafe trait PageAllocator {
+    fn allocate(&mut self) -> Result<Page, MemoryError>;
+    fn allocate_contiguous(&mut self) -> Result<Page, MemoryError>;
+    fn deallocate(&mut self, page: Page);
 
     /// Resets the page allocator state.
     /// 
@@ -100,23 +99,35 @@ pub unsafe trait PageAllocator: Send + Sync {
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
-/// The global frame allocator.
-pub struct GlobalPageAllocator {
-    pa: Option<&'static dyn PageAllocator>,
-}
+pub(in crate::memory) static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+pub(in crate::memory) static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
+
+pub struct GlobalPageAllocator(Mutex<&'static mut dyn PageAllocator>);
+
+unsafe impl Sync for GlobalPageAllocator {}
 
 impl GlobalPageAllocator {
-    pub const fn new(pa: &'static dyn PageAllocator) -> Self {
-        GlobalPageAllocator {
-            pa: Some(pa)
-        }
+    pub(in crate::memory) const fn new(pa: &'static mut dyn PageAllocator) -> Self {
+        GlobalPageAllocator(Mutex::new(pa))
     }
-}
 
-impl Deref for GlobalPageAllocator {
-    type Target = dyn PageAllocator;
+    fn switch(&self) {
+        unimplemented!()
+    }
 
-    fn deref(&self) -> &Self::Target {
-        self.pa.unwrap()
+    pub fn allocate(&self) -> Result<Page, MemoryError> {
+        self.0.lock().allocate()
+    }
+
+    pub fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
+        self.0.lock().allocate_contiguous()
+    }
+
+    pub fn deallocate(&self, page: Page) {
+        self.0.lock().deallocate(page);
+    }
+
+    pub unsafe fn init(&self) -> Result<(), MemoryError> {
+        unsafe { self.0.lock().init() }
     }
 }

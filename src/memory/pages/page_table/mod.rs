@@ -1,6 +1,6 @@
 pub mod page_table_entry;
 
-use crate::{globals::FRAME_ALLOCATOR, memory::MemoryError};
+use crate::{globals::FRAME_ALLOCATOR, memory::{MemoryError}};
 use page_table_entry::{Entry, EntryFlags};
 use core::marker::PhantomData;
 

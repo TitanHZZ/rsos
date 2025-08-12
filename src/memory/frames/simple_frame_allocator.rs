@@ -16,8 +16,6 @@ struct SimpleFrameAllocatorInner {
     kernel_prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 }
 
-unsafe impl Send for SimpleFrameAllocatorInner {}
-
 pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
 
 impl Default for SimpleFrameAllocator {

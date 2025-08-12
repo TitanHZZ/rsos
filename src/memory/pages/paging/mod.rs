@@ -1,8 +1,8 @@
 pub mod inactive_paging_context;
 
-use crate::{memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE}};
+use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
-use crate::{globals::{FRAME_ALLOCATOR, PAGE_ALLOCATOR}, serial_println};
+use crate::{globals::{FRAME_ALLOCATOR}, serial_println};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
 use spin::Mutex;
@@ -250,10 +250,11 @@ impl ActivePagingContext {
         O: FnOnce(&mut ActivePagingContextInner) -> Result<(), MemoryError>,
     {
         let apc = &mut *self.0.lock();
+        let page_allocator = MEMORY_SUBSYSTEM.page_allocator();
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
-        let p4_page = PAGE_ALLOCATOR.allocate()?;
+        let p4_page = page_allocator.allocate()?;
         apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
@@ -274,7 +275,7 @@ impl ActivePagingContext {
         CR3::invalidate_all();
 
         // deallocate the page
-        PAGE_ALLOCATOR.deallocate(p4_page);
+        page_allocator.deallocate(p4_page);
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         apc.unmap_page(p4_page, false)

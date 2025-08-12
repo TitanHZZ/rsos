@@ -14,8 +14,6 @@ struct BitmapFrameAllocatorInner<'a> {
     prohibited_mem_range: ProhibitedMemoryRange,
 }
 
-unsafe impl<'a> Send for BitmapFrameAllocatorInner<'a> {}
-
 pub struct BitmapFrameAllocator<'a>(Mutex<BitmapFrameAllocatorInner<'a>>);
 
 impl<'a> Default for BitmapFrameAllocator<'a> {

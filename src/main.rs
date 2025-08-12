@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR, PAGE_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{pages::{paging::ActivePagingContext}, VirtualAddress}};
+use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // initialize a temporary page allocator that starts right after the temporary identity mapping
     // let page_allocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-    unsafe { PAGE_ALLOCATOR.init() }.expect("Could not initialize a temporary page allocator");
+    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize a temporary page allocator");
 
     // TODO: this CANNOT be allowed (but it is now)
     // let adssd = ActivePagingContext::new();
