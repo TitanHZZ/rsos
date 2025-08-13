@@ -8,7 +8,7 @@ pub const ENTRY_COUNT: usize = 512; // 512 = 2^9 = log2(PAGE_SIZE), PAGE_SIZE = 
 
 /*
  * This is the base addr used to modify the Page Tables themselves using recursive mapping:
- * 0o177777_777_777_777_777_0000 = 0xfffffffffffff000
+ * 0o177777_777_777_777_777_0000 = 0xffff ffff ffff f000
  * 0o177777 is just the extension to 64 bits
  *
  * This are the addresses that must be used to access the page tables themselves.

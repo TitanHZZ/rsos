@@ -99,8 +99,22 @@ pub unsafe trait PageAllocator {
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
+trait PageAllocatorStage {}
+
+enum PageAllocatorFirstStage {}
+enum PageAllocatorSecondStage {}
+
+impl PageAllocatorStage for PageAllocatorFirstStage {}
+impl PageAllocatorStage for PageAllocatorSecondStage {}
+
 pub(in crate::memory) static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
 pub(in crate::memory) static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
+
+struct GlobalPageAllocatorInner<P: PageAllocator> {
+    allocator: &'static dyn PageAllocator,
+    first_stage: P,
+    second_stage: P,
+}
 
 pub struct GlobalPageAllocator(Mutex<&'static mut dyn PageAllocator>);
 

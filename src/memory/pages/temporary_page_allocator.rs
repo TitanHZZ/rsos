@@ -1,4 +1,4 @@
-use crate::{globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator, PageAllocatorFirstStage}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
 
 /// A page allocator meant to be used until a permanent page allocator is initialized.
