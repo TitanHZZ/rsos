@@ -3,8 +3,6 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
-use core::ops::DerefMut;
-
 use crate::{kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
 use super::{MemoryError, VirtualAddress};
 use spin::Mutex;
@@ -107,22 +105,20 @@ enum PageAllocatorSecondStage {}
 impl PageAllocatorStage for PageAllocatorFirstStage {}
 impl PageAllocatorStage for PageAllocatorSecondStage {}
 
-pub(in crate::memory) static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-pub(in crate::memory) static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
-
-struct GlobalPageAllocatorInner<P: PageAllocator> {
-    allocator: &'static dyn PageAllocator,
-    first_stage: P,
-    second_stage: P,
+struct GlobalPageAllocatorInner<FS: PageAllocator, SS: PageAllocator> {
+    // allocator: &'static dyn PageAllocator,
+    first_stage: FS,
+    second_stage: SS,
 }
 
-pub struct GlobalPageAllocator(Mutex<&'static mut dyn PageAllocator>);
+pub struct GlobalPageAllocator<'a>(Mutex<GlobalPageAllocatorInner<TemporaryPageAllocator, BitmapPageAllocator<'a>>>);
 
-unsafe impl Sync for GlobalPageAllocator {}
-
-impl GlobalPageAllocator {
-    pub(in crate::memory) const fn new(pa: &'static mut dyn PageAllocator) -> Self {
-        GlobalPageAllocator(Mutex::new(pa))
+impl<'a> GlobalPageAllocator<'a> {
+    pub(in crate::memory) const fn new() -> Self {
+        GlobalPageAllocator(Mutex::new(GlobalPageAllocatorInner {
+            first_stage: TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED),
+            second_stage: BitmapPageAllocator::new(),
+        }))
     }
 
     fn switch(&self) {
@@ -130,18 +126,18 @@ impl GlobalPageAllocator {
     }
 
     pub fn allocate(&self) -> Result<Page, MemoryError> {
-        self.0.lock().allocate()
+        todo!()
     }
 
     pub fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
-        self.0.lock().allocate_contiguous()
+        todo!()
     }
 
-    pub fn deallocate(&self, page: Page) {
-        self.0.lock().deallocate(page);
+    pub fn deallocate(&self, _page: Page) {
+        todo!()
     }
 
     pub unsafe fn init(&self) -> Result<(), MemoryError> {
-        unsafe { self.0.lock().init() }
+        todo!()
     }
 }

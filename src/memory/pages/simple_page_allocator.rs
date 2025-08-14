@@ -1,4 +1,4 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{Page, PageAllocator, PageAllocatorSecondStage}, MemoryError}};
+use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{Page, PageAllocator}, MemoryError}};
 use spin::mutex::Mutex;
 
 // This page allocator manages the entire higher half of the 48 bit address space, 2 ** 48 // 2 bytes.

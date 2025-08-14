@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{globals::FRAME_ALLOCATOR, kernel::{Kernel}, memory::pages::{GlobalPageAllocator, Page, PageAllocator, FIRST_STAGE_PA}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{globals::FRAME_ALLOCATOR, kernel::{Kernel}, memory::pages::{GlobalPageAllocator, Page}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
@@ -115,23 +115,23 @@ pub enum MemoryError {
     MemoryMapErr(MemoryMapError),
 }
 
-pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new(&FIRST_STAGE_PA);
+pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new();
 
-pub struct MemorySubsystem {
-    pa: GlobalPageAllocator,
+pub struct MemorySubsystem<'a> {
+    pa: GlobalPageAllocator<'a>,
 }
 
-impl MemorySubsystem {
-    const fn new(pa: &'static mut dyn PageAllocator) -> Self {
+impl<'a> MemorySubsystem<'a> {
+    const fn new() -> Self {
         MemorySubsystem {
-            pa: GlobalPageAllocator::new(pa),
+            pa: GlobalPageAllocator::new(),
         }
     }
 
     /// Retieve the global page allocator.
     /// 
     /// This **does not** lock the allocator.
-    pub fn page_allocator(&self) -> &GlobalPageAllocator {
+    pub fn page_allocator(&'a self) -> &'a GlobalPageAllocator<'a> {
         &self.pa
     }
 }
