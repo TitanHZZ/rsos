@@ -105,10 +105,14 @@ enum PageAllocatorSecondStage {}
 impl PageAllocatorStage for PageAllocatorFirstStage {}
 impl PageAllocatorStage for PageAllocatorSecondStage {}
 
+// TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
+
 struct GlobalPageAllocatorInner<FS: PageAllocator, SS: PageAllocator> {
-    // allocator: &'static dyn PageAllocator,
+    allocator: *const dyn PageAllocator,
     first_stage: FS,
     second_stage: SS,
+
+    switched: bool,
 }
 
 pub struct GlobalPageAllocator<'a>(Mutex<GlobalPageAllocatorInner<TemporaryPageAllocator, BitmapPageAllocator<'a>>>);
@@ -118,6 +122,10 @@ impl<'a> GlobalPageAllocator<'a> {
         GlobalPageAllocator(Mutex::new(GlobalPageAllocatorInner {
             first_stage: TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED),
             second_stage: BitmapPageAllocator::new(),
+
+            allocator: core::ptr::null(),
+
+            switched: false, // use the first stage by default
         }))
     }
 
