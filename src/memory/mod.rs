@@ -117,11 +117,11 @@ pub enum MemoryError {
 
 pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new();
 
-pub struct MemorySubsystem<'a> {
-    pa: GlobalPageAllocator<'a>,
+pub struct MemorySubsystem {
+    pa: GlobalPageAllocator,
 }
 
-impl<'a> MemorySubsystem<'a> {
+impl<'a> MemorySubsystem {
     const fn new() -> Self {
         MemorySubsystem {
             pa: GlobalPageAllocator::new(),
@@ -131,7 +131,7 @@ impl<'a> MemorySubsystem<'a> {
     /// Retieve the global page allocator.
     /// 
     /// This **does not** lock the allocator.
-    pub fn page_allocator(&'a self) -> &'a GlobalPageAllocator<'a> {
+    pub fn page_allocator(&self) -> &GlobalPageAllocator {
         &self.pa
     }
 }

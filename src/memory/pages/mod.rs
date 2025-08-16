@@ -3,6 +3,8 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
+use core::{cell::UnsafeCell, intrinsics::mir::Static, ptr::NonNull};
+
 use crate::{kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
 use super::{MemoryError, VirtualAddress};
 use spin::Mutex;
@@ -107,26 +109,27 @@ impl PageAllocatorStage for PageAllocatorSecondStage {}
 
 // TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
 
-struct GlobalPageAllocatorInner<FS: PageAllocator, SS: PageAllocator> {
-    allocator: *const dyn PageAllocator,
-    first_stage: FS,
-    second_stage: SS,
+// static TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED)
+
+struct GlobalPageAllocatorInner {
+    first_stage: &'static mut UnsafeCell<dyn PageAllocator>,
+    second_stage: &'static mut dyn PageAllocator,
 
     switched: bool,
 }
 
-pub struct GlobalPageAllocator<'a>(Mutex<GlobalPageAllocatorInner<TemporaryPageAllocator, BitmapPageAllocator<'a>>>);
+pub struct GlobalPageAllocator(Mutex<GlobalPageAllocatorInner>);
 
-impl<'a> GlobalPageAllocator<'a> {
+unsafe impl<'a> Sync for GlobalPageAllocator {}
+
+impl GlobalPageAllocator {
     pub(in crate::memory) const fn new() -> Self {
-        GlobalPageAllocator(Mutex::new(GlobalPageAllocatorInner {
-            first_stage: TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED),
-            second_stage: BitmapPageAllocator::new(),
-
-            allocator: core::ptr::null(),
-
-            switched: false, // use the first stage by default
-        }))
+        todo!()
+        // GlobalPageAllocator(Mutex::new(GlobalPageAllocatorInner {
+        //     first_stage: ,
+        //     second_stage: ,
+        //     switched: false, // use the first stage by default
+        // }))
     }
 
     fn switch(&self) {
