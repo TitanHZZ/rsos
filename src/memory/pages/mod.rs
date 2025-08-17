@@ -3,10 +3,9 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
-use core::{cell::UnsafeCell, intrinsics::mir::Static, ptr::NonNull};
-
 use crate::{kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
 use super::{MemoryError, VirtualAddress};
+use core::cell::LazyCell;
 use spin::Mutex;
 
 #[derive(Clone, Copy)]
@@ -83,7 +82,9 @@ impl Page {
 ///     to the permanent allocator will happen.
 ///   - The permanent allocator **must** assume that it will be used after the higher half remapping is completed where,
 ///     only the higher half needs to be "allocatable". This is, 127.5TB as the paging system is recursive and so, we loose 512GB of virtual memory.
-pub unsafe trait PageAllocator {
+pub unsafe trait PageAllocator: Send + Sync {
+    // const fn new() -> Self;
+
     fn allocate(&mut self) -> Result<Page, MemoryError>;
     fn allocate_contiguous(&mut self) -> Result<Page, MemoryError>;
     fn deallocate(&mut self, page: Page);
@@ -108,28 +109,27 @@ impl PageAllocatorStage for PageAllocatorFirstStage {}
 impl PageAllocatorStage for PageAllocatorSecondStage {}
 
 // TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
+// https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
 
-// static TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED)
+// https://stackoverflow.com/questions/72379106/what-are-the-differences-between-cell-refcell-and-unsafecell
+// look into the while covariant and invariants thing
 
-struct GlobalPageAllocatorInner {
-    first_stage: &'static mut UnsafeCell<dyn PageAllocator>,
-    second_stage: &'static mut dyn PageAllocator,
+static FIRST_STAGE_PA: Mutex<TemporaryPageAllocator> = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+static SECOND_STAGE_PA: Mutex<BitmapPageAllocator> = BitmapPageAllocator::new();
+
+pub struct GlobalPageAllocator {
+    first_stage: &'static Mutex<dyn PageAllocator>,
+    second_stage: &'static Mutex<dyn PageAllocator>,
 
     switched: bool,
 }
 
-pub struct GlobalPageAllocator(Mutex<GlobalPageAllocatorInner>);
-
-unsafe impl<'a> Sync for GlobalPageAllocator {}
+// pub struct GlobalPageAllocator(GlobalPageAllocatorInner);
+// unsafe impl<'a> Sync for GlobalPageAllocator {}
 
 impl GlobalPageAllocator {
     pub(in crate::memory) const fn new() -> Self {
         todo!()
-        // GlobalPageAllocator(Mutex::new(GlobalPageAllocatorInner {
-        //     first_stage: ,
-        //     second_stage: ,
-        //     switched: false, // use the first stage by default
-        // }))
     }
 
     fn switch(&self) {
@@ -150,5 +150,9 @@ impl GlobalPageAllocator {
 
     pub unsafe fn init(&self) -> Result<(), MemoryError> {
         todo!()
+    }
+
+    pub fn bruh(&mut self, a: &'static Mutex<dyn PageAllocator>) {
+        self.first_stage = a;
     }
 }

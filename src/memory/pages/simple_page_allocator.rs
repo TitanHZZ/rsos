@@ -1,5 +1,5 @@
 use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{Page, PageAllocator}, MemoryError}};
-use spin::mutex::Mutex;
+use spin::Mutex;
 
 // This page allocator manages the entire higher half of the 48 bit address space, 2 ** 48 // 2 bytes.
 // 
@@ -19,27 +19,25 @@ use spin::mutex::Mutex;
 // 
 // All calculations are in Python syntax.
 
-struct BitmapPageAllocatorInner<'a> {
+pub struct BitmapPageAllocator<'a> {
     l1: [Option<BitmapRefMut<'a>>; 261120], // every bitmap is 16kb
 }
 
-pub struct BitmapPageAllocator<'a>(Mutex<BitmapPageAllocatorInner<'a>>);
-
-impl<'a> BitmapPageAllocatorInner<'a> {
-    const fn new() -> Self {
-        BitmapPageAllocatorInner {
-            l1: [const { None }; 261120]
-        }
-    }
-}
-
 impl<'a> BitmapPageAllocator<'a> {
-    pub const fn new() -> Self {
-        BitmapPageAllocator(Mutex::new(BitmapPageAllocatorInner::new()))
+    pub const fn new() -> Mutex<Self> {
+        Mutex::new(BitmapPageAllocator {
+            l1: [const { None }; 261120]
+        })
     }
 }
 
 unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
+    // fn new() -> Self {
+    //     BitmapPageAllocator {
+    //         l1: [const { None }; 261120]
+    //     }
+    // }
+
     unsafe fn init(&self) -> Result<(), MemoryError> {
         todo!()
     }

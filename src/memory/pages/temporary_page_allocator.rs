@@ -1,5 +1,8 @@
-use crate::{globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use core::cell::LazyCell;
+
+use crate::{globals::ACTIVE_PAGING_CTX, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
+use spin::Mutex;
 
 /// A page allocator meant to be used until a permanent page allocator is initialized.
 pub struct TemporaryPageAllocator {
@@ -12,16 +15,24 @@ impl TemporaryPageAllocator {
     /// 
     /// # Panics
     /// If `start_addr` is not a multiple of **FRAME_PAGE_SIZE**.
-    pub const fn new(start_addr: VirtualAddress) -> Self {
+    pub const fn new(start_addr: VirtualAddress) -> Mutex<Self> {
         assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
-        TemporaryPageAllocator {
+        Mutex::new(TemporaryPageAllocator {
             bitmap: Bitmap::new(None),
             start_addr,
-        }
+        })
     }
 }
 
 unsafe impl PageAllocator for TemporaryPageAllocator {
+    // /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at `start_addr`.
+    // fn new() -> Self {
+    //     TemporaryPageAllocator {
+    //         bitmap: Bitmap::new(None),
+    //         start_addr: ORIGINALLY_IDENTITY_MAPPED,
+    //     }
+    // }
+
     unsafe fn init(&self) -> Result<(), MemoryError> {
         // make sure that the pages are not being used
         for i in 0..self.bitmap.len() {
