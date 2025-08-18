@@ -5,8 +5,13 @@ pub mod paging;
 
 use crate::{kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
 use super::{MemoryError, VirtualAddress};
-use core::cell::LazyCell;
-use spin::Mutex;
+use core::cell::Cell;
+
+// TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
+// https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
+
+// https://stackoverflow.com/questions/72379106/what-are-the-differences-between-cell-refcell-and-unsafecell
+// look into the while covariant and invariants thing
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -65,6 +70,7 @@ impl Page {
     }
 }
 
+// TODO: we require new()
 /// Represents a page allocator to be used OS wide.
 /// 
 /// # Safety
@@ -83,11 +89,9 @@ impl Page {
 ///   - The permanent allocator **must** assume that it will be used after the higher half remapping is completed where,
 ///     only the higher half needs to be "allocatable". This is, 127.5TB as the paging system is recursive and so, we loose 512GB of virtual memory.
 pub unsafe trait PageAllocator: Send + Sync {
-    // const fn new() -> Self;
-
-    fn allocate(&mut self) -> Result<Page, MemoryError>;
-    fn allocate_contiguous(&mut self) -> Result<Page, MemoryError>;
-    fn deallocate(&mut self, page: Page);
+    fn allocate(&self) -> Result<Page, MemoryError>;
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
+    fn deallocate(&self, page: Page);
 
     /// Resets the page allocator state.
     /// 
@@ -100,44 +104,33 @@ pub unsafe trait PageAllocator: Send + Sync {
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
-trait PageAllocatorStage {}
-
-enum PageAllocatorFirstStage {}
-enum PageAllocatorSecondStage {}
-
-impl PageAllocatorStage for PageAllocatorFirstStage {}
-impl PageAllocatorStage for PageAllocatorSecondStage {}
-
-// TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
-// https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
-
-// https://stackoverflow.com/questions/72379106/what-are-the-differences-between-cell-refcell-and-unsafecell
-// look into the while covariant and invariants thing
-
-static FIRST_STAGE_PA: Mutex<TemporaryPageAllocator> = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-static SECOND_STAGE_PA: Mutex<BitmapPageAllocator> = BitmapPageAllocator::new();
+static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
 
 pub struct GlobalPageAllocator {
-    first_stage: &'static Mutex<dyn PageAllocator>,
-    second_stage: &'static Mutex<dyn PageAllocator>,
+    first_stage: Cell<&'static dyn PageAllocator>,
+    second_stage: Cell<&'static dyn PageAllocator>,
 
-    switched: bool,
+    switched: Cell<bool>,
 }
 
-// pub struct GlobalPageAllocator(GlobalPageAllocatorInner);
-// unsafe impl<'a> Sync for GlobalPageAllocator {}
+unsafe impl Sync for GlobalPageAllocator {}
 
 impl GlobalPageAllocator {
     pub(in crate::memory) const fn new() -> Self {
-        todo!()
+        GlobalPageAllocator {
+            first_stage: Cell::new(&FIRST_STAGE_PA),
+            second_stage: Cell::new(&SECOND_STAGE_PA),
+            switched: Cell::new(false),
+        }
     }
 
-    fn switch(&self) {
-        unimplemented!()
+    unsafe fn switch(&self) {
+        self.switched.set(true);
     }
 
     pub fn allocate(&self) -> Result<Page, MemoryError> {
-        todo!()
+        self.first_stage.get().allocate()
     }
 
     pub fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
@@ -152,7 +145,62 @@ impl GlobalPageAllocator {
         todo!()
     }
 
-    pub fn bruh(&mut self, a: &'static Mutex<dyn PageAllocator>) {
-        self.first_stage = a;
+    #[cfg(test)]
+    pub unsafe fn set_first_stage_allocator(&self, allocator: &'static dyn PageAllocator) {
+        self.first_stage.set(allocator);
+    }
+
+    #[cfg(test)]
+    pub unsafe fn set_second_stage_allocator(&self, allocator: &'static dyn PageAllocator) {
+        self.second_stage.set(allocator);
     }
 }
+
+
+/*
+so, let me explain this better.
+currently i have this struct:
+
+pub struct GlobalPageAllocator {
+    first_stage: &'static dyn PageAllocator,
+    second_stage: &'static dyn PageAllocator,
+
+    switched: bool,
+}
+
+this trait:
+
+pub unsafe trait PageAllocator: Send + Sync {
+    fn allocate(&self) -> Result<Page, MemoryError>;
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
+    fn deallocate(&self, page: Page);
+
+    /// Resets the page allocator state.
+    /// 
+    /// Any possible metadata **must** be initialized here.
+    /// 
+    /// # Safety
+    /// 
+    /// This must be called (before any allocation) as the allocator expects it.
+    /// In the case that it does not get called, memory corruption is the most likely outcome.
+    unsafe fn init(&self) -> Result<(), MemoryError>;
+}
+
+and this allocators:
+
+static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
+
+this code is not working and is incomplete. I need the first stage, second stage and switched struct fields to be "changeable".
+i know that i could add a mutex to the global page allocatot but that would make it necessary to go through 2 mutexes to reach the
+"real allocator" which just sonds wrong. in the future, there will also be some testings only fns that would allow me to "hook" into
+the global page allocator to change the references to externally defined allocators for testing purposes only.
+
+Some notes:
+- i have thought of making the global page allocator own the first and second stage allocator but that would create self referecing
+struct that are a pain in Rust and woulkd just create more problems because i would still need the references for the externally defined
+allocators for testing.
+
+so, i am unsure of what to do.
+please do not be afraid to suggest a better approach
+ */

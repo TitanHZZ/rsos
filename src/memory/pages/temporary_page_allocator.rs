@@ -1,26 +1,26 @@
-use core::cell::LazyCell;
-
-use crate::{globals::ACTIVE_PAGING_CTX, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
+use crate::{globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
 use crate::data_structures::bitmap::Bitmap;
 use spin::Mutex;
 
-/// A page allocator meant to be used until a permanent page allocator is initialized.
-pub struct TemporaryPageAllocator {
+struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
     start_addr: VirtualAddress,
 }
+
+/// A page allocator meant to be used until a permanent page allocator is initialized.
+pub struct TemporaryPageAllocator(Mutex<TemporaryPageAllocatorInner>);
 
 impl TemporaryPageAllocator {
     /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at `start_addr`.
     /// 
     /// # Panics
     /// If `start_addr` is not a multiple of **FRAME_PAGE_SIZE**.
-    pub const fn new(start_addr: VirtualAddress) -> Mutex<Self> {
+    pub const fn new(start_addr: VirtualAddress) -> Self {
         assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
-        Mutex::new(TemporaryPageAllocator {
+        TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
             bitmap: Bitmap::new(None),
             start_addr,
-        })
+        }))
     }
 }
 

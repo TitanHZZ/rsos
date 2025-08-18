@@ -24,10 +24,10 @@ pub struct BitmapPageAllocator<'a> {
 }
 
 impl<'a> BitmapPageAllocator<'a> {
-    pub const fn new() -> Mutex<Self> {
-        Mutex::new(BitmapPageAllocator {
+    pub const fn new() -> Self {
+        BitmapPageAllocator {
             l1: [const { None }; 261120]
-        })
+        }
     }
 }
 
@@ -42,15 +42,15 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         todo!()
     }
 
-    fn allocate(&mut self) -> Result<Page, MemoryError> {
+    fn allocate(&self) -> Result<Page, MemoryError> {
         todo!()
     }
 
-    fn allocate_contiguous(&mut self) -> Result<Page, MemoryError> {
+    fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
         todo!()
     }
 
-    fn deallocate(&mut self, _page: Page) {
+    fn deallocate(&self, _page: Page) {
         todo!()
     }
 }
