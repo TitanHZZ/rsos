@@ -105,7 +105,6 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // initialize a temporary page allocator that starts right after the temporary identity mapping
-    // let page_allocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize a temporary page allocator");
 
     // TODO: this CANNOT be allowed (but it is now)

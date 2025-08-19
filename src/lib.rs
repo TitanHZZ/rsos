@@ -16,6 +16,7 @@ pub mod memory;
 pub mod serial;
 pub mod logger;
 pub mod kernel;
+pub mod macros;
 
 use core::{panic::PanicInfo, arch::{global_asm, asm}};
 use crate::io_port::IoPort;
