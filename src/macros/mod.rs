@@ -1,6 +1,8 @@
 
-// TODO: description
-
+/// Asserts that a function has only been called once at runtime.
+/// 
+/// This will invoke the [`panic!`] macro if the function where
+/// this is placed gets called more than once.
 #[macro_export]
 macro_rules! assert_called_once {
     // with args

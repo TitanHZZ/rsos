@@ -1,5 +1,5 @@
-use crate::{assert_called_once, globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_println};
-use crate::data_structures::bitmap::Bitmap;
+use crate::{assert_called_once, globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}};
+use crate::{data_structures::bitmap::Bitmap, serial_println};
 use spin::Mutex;
 
 struct TemporaryPageAllocatorInner {
@@ -55,7 +55,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         todo!()
     }
 
-    fn deallocate(&self, page: Page) {
+    unsafe fn deallocate(&self, page: Page) {
         let allocator = &mut *self.0.lock();
 
         // make sure that the address is valid and within range

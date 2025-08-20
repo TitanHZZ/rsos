@@ -3,19 +3,15 @@ pub mod simple_page_allocator;
 pub mod page_table;
 pub mod paging;
 
-use crate::{assert_called_once, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}, FRAME_PAGE_SIZE}};
+use crate::memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}};
+use crate::{assert_called_once, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
 use core::cell::Cell;
 
-// TODO: write a call_once() macro
-// TODO: what does rust consider "safe"? is there a list?
+// TODO: look into the while covariant and invariants thing
 // TODO: should the global page allocator implement the PageAllocator trait?
-
 // TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
-// https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
-
-// https://stackoverflow.com/questions/72379106/what-are-the-differences-between-cell-refcell-and-unsafecell
-// look into the while covariant and invariants thing
+//                  https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -74,7 +70,9 @@ impl Page {
     }
 }
 
-// TODO: we require new()
+// TODO: we require 2 new() fns
+// TODO: make sure that the descriptions are correct
+// TODO: look into the "safeness" of the allocation/deallocation fns
 /// Represents a page allocator to be used OS wide.
 /// 
 /// # Safety
@@ -95,7 +93,20 @@ impl Page {
 pub unsafe trait PageAllocator: Send + Sync {
     fn allocate(&self) -> Result<Page, MemoryError>;
     fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
-    fn deallocate(&self, page: Page);
+
+    /// Deallocates `page`.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that:
+    /// - `page` is a page currently allocated by this allocator.
+    /// 
+    /// Otherwise, memory corruption or undefined behavior can happen.
+    /// 
+    /// # Panics
+    /// 
+    /// Instead of UB, the allocator may panic when trying to deallocate a page not currently allocated by this allocator.
+    unsafe fn deallocate(&self, page: Page);
 
     /// Resets the page allocator state.
     /// 
@@ -103,8 +114,13 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// 
     /// # Safety
     /// 
-    /// This must be called (before any allocation) as the allocator expects it.
-    /// In the case that it does not get called, memory corruption is the most likely outcome.
+    /// **Must** be called before performing any allocations as the allocator expects it.
+    /// 
+    /// Otherwise, memory corruption or undefined behavior can happen.
+    /// 
+    /// # Panics
+    /// 
+    /// If called more than once.
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
@@ -136,99 +152,64 @@ impl GlobalPageAllocator {
         }
     }
 
-    unsafe fn switch(&self) {
+    /// Switches from the first stage page allocator to the second stage.
+    /// 
+    /// # Safety
+    /// 
+    /// - **Must** be called *after* the remap to the higher half and before any higher half page allocations.
+    /// - No allocations/deallocations can ever cross the switch so, users cannot allocate in the first stage, switch and then deallocate for example.
+    /// 
+    /// Failure to follow these rules will result in data races and data corruption.
+    /// 
+    /// # Panics
+    /// 
+    /// If called more than once.
+    pub unsafe fn switch(&self) {
         assert_called_once!("Cannot call GlobalPageAllocator::switch() more than once");
         self.switched.set(true);
     }
 
+    /// Sets the first stage page allocator to `allocator`.
+    /// 
+    /// # Safety
+    /// 
+    /// - **Must** be called before [init()](GlobalPageAllocator::init)ing the first stage allocator but NEVER after.
+    /// 
+    /// Failure to follow the rules will result in data races and data corruption.
     #[cfg(test)]
     pub unsafe fn set_first_stage_allocator(&self, allocator: &'static dyn PageAllocator) {
         self.first_stage.set(allocator);
     }
 
+    /// Sets the second stage page allocator to `allocator`.
+    /// 
+    /// # Safety
+    /// 
+    /// - **Must** be called before [init()](GlobalPageAllocator::init())ing the second stage allocator but NEVER after.
+    /// 
+    /// Failure to follow the rules will result in data races and data corruption.
     #[cfg(test)]
     pub unsafe fn set_second_stage_allocator(&self, allocator: &'static dyn PageAllocator) {
         self.second_stage.set(allocator);
     }
 
-    // ----- Page Allocator Forwarding ----- //
-
+    /// Look at [`PageAllocator::allocate()`] for more information.
     pub fn allocate(&self) -> Result<Page, MemoryError> {
         self.current().allocate()
     }
 
+    /// Look at [`PageAllocator::allocate_contiguous()`] for more information.
     pub fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
         self.current().allocate_contiguous()
     }
 
-    pub fn deallocate(&self, page: Page) {
-        self.current().deallocate(page);
+    /// Look at [`PageAllocator::deallocate()`] for more information.
+    pub unsafe fn deallocate(&self, page: Page) {
+        unsafe { self.current().deallocate(page) };
     }
 
+    /// Look at [`PageAllocator::init()`] for more information.
     pub unsafe fn init(&self) -> Result<(), MemoryError> {
         unsafe { self.current().init() }
     }
 }
-
-/*
-hi, i am currently making an OS in rust and i have a problem where i have a struct that should hold 2 references
-to 2 different static objects. these references will change the static object that they point to at runtime.
-how should i approach this?
-
-the holder will also be static and thus, i think that i will have to use interior mutabiliy
-to change the references/pointers to the 2 static object
-
-i also need a boolean flag that should tell me if i should use the first or the second reference.
-i wll never use them both at the same time but i still need it to store two refs/ptrs to 2 different statics.
-
-currently i have this struct:
-
-pub struct GlobalPageAllocator {
-    first_stage: &'static dyn PageAllocator,
-    second_stage: &'static dyn PageAllocator,
-
-    switched: bool,
-}
-
-this trait:
-
-pub unsafe trait PageAllocator: Send + Sync {
-    fn allocate(&self) -> Result<Page, MemoryError>;
-    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
-    fn deallocate(&self, page: Page);
-
-    /// Resets the page allocator state.
-    /// 
-    /// Any possible metadata **must** be initialized here.
-    /// 
-    /// # Safety
-    /// 
-    /// This must be called (before any allocation) as the allocator expects it.
-    /// In the case that it does not get called, memory corruption is the most likely outcome.
-    unsafe fn init(&self) -> Result<(), MemoryError>;
-}
-
-and this allocators:
-
-static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
-static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
-
-this code is not doing all that i need it to do and is incomplete. I need the first stage, second stage and switched struct fields to be "changeable".
-i know that i could add a mutex to the global page allocatot but that would make it necessary to go through 2 mutexes to reach the
-"real allocator" which just sonds wrong. in the future, there will also be some testings only fns that would allow me to "hook" into
-the global page allocator to change the references to externally defined allocators for testing purposes only.
-
-Some notes:
-- i have thought of making the global page allocator own the first and second stage allocator but that would create self referecing
-struct that are a pain in Rust and woulkd just create more problems because i would still need the references for the externally defined
-allocators for testing.
-
-so, i am unsure of what to do.
-please do not be afraid to suggest a better approach
-
-i am in no_std making an OS so Box and all of those types that require allocs are out of the question.
-also, i do want it to be safe for multi threaded environments not just impl Sync to fool rust when it
-is actually not thread safe. currently i am using the spin crate for mutexes.
-
-the page allocators are serializing the allocations anyway (at least for now) so that is not really a consideration 
-*/

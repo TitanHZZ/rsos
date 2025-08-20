@@ -46,7 +46,7 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         todo!()
     }
 
-    fn deallocate(&self, _page: Page) {
+    unsafe fn deallocate(&self, _page: Page) {
         todo!()
     }
 }
