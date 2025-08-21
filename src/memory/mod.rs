@@ -121,7 +121,7 @@ pub struct MemorySubsystem {
     pa: GlobalPageAllocator,
 }
 
-impl<'a> MemorySubsystem {
+impl MemorySubsystem {
     const fn new() -> Self {
         MemorySubsystem {
             pa: GlobalPageAllocator::new(),

@@ -1,25 +1,38 @@
-use crate::{assert_called_once, globals::ACTIVE_PAGING_CTX, memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}};
+use crate::{assert_called_once, globals::ACTIVE_PAGING_CTX, kernel::ORIGINALLY_IDENTITY_MAPPED};
+use crate::memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
 use crate::{data_structures::bitmap::Bitmap, serial_println};
 use spin::Mutex;
 
 struct TemporaryPageAllocatorInner {
     bitmap: Bitmap<1>,
     start_addr: VirtualAddress,
+
+    initialized: bool,
 }
 
 /// A page allocator meant to be used until a permanent page allocator is initialized.
 pub struct TemporaryPageAllocator(Mutex<TemporaryPageAllocatorInner>);
 
 impl TemporaryPageAllocator {
-    /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at `start_addr`.
-    /// 
-    /// # Panics
-    /// If `start_addr` is not a multiple of **FRAME_PAGE_SIZE**.
-    pub const fn new(start_addr: VirtualAddress) -> Self {
-        assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
+    /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED).
+    #[cfg(not(test))]
+    pub(in crate::memory) const fn new() -> Self {
         TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
             bitmap: Bitmap::new(None),
-            start_addr,
+            start_addr: ORIGINALLY_IDENTITY_MAPPED,
+
+            initialized: false,
+        }))
+    }
+
+    /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED).
+    #[cfg(test)]
+    pub const fn new() -> Self {
+        TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
+            bitmap: Bitmap::new(None),
+            start_addr: ORIGINALLY_IDENTITY_MAPPED,
+
+            initialized: false,
         }))
     }
 }
@@ -27,7 +40,7 @@ impl TemporaryPageAllocator {
 unsafe impl PageAllocator for TemporaryPageAllocator {
     unsafe fn init(&self) -> Result<(), MemoryError> {
         assert_called_once!("Cannot call TemporaryPageAllocator::init() more than once");
-        let allocator = &*self.0.lock();
+        let allocator = &mut *self.0.lock();
 
         // make sure that the pages are not being used
         for i in 0..allocator.bitmap.len() {
@@ -35,11 +48,13 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
             ACTIVE_PAGING_CTX.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
         }
 
+        allocator.initialized = true;
         Ok(())
     }
 
     fn allocate(&self) -> Result<Page, MemoryError> {
         let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
 
         // look for the first free page and return it
         let idx = allocator.bitmap.iter().enumerate().find(|(_, bit)| !bit).ok_or(MemoryError::NotEnoughVirMemory)?.0;
@@ -51,12 +66,16 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         Ok(page)
     }
 
-    fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
+    fn allocate_contiguous(&self, _count: usize) -> Result<Page, MemoryError> {
+        let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
+
         todo!()
     }
 
-    unsafe fn deallocate(&self, page: Page) {
+    fn deallocate(&self, page: Page) {
         let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
 
         // make sure that the address is valid and within range
         assert!(page.addr() >= allocator.start_addr && page.addr() < (allocator.start_addr + allocator.bitmap.len() * FRAME_PAGE_SIZE));

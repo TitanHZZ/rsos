@@ -1,6 +1,6 @@
 pub mod inactive_paging_context;
 
-use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
 use crate::{globals::{FRAME_ALLOCATOR}, serial_println};
 use inactive_paging_context::InactivePagingContext;
@@ -169,6 +169,12 @@ impl ActivePagingContextInner {
 
         // swap the values in CR3 and InactivePagingContext (also clears the TLB)
         inactive_context.switch_with_cr3();
+    }
+}
+
+impl Default for ActivePagingContext {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

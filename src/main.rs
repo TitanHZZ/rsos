@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};

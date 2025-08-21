@@ -4,14 +4,12 @@ pub mod page_table;
 pub mod paging;
 
 use crate::memory::{pages::{simple_page_allocator::BitmapPageAllocator, temporary_page_allocator::TemporaryPageAllocator}};
-use crate::{assert_called_once, kernel::ORIGINALLY_IDENTITY_MAPPED, memory::FRAME_PAGE_SIZE};
+use crate::{assert_called_once, memory::FRAME_PAGE_SIZE};
 use super::{MemoryError, VirtualAddress};
 use core::cell::Cell;
 
-// TODO: look into the while covariant and invariants thing
-// TODO: should the global page allocator implement the PageAllocator trait?
-// TODO: read this: https://arunanshub.hashnode.dev/self-referential-structs-in-rust
-//                  https://arunanshub.hashnode.dev/self-referential-structs-in-rust-part-2
+// TODO: look into the whole covariant and invariants thing (and aliasing)
+// TODO: disable test mode by default for intellisense
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -70,17 +68,14 @@ impl Page {
     }
 }
 
-// TODO: we require 2 new() fns
-// TODO: make sure that the descriptions are correct
-// TODO: look into the "safeness" of the allocation/deallocation fns
-/// Represents a page allocator to be used OS wide.
+/// Represents the public interface of a page allocator.
 /// 
 /// # Safety
 /// 
 /// Implementors must adhere to the following rules:
-/// - The client **should** only be created after the [Frame Allocator](super::frames::FrameAllocator) is available, and it should, preferably, be static.
+/// - The client **should** only be initialized after the [Frame Allocator](super::frames::FrameAllocator) is available, and it should, preferably, be static.
 /// - Frame allocations are allowed as well as the use of the [Paging Context](crate::globals::ACTIVE_PAGING_CTX) for metadata creation.
-/// - No more than one page allocator can be [initialized](PageAllocator::init) at the same time but, it is expected to have a two stage system
+/// - No more than one page allocator can be [initialized](PageAllocator::init) and used at the same time but, a two stage system is expected
 ///   where a temporary page allocator is created that then gives place to a permanent one.
 /// - The page allocator must ensure that the [kernel prohibited memory ranges](crate::kernel::Kernel::prohibited_memory_ranges) are **never** violated.
 /// - If a two stage system is used:
@@ -90,27 +85,42 @@ impl Page {
 ///     to the permanent allocator will happen.
 ///   - The permanent allocator **must** assume that it will be used after the higher half remapping is completed where,
 ///     only the higher half needs to be "allocatable". This is, 127.5TB as the paging system is recursive and so, we loose 512GB of virtual memory.
+/// 
+/// # Const Constructors
+/// 
+/// All implementors **must** implement the following constructors:
+/// - `pub(in crate::memory) const fn new() -> Self;` with `#[cfg(not(test))]`
+/// - `pub const fn new() -> Self;` with `#[cfg(test)]`
+/// 
+/// These are requirements because Rust doesn't yet support const trait functions.
+/// 
+/// These shall be used for normal use and testing respectively. They might just be the same with different visibility.
 pub unsafe trait PageAllocator: Send + Sync {
-    fn allocate(&self) -> Result<Page, MemoryError>;
-    fn allocate_contiguous(&self) -> Result<Page, MemoryError>;
-
-    /// Deallocates `page`.
-    /// 
-    /// # Safety
-    /// 
-    /// The caller must ensure that:
-    /// - `page` is a page currently allocated by this allocator.
-    /// 
-    /// Otherwise, memory corruption or undefined behavior can happen.
+    /// Allocate a single page.
     /// 
     /// # Panics
     /// 
-    /// Instead of UB, the allocator may panic when trying to deallocate a page not currently allocated by this allocator.
-    unsafe fn deallocate(&self, page: Page);
+    /// If called before [initialization](PageAllocator::init()).
+    fn allocate(&self) -> Result<Page, MemoryError>;
+
+    /// Allocate multiple, contiguous, pages.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](PageAllocator::init()).
+    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError>;
+
+    /// Deallocates `page`.
+    /// 
+    /// # Panics
+    /// 
+    /// - May panic when trying to deallocate a page not currently allocated by this page allocator (implementation dependent).
+    /// - If called before [initialization](PageAllocator::init()).
+    fn deallocate(&self, page: Page);
 
     /// Resets the page allocator state.
     /// 
-    /// Any possible metadata **must** be initialized here.
+    /// All metadata (if used) **must** initialized here.
     /// 
     /// # Safety
     /// 
@@ -124,7 +134,7 @@ pub unsafe trait PageAllocator: Send + Sync {
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
-static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new(ORIGINALLY_IDENTITY_MAPPED);
+static FIRST_STAGE_PA: TemporaryPageAllocator = TemporaryPageAllocator::new();
 static SECOND_STAGE_PA: BitmapPageAllocator = BitmapPageAllocator::new();
 
 pub struct GlobalPageAllocator {
@@ -137,6 +147,8 @@ pub struct GlobalPageAllocator {
 unsafe impl Sync for GlobalPageAllocator {}
 
 impl GlobalPageAllocator {
+    // The global page allocator does not follow the requirement of 2 new() fns simply because we do not need it.
+    // Only the "real" allocators must be tested, and since this is wrapper, this does not.
     pub(in crate::memory) const fn new() -> Self {
         GlobalPageAllocator {
             first_stage: Cell::new(&FIRST_STAGE_PA),
@@ -192,24 +204,22 @@ impl GlobalPageAllocator {
     pub unsafe fn set_second_stage_allocator(&self, allocator: &'static dyn PageAllocator) {
         self.second_stage.set(allocator);
     }
+}
 
-    /// Look at [`PageAllocator::allocate()`] for more information.
-    pub fn allocate(&self) -> Result<Page, MemoryError> {
+unsafe impl PageAllocator for GlobalPageAllocator {
+    fn allocate(&self) -> Result<Page, MemoryError> {
         self.current().allocate()
     }
 
-    /// Look at [`PageAllocator::allocate_contiguous()`] for more information.
-    pub fn allocate_contiguous(&self) -> Result<Page, MemoryError> {
-        self.current().allocate_contiguous()
+    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError> {
+        self.current().allocate_contiguous(count)
     }
 
-    /// Look at [`PageAllocator::deallocate()`] for more information.
-    pub unsafe fn deallocate(&self, page: Page) {
-        unsafe { self.current().deallocate(page) };
+    fn deallocate(&self, page: Page) {
+        self.current().deallocate(page);
     }
 
-    /// Look at [`PageAllocator::init()`] for more information.
-    pub unsafe fn init(&self) -> Result<(), MemoryError> {
+    unsafe fn init(&self) -> Result<(), MemoryError> {
         unsafe { self.current().init() }
     }
 }
