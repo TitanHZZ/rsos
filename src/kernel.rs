@@ -61,12 +61,11 @@ impl Kernel {
         }
     }
 
-    // TODO: use different error for different problems :)
     /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
     /// place such as in an area that is not of type **AvailableRAM**.
     /// This will also check if the kernel fits well in the original (temporary) higher half mapping.
     /// 
-    /// If any of these fail, **Err(MemoryError::BadMemoryPlacement)** will be returned.
+    /// If any of these fail, **Err([MemoryError::BadMemoryPlacement])** or **Err([MemoryError::BadTemporaryHigherHalfMapping])** will be returned.
     pub fn check_placements(&self) -> Result<(), MemoryError> {
         let mem_map = self.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
@@ -87,7 +86,7 @@ impl Kernel {
 
         // check initial higher half mapping placement
         if (self.k_end - self.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
-            return Err(MemoryError::BadMemoryPlacement);
+            return Err(MemoryError::BadTemporaryHigherHalfMapping);
         }
 
         Ok(())
@@ -176,10 +175,12 @@ impl Kernel {
 
     /// Get the offset between the higher half frame allocator mapping and the lower half frame allocator mapping.
     /// 
-    /// This **will** panic if `FRAME_ALLOCATOR.prohibited_memory_range()` is **None**.
+    /// # Panics
+    /// 
+    /// If [FRAME_ALLOCATOR.metadata_memory_range()](crate::memory::frames::FrameAllocator::metadata_memory_range()) is **None**.
     pub fn fa_lh_hh_offset(&self) -> usize {
-        let prohibited_mem_range = FRAME_ALLOCATOR.metadata_memory_range()
-            .expect("fa_lh_hh_offset() can only be called when using a frame allocator with prohibited memory ranges");
-        (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - prohibited_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
+        let metadata_mem_range = FRAME_ALLOCATOR.metadata_memory_range()
+            .expect("fa_lh_hh_offset() can only be called when using a frame allocator with a metadata range");
+        (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - metadata_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
     }
 }

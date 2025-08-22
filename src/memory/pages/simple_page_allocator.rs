@@ -26,7 +26,7 @@ pub struct BitmapPageAllocator<'a> {
 
 impl<'a> BitmapPageAllocator<'a> {
     #[cfg(not(test))]
-    pub(in crate::memory) const fn new() -> Self {
+    pub(in crate::memory::pages) const fn new() -> Self {
         BitmapPageAllocator {
             l1: Mutex::new([const { None }; 261120]),
         }

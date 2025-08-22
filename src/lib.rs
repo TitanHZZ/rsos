@@ -75,7 +75,7 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     exit_qemu(0x10);
 }
 
-/// This is the Rust entry point nto the OS.
+/// This is the Rust entry point into the OS.
 /// 
 /// # Safety
 /// 

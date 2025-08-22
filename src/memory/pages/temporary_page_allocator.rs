@@ -1,5 +1,5 @@
-use crate::{assert_called_once, globals::ACTIVE_PAGING_CTX, kernel::ORIGINALLY_IDENTITY_MAPPED};
-use crate::memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::{assert_called_once, kernel::ORIGINALLY_IDENTITY_MAPPED};
 use crate::{data_structures::bitmap::Bitmap, serial_println};
 use spin::Mutex;
 
@@ -16,7 +16,7 @@ pub struct TemporaryPageAllocator(Mutex<TemporaryPageAllocatorInner>);
 impl TemporaryPageAllocator {
     /// Create a new **TemporaryPageAllocator** that holds 8 pages for allocation starting at [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED).
     #[cfg(not(test))]
-    pub(in crate::memory) const fn new() -> Self {
+    pub(in crate::memory::pages) const fn new() -> Self {
         TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
             bitmap: Bitmap::new(None),
             start_addr: ORIGINALLY_IDENTITY_MAPPED,
@@ -45,7 +45,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         // make sure that the pages are not being used
         for i in 0..allocator.bitmap.len() {
             let addr = allocator.start_addr + i * FRAME_PAGE_SIZE;
-            ACTIVE_PAGING_CTX.translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
+            MEMORY_SUBSYSTEM.active_paging_context().translate(addr).map_err(|_| MemoryError::BadTemporaryPageAllocator)?;
         }
 
         allocator.initialized = true;

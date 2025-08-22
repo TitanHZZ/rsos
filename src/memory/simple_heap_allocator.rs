@@ -274,6 +274,7 @@ unsafe impl GlobalAlloc for SimpleHeapAllocator {
         }
 
         if alloc_start + real_size > allocator.heap_start + allocator.heap_size {
+            // TODO: this should probably return a null ptr to indicate failure on allocation
             panic!("Out of heap memory!");
         }
 

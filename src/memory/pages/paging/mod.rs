@@ -1,16 +1,15 @@
 pub mod inactive_paging_context;
 
-use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress};
+use crate::{{globals::{FRAME_ALLOCATOR}, serial_println}, memory::{FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
-use crate::{globals::{FRAME_ALLOCATOR}, serial_println};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
 use spin::Mutex;
 
-// Safety:
-// Raw pointers are not Send/Sync so `Paging` cannot be used between threads as it would cause data races.
 /// Represents a paging context (active and currently being used).
 pub(in crate::memory) struct ActivePagingContextInner {
+    // TODO: can't this be a reference??
     p4: NonNull<Table<Level4>>,
 
     // makes this struct `own` a `Table<Level4>`
@@ -150,7 +149,6 @@ impl ActivePagingContextInner {
             .and_then(|p1| p1.entries[page.p1_index()].pointed_frame())
     }
 
-    // Safety: does not need locking as we are calling translate_page() that will lock()
     /// Takes the `virtual address` and returns the respective physical address if it exists (if it is mapped).
     pub(in crate::memory) fn translate(&self, virtual_addr: VirtualAddress) -> Result<Option<PhysicalAddress>, MemoryError> {
         let offset = virtual_addr % FRAME_PAGE_SIZE;
@@ -179,8 +177,7 @@ impl Default for ActivePagingContext {
 }
 
 impl ActivePagingContext {
-    // TODO: this should not be public
-    pub const fn new() -> Self {
+    pub(in crate::memory) const fn new() -> Self {
         ActivePagingContext(Mutex::new(ActivePagingContextInner {
             // this can be unchecked as we know that the ptr is non null
             p4: unsafe { NonNull::new_unchecked(P4) },
@@ -190,52 +187,44 @@ impl ActivePagingContext {
 
     /// Maps a specific Page to a specific Frame.
     pub fn map_page_to_frame(&self, page: Page, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.map_page_to_frame(page, frame, flags)
+        self.0.lock().map_page_to_frame(page, frame, flags)
     }
 
     /// Maps a specific Page to a (random) Frame.
     pub fn map_page<A: FrameAllocator>(&self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.map_page(page, flags)
+        self.0.lock().map_page(page, flags)
     }
 
     /// Maps the Page containing the `virtual_addr` to a (random) Frame.
     pub fn map(&self, virtual_addr: VirtualAddress, flags: EntryFlags) -> Result<(), MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.map(virtual_addr, flags)
+        self.0.lock().map(virtual_addr, flags)
     }
 
     /// Maps a Frame to a Page with same addr (identity mapping).
     pub fn identity_map(&self, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.identity_map(frame, flags)
+        self.0.lock().identity_map(frame, flags)
     }
 
-    /// This will unmap a `page` and the respective frame.
+    /// This will unmap a page and deallocate the respective frame, if requested. In the event that a page table gets emptied, it will also be deallocated.
     /// 
-    /// If an invalid `page` is given, it will simply be ignored as there is nothing to unmap.
+    /// If an invalid page is given, `MemoryError::UnmappingUnusedTableEntry` will be returned.
     pub fn unmap_page(&self, page: Page, deallocate_frame: bool) -> Result<(), MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.unmap_page(page, deallocate_frame)
+        self.0.lock().unmap_page(page, deallocate_frame)
     }
 
     /// This takes a Page and returns the respective Frame if the address is mapped.
     pub fn translate_page(&self, page: Page) -> Option<Frame> {
-        let apc = &*self.0.lock();
-        apc.translate_page(page)
+        self.0.lock().translate_page(page)
     }
 
     /// Takes the `virtual address` and returns the respective physical address if it exists (if it is mapped).
     pub fn translate(&self, virtual_addr: VirtualAddress) -> Result<Option<PhysicalAddress>, MemoryError> {
-        let apc = &mut *self.0.lock();
-        apc.translate(virtual_addr)
+        self.0.lock().translate(virtual_addr)
     }
 
     /// The current active paging context will become inactive and the inactive one, will become active.
     pub fn switch(&self, inactive_context: &mut InactivePagingContext) {
-        let apc = &*self.0.lock();
-        apc.switch(inactive_context);
+        self.0.lock().switch(inactive_context);
     }
 
     /// # Safety

@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{globals::{ACTIVE_PAGING_CTX, FRAME_ALLOCATOR}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{globals::FRAME_ALLOCATOR, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -73,7 +73,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
     );
 }
 
-/// This is the Rust entry point nto the OS.
+/// This is the Rust entry point into the OS.
 /// 
 /// # Safety
 /// 
@@ -98,32 +98,28 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // EFI boot services are not supported
     assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
-    // set up the frame allocator
-    unsafe {
-        FRAME_ALLOCATOR.init(&kernel).expect("Could not initialize the frame allocator allocation");
-        log!(ok, "Frame allocator allocation initialized.");
-    }
+    // initialize the frame allocator
+    unsafe { FRAME_ALLOCATOR.init(&kernel) }.expect("Could not initialize the frame allocator");
+    log!(ok, "Frame allocator allocation initialized.");
 
-    // initialize a temporary page allocator that starts right after the temporary identity mapping
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize a temporary page allocator");
-
-    // TODO: this CANNOT be allowed (but it is now)
-    // let adssd = ActivePagingContext::new();
+    // initialize the first stage page allocator
+    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory and the multiboot2 info.");
     { // this scope makes sure that the inactive context does not get used again
-        let inactive_paging = &mut InactivePagingContext::new(&ACTIVE_PAGING_CTX).unwrap();
+        let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
+        let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::remap(&kernel, &ACTIVE_PAGING_CTX, inactive_paging).expect("Could not remap the kernel");
+        memory::remap(&kernel, active_paging_context, inactive_paging).expect("Could not remap the kernel");
 
-        ACTIVE_PAGING_CTX.switch(inactive_paging);
+        active_paging_context.switch(inactive_paging);
 
         // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
         // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
-        ACTIVE_PAGING_CTX.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
+        active_paging_context.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
         serial_println!("guard_page_addr: {:#x}", guard_page_addr.addr());
     }
 
@@ -153,7 +149,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
         // and thus, we can start the kernel heap at the biggest of the 2
         let heap_start = max(kernel.k_end(), kernel.mb_end()).align_up(FRAME_PAGE_SIZE);
-        HEAP_ALLOCATOR.init(heap_start, 100 * 1024, &ACTIVE_PAGING_CTX)
+        HEAP_ALLOCATOR.init(heap_start, 100 * 1024, MEMORY_SUBSYSTEM.active_paging_context())
             .expect("Could not initialize the heap allocator");
         log!(ok, "Heap allocator initialized.");
     }
@@ -206,7 +202,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
     serial_println!("framebuffer type: {:#?}", fb_type);
 
-    ACTIVE_PAGING_CTX.identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
+    MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
     let b = unsafe  {

@@ -1,10 +1,9 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use core::ops::Deref;
-
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
 use crate::{memory::ProhibitedMemoryRange, kernel::Kernel};
+use core::ops::Deref;
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -70,10 +69,6 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// The addresses are virtual and so, they change from before higher half remapping to after it.
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
-
-// TODO: a good idea would be to create a simple mechanism that would allow an easy way to switch the frame allocator
-// even different allocators for different tests and "runners"
-// pub static FRAME_ALLOCATOR: BitmapFrameAllocator = BitmapFrameAllocator::new();
 
 /// The global frame allocator.
 pub struct GlobalFrameAllocator {

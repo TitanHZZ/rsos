@@ -9,7 +9,6 @@ use super::{MemoryError, VirtualAddress};
 use core::cell::Cell;
 
 // TODO: look into the whole covariant and invariants thing (and aliasing)
-// TODO: disable test mode by default for intellisense
 
 #[derive(Clone, Copy)]
 pub struct Page(usize); // this usize is the page index in the virtual memory
@@ -89,7 +88,7 @@ impl Page {
 /// # Const Constructors
 /// 
 /// All implementors **must** implement the following constructors:
-/// - `pub(in crate::memory) const fn new() -> Self;` with `#[cfg(not(test))]`
+/// - `pub(in crate::memory::pages) const fn new() -> Self;` with `#[cfg(not(test))]`
 /// - `pub const fn new() -> Self;` with `#[cfg(test)]`
 /// 
 /// These are requirements because Rust doesn't yet support const trait functions.
@@ -130,7 +129,7 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// 
     /// # Panics
     /// 
-    /// If called more than once.
+    /// If called more than once per allocator stage.
     unsafe fn init(&self) -> Result<(), MemoryError>;
 }
 
@@ -170,6 +169,7 @@ impl GlobalPageAllocator {
     /// 
     /// - **Must** be called *after* the remap to the higher half and before any higher half page allocations.
     /// - No allocations/deallocations can ever cross the switch so, users cannot allocate in the first stage, switch and then deallocate for example.
+    /// - This operation is **NOT** thread safe.
     /// 
     /// Failure to follow these rules will result in data races and data corruption.
     /// 
@@ -186,6 +186,7 @@ impl GlobalPageAllocator {
     /// # Safety
     /// 
     /// - **Must** be called before [init()](GlobalPageAllocator::init)ing the first stage allocator but NEVER after.
+    /// - This operation is **NOT** thread safe.
     /// 
     /// Failure to follow the rules will result in data races and data corruption.
     #[cfg(test)]
@@ -198,6 +199,7 @@ impl GlobalPageAllocator {
     /// # Safety
     /// 
     /// - **Must** be called before [init()](GlobalPageAllocator::init())ing the second stage allocator but NEVER after.
+    /// - This operation is **NOT** thread safe.
     /// 
     /// Failure to follow the rules will result in data races and data corruption.
     #[cfg(test)]

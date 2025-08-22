@@ -8,8 +8,6 @@ use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_c
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
 
-// TODO: create the concept of a "MemorySubsystem"
-
 // the size of the pages and frames
 pub const FRAME_PAGE_SIZE: usize = 4096;
 
@@ -101,6 +99,8 @@ pub enum MemoryError {
     FrameInvalidAllocatorAddr,
     /// The kernel was placed in a way that overlaps with memory rigions that are not `AvailableRAM`.
     BadMemoryPlacement,
+    /// The higher half temporary mapping is insufficient (not big enough).
+    BadTemporaryHigherHalfMapping,
     /// The start address given to the temporary page allocator conflicts with other mappings.
     BadTemporaryPageAllocator,
 
@@ -119,20 +119,27 @@ pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new();
 
 pub struct MemorySubsystem {
     pa: GlobalPageAllocator,
+    apc: ActivePagingContext,
 }
 
 impl MemorySubsystem {
     const fn new() -> Self {
         MemorySubsystem {
             pa: GlobalPageAllocator::new(),
+            apc: ActivePagingContext::new(),
         }
     }
 
-    /// Retieve the global page allocator.
+    /// Retrieve the global page allocator.
     /// 
     /// This **does not** lock the allocator.
     pub fn page_allocator(&self) -> &GlobalPageAllocator {
         &self.pa
+    }
+
+    /// Retrieve the active paging context.
+    pub fn active_paging_context(&self) -> &ActivePagingContext {
+        &self.apc
     }
 }
 

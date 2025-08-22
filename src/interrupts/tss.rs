@@ -1,7 +1,6 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::{globals::ACTIVE_PAGING_CTX, memory::pages::page_table::page_table_entry::EntryFlags};
-use crate::memory::{pages::Page, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
-use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE};
+use crate::memory::{pages::{Page, page_table::page_table_entry::EntryFlags}, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
+use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
 
@@ -75,6 +74,8 @@ impl TSS {
     /// - `page_count` needs to be at least 1 or `Err(TssError::PageCountIsZero)` will be returned.
     /// - the guard page is not part of the `page_count` meaning that if a page guard is used, the real page count allocated will be page_count + 1
     pub fn new_stack(&mut self, stack_number: TssStackNumber, page_count: u8, use_guard_page: bool) -> Result<(), TssError> {
+        let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
+
         // minimum 1 page for the stack
         if page_count == 0 {
             return Err(TssError::PageCountIsZero);
@@ -93,7 +94,7 @@ impl TSS {
             if self.previous_stack[stack_number as usize].1 {
                 let guard_page_addr = previous_stack_ptr as VirtualAddress;
                 let flags = EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE;
-                ACTIVE_PAGING_CTX.map(guard_page_addr, flags).map_err(TssError::Memory)?;
+                active_paging_context.map(guard_page_addr, flags).map_err(TssError::Memory)?;
             }
 
             unsafe { HEAP_ALLOCATOR.dealloc(previous_stack_ptr, previous_stack_layout) };
@@ -110,7 +111,7 @@ impl TSS {
 
         if use_guard_page {
             // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            ACTIVE_PAGING_CTX.unmap_page(Page::from_virt_addr(stack).unwrap(), true).map_err(TssError::Memory)?;
+            active_paging_context.unmap_page(Page::from_virt_addr(stack).unwrap(), true).map_err(TssError::Memory)?;
         }
 
         Ok(())
