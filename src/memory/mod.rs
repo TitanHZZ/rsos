@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{globals::FRAME_ALLOCATOR, kernel::{Kernel}, memory::pages::{GlobalPageAllocator, Page}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::{frames::GlobalFrameAllocator, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
@@ -119,6 +119,7 @@ pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new();
 
 pub struct MemorySubsystem {
     pa: GlobalPageAllocator,
+    fa: GlobalFrameAllocator,
     apc: ActivePagingContext,
 }
 
@@ -126,6 +127,7 @@ impl MemorySubsystem {
     const fn new() -> Self {
         MemorySubsystem {
             pa: GlobalPageAllocator::new(),
+            fa: GlobalFrameAllocator::new(),
             apc: ActivePagingContext::new(),
         }
     }
@@ -140,6 +142,13 @@ impl MemorySubsystem {
     /// Retrieve the active paging context.
     pub fn active_paging_context(&self) -> &ActivePagingContext {
         &self.apc
+    }
+
+    /// Retrieve the global frame allocator.
+    /// 
+    /// This **does not** lock the allocator.
+    pub fn frame_allocator(&self) -> &GlobalFrameAllocator {
+        &self.fa
     }
 }
 

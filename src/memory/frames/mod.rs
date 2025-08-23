@@ -1,9 +1,9 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
+use crate::{kernel::Kernel, memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator, ProhibitedMemoryRange}};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
-use crate::{memory::ProhibitedMemoryRange, kernel::Kernel};
-use core::ops::Deref;
+use core::cell::Cell;
 
 #[repr(transparent)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -19,20 +19,20 @@ impl Frame {
     }
 }
 
-/// Represents a frame allocator to be used OS wide.
+/// Represents the public interface of a frame allocator.
 /// 
 /// # Safety
 /// 
 /// Implementors must ensure that they adhere to these contracts:
 /// - The client **should** be created very early on, and it should, preferably, be static.
-/// - [init()](FrameAllocator::init) **must** be called very early on, preferably before remapping the [kernel](Kernel) and [multiboot2](crate::multiboot2::MbBootInfo) to the higher half.
+/// - [init()](FrameAllocator::init) **must** be called very early on, before the higher half remapping and before performing any allocations.
 /// - The frame allocator must ensure that the [kernel prohibited memory ranges](Kernel::prohibited_memory_ranges) are **never** violated.
 /// - Only [valid RAM](crate::multiboot2::memory_map::MemoryMapEntries::usable_areas) can be used for metadata, if necessary.
 /// - If metadata is used, it will **need** to be remapped with [remap()](FrameAllocator::remap) as soon as the higher half remapping is completed.
-/// - No more than one frame allocator is expected to ever exist at runtime.
+/// - No more than one frame allocator is ever expected to be initialized at the same time.
 /// - The allocator may rely on [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED) to safely create it's metadata.
 /// - The use of the [Page Allocator](crate::memory::pages::PageAllocator) is **prohibited** to ensure that no recursive state is ever reached.
-/// - The use of the [Paging Context](crate::globals::ACTIVE_PAGING_CTX) is also **prohibited** to ensure that no recursive state is ever reached.
+/// - The use of the [Paging Context](crate::memory::pages::paging::ActivePagingContext) is also **prohibited** to ensure that no recursive state is ever reached.
 pub unsafe trait FrameAllocator: Send + Sync {
     fn allocate(&self) -> Result<Frame, MemoryError>;
     fn deallocate(&self, frame: Frame);
@@ -70,23 +70,19 @@ pub unsafe trait FrameAllocator: Send + Sync {
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange>;
 }
 
+static FA: BitmapFrameAllocator = BitmapFrameAllocator::new();
+
 /// The global frame allocator.
 pub struct GlobalFrameAllocator {
-    fa: Option<&'static dyn FrameAllocator>,
+    fa: Cell<&'static dyn FrameAllocator>,
 }
+
+unsafe impl Sync for GlobalFrameAllocator {}
 
 impl GlobalFrameAllocator {
-    pub const fn new(fa: &'static dyn FrameAllocator) -> Self {
+    pub const fn new() -> Self {
         GlobalFrameAllocator {
-            fa: Some(fa)
+            fa: Cell::new(&FA),
         }
-    }
-}
-
-impl Deref for GlobalFrameAllocator {
-    type Target = dyn FrameAllocator;
-
-    fn deref(&self) -> &Self::Target {
-        self.fa.unwrap()
     }
 }
