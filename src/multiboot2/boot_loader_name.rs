@@ -1,22 +1,21 @@
 #![allow(dead_code)]
-
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
-pub(crate) struct BootLoaderName {
+pub struct BootLoaderName {
     header: MbTagHeader,
     string: [u8],
 }
 
 #[derive(Debug)]
-pub(crate) enum BootLoaderNameError {
+pub enum BootLoaderNameError {
     StringMissingNull,
     StringNotUtf8,
 }
 
 impl BootLoaderName {
-    pub(crate) fn string(&self) -> Result<&str, BootLoaderNameError> {
+    pub fn string(&self) -> Result<&str, BootLoaderNameError> {
         // get the cstr using ffi and return it as a &str
         let cstr = core::ffi::CStr::from_bytes_until_nul(&self.string).map_err(|_| BootLoaderNameError::StringMissingNull)?;
         cstr.to_str().map_err(|_| BootLoaderNameError::StringNotUtf8)

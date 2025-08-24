@@ -1,7 +1,6 @@
-use crate::memory::AddrOps;
-
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::ptr::{addr_of, slice_from_raw_parts};
+use crate::memory::AddrOps;
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]

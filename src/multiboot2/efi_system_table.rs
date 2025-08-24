@@ -4,16 +4,16 @@ use super::{tag_trait::MbTag, MbTagHeader, TagType};
 // Maybe it could be removed?
 #[repr(C)]
 #[allow(dead_code)]
-pub(crate) struct Efi32BitSystemTablePtr {
+pub struct Efi32BitSystemTablePtr {
     header: MbTagHeader,
-    pub(crate) pointer: u32,
+    pub pointer: u32,
 }
 
 #[repr(C)]
 #[allow(dead_code)]
-pub(crate) struct Efi64BitSystemTablePtr {
+pub struct Efi64BitSystemTablePtr {
     header: MbTagHeader,
-    pub(crate) pointer: u64,
+    pub pointer: u64,
 }
 
 impl MbTag for Efi32BitSystemTablePtr {

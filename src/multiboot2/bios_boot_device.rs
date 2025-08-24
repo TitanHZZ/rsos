@@ -2,11 +2,11 @@ use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[allow(dead_code)]
-pub(crate) struct BiosBootDevice {
+pub struct BiosBootDevice {
     header: MbTagHeader,
-    pub(crate) biosdev: u32,
-    pub(crate) partition: u32,
-    pub(crate) sub_partition: u32,
+    pub biosdev: u32,
+    pub partition: u32,
+    pub sub_partition: u32,
 }
 
 impl MbTag for BiosBootDevice {

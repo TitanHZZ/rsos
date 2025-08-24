@@ -1,13 +1,13 @@
 use crate::{memory::VirtualAddress};
 use super::{MbTagHeader, TagType};
 
-pub(crate) struct MbTagIter {
+pub(in crate::multiboot2) struct MbTagIter {
     curr_tag_addr: *const MbTagHeader,
     max_tag_addr: VirtualAddress,
 }
 
 impl MbTagIter {
-    pub(crate) fn new(curr_tag_addr: *const MbTagHeader, max_tag_addr: VirtualAddress) -> Self {
+    pub(in crate::multiboot2) fn new(curr_tag_addr: *const MbTagHeader, max_tag_addr: VirtualAddress) -> Self {
         // Safety: This assumes that, because this *should* come from MbBootInfo, the pointer is valid (non null, aligned and points to valid tags).
         MbTagIter {
             curr_tag_addr,

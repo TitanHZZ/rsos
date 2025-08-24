@@ -81,6 +81,13 @@ pub struct MbBootInfo {
     tags_ptr: *const MbTagHeader,
 }
 
+// # Safety
+// 
+// Raw pointers are not Send/Sync however, we are only ever reading data from the pointer and never
+// writing, what means that, data races are not possibe.
+unsafe impl Send for MbBootInfo {}
+unsafe impl Sync for MbBootInfo {}
+
 #[derive(Debug)]
 pub enum MbBootInfoError {
     Not64BitAligned,

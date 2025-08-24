@@ -1,6 +1,8 @@
-use crate::{globals::FRAME_ALLOCATOR, memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
-use crate::{memory::{AddrOps, VirtualAddress, FRAME_PAGE_SIZE, ProhibitedMemoryRange}, multiboot2::MbBootInfo, serial_println};
-use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType};
+use spin::Mutex;
+
+use crate::memory::{frames::FrameAllocator, AddrOps, ProhibitedMemoryRange, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::{memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
+use crate::{multiboot2::{memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo}, serial_println};
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
@@ -17,20 +19,32 @@ const _: () = assert!(ORIGINALLY_HIGHER_HALF_MAPPED.is_multiple_of(FRAME_PAGE_SI
 
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
+static KERNEL: Kernel = Kernel(Mutex::new(KernelInner {
+    k_start : 0,
+    k_end   : 0,
+    mb_info : None,
+    mb_start: 0,
+    mb_end  : 0,
+}));
+
 // TODO: this should probably be a static and hold a mutex
-pub struct Kernel {
+struct KernelInner {
     // kernel (physical addrs)
     k_start: usize,
     k_end: usize,
 
     // multiboot2 (physical addrs)
-    mb_info: MbBootInfo,
+    mb_info: Option<MbBootInfo>,
     mb_start: usize,
     mb_end: usize,
 }
 
+pub struct Kernel(Mutex<KernelInner>);
+
 impl Kernel {
-    pub fn new(mb_info: MbBootInfo) -> Self {
+    pub unsafe fn init(&self, mb_info: MbBootInfo) {
+        let kernel = &mut *self.0.lock();
+
         // get the necessary mb2 tags and data
         let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
         let elf_sections: ElfSymbolsIter = elf_symbols.sections().expect("Elf sections are invalid");
@@ -51,11 +65,11 @@ impl Kernel {
         serial_println!("kernel start (higher half): {:#x}, kernel end: {:#x}", k_start + Self::k_lh_hh_offset(), k_end + Self::k_lh_hh_offset());
         serial_println!("mb start: {:#x}, mb end: {:#x}", mb_start, mb_end);
 
-        Kernel {
+        *kernel = KernelInner {
             k_start,
             k_end,
 
-            mb_info,
+            mb_info: Some(mb_info),
             mb_start,
             mb_end,
         }
@@ -73,19 +87,20 @@ impl Kernel {
         // check `prohibited_memory_ranges()` placements
         if self.prohibited_memory_ranges().iter().any(|range|
             mem_map_entries.into_iter()
-                .filter(|&area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
-                .any(|area| {
-                    let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
-                    let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
-
-                    area_start <= range.end_addr() && range.start_addr() <= area_end
-                })
+            .filter(|&area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
+            .any(|area| {
+                let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
+                let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
+                
+                area_start <= range.end_addr() && range.start_addr() <= area_end
+            })
         ) {
             return Err(MemoryError::BadMemoryPlacement);
         }
 
         // check initial higher half mapping placement
-        if (self.k_end - self.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
+        let kernel = &*self.0.lock();
+        if (kernel.k_end - kernel.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
             return Err(MemoryError::BadTemporaryHigherHalfMapping);
         }
 
@@ -99,10 +114,11 @@ impl Kernel {
     /// 
     /// There are no order guarantees for the memory ranges.
     pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
+        let kernel = &*self.0.lock();
         [
             ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
-            ProhibitedMemoryRange::new(self.k_start,  self.k_end),
-            ProhibitedMemoryRange::new(self.mb_start, self.mb_end),
+            ProhibitedMemoryRange::new(kernel.k_start,  kernel.k_end),
+            ProhibitedMemoryRange::new(kernel.mb_start, kernel.mb_end),
         ]
     }
 
@@ -146,26 +162,28 @@ impl Kernel {
 
     /// Kernel start address in physical memory.
     pub fn k_start(&self) -> VirtualAddress {
-        self.k_start
+        self.0.lock().k_start
     }
 
     /// Kernel end address in physical memory.
     pub fn k_end(&self) -> VirtualAddress {
-        self.k_end
+        self.0.lock().k_end
     }
 
+    // TODO: fix this
     pub fn mb_info(&self) -> &MbBootInfo {
-        &self.mb_info
+        let a = self.0.lock().mb_info.as_ref().unwrap();
+        todo!()
     }
 
     /// Multiboot2 info start address in physical memory.
     pub fn mb_start(&self) -> VirtualAddress {
-        self.mb_start
+        self.0.lock().mb_start
     }
 
     /// Multiboot2 info end address in physical memory.
     pub fn mb_end(&self) -> VirtualAddress {
-        self.mb_end
+        self.0.lock().mb_end
     }
 
     /// Get the offset between the higher half multiboot2 mapping and the lower half multiboot2 mapping.
@@ -173,13 +191,14 @@ impl Kernel {
         (self.k_end() + Self::k_lh_hh_offset() - self.mb_start()).align_up(FRAME_PAGE_SIZE)
     }
 
+    // TODO: this should probably not be able to create deadlocks
     /// Get the offset between the higher half frame allocator mapping and the lower half frame allocator mapping.
     /// 
     /// # Panics
     /// 
     /// If [FRAME_ALLOCATOR.metadata_memory_range()](crate::memory::frames::FrameAllocator::metadata_memory_range()) is **None**.
     pub fn fa_lh_hh_offset(&self) -> usize {
-        let metadata_mem_range = FRAME_ALLOCATOR.metadata_memory_range()
+        let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range()
             .expect("fa_lh_hh_offset() can only be called when using a frame allocator with a metadata range");
         (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - metadata_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
     }

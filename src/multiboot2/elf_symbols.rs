@@ -1,7 +1,6 @@
 // https://github.com/fabiansperber/multiboot2-elf64/blob/master/README.md
 // https://refspecs.linuxfoundation.org/elf/elf.pdf
 use crate::{kernel::Kernel, memory::PhysicalAddress};
-
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 use core::{ptr::slice_from_raw_parts, ffi::CStr};
 use bitflags::bitflags;

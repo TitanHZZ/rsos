@@ -2,17 +2,17 @@ use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[allow(dead_code)]
-pub(crate) struct ApmTable {
+pub struct ApmTable {
     header: MbTagHeader,
-    pub(crate) version: u16,
-    pub(crate) cseg: u16,
-    pub(crate) offset: u32,
-    pub(crate) cseg_16: u16,
-    pub(crate) dseg: u16,
-    pub(crate) flags: u16,
-    pub(crate) cseg_len: u16,
-    pub(crate) cseg_16_len: u16,
-    pub(crate) dseg_len: u16,
+    pub version: u16,
+    pub cseg: u16,
+    pub offset: u32,
+    pub cseg_16: u16,
+    pub dseg: u16,
+    pub flags: u16,
+    pub cseg_len: u16,
+    pub cseg_16_len: u16,
+    pub dseg_len: u16,
 }
 
 impl MbTag for ApmTable {

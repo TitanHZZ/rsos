@@ -1,6 +1,6 @@
-use crate::{data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress, multiboot2::memory_map::MemoryMapEntries};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
+use crate::{{serial_println, multiboot2::memory_map::MemoryMap}, multiboot2::memory_map::MemoryMapEntries};
 use crate::memory::{AddrOps, MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE};
-use crate::{serial_println, multiboot2::memory_map::MemoryMap};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -12,6 +12,8 @@ struct BitmapFrameAllocatorInner<'a> {
     next_free_frame: usize,
 
     prohibited_mem_range: ProhibitedMemoryRange,
+
+    initialized: bool,
 }
 
 pub struct BitmapFrameAllocator<'a>(Mutex<BitmapFrameAllocatorInner<'a>>);
@@ -88,20 +90,33 @@ impl<'a> BitmapFrameAllocatorInner<'a> {
 }
 
 impl<'a> BitmapFrameAllocator<'a> {
+    #[cfg(not(test))]
+    pub(in crate::memory::frames) const fn new() -> Self {
+        BitmapFrameAllocator (Mutex::new(BitmapFrameAllocatorInner {
+            mem_map_entries: None,
+            bitmap: None,
+            next_free_frame: 0,
+            prohibited_mem_range: ProhibitedMemoryRange::empty(),
+            initialized: false,
+        }))
+    }
+
+    #[cfg(test)]
     pub const fn new() -> Self {
         BitmapFrameAllocator (Mutex::new(BitmapFrameAllocatorInner {
             mem_map_entries: None,
-
             bitmap: None,
             next_free_frame: 0,
-
             prohibited_mem_range: ProhibitedMemoryRange::empty(),
+            initialized: false,
         }))
     }
 }
 
 unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+        assert_called_once!("Cannot call BitmapFrameAllocator::init() more than once");
+
         let allocator = &mut *self.0.lock();
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
 
@@ -189,11 +204,14 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
 
         serial_println!("Bitmap created! Starting at addr : {:#x}", bitmap_start_addr as PhysicalAddress);
 
+        allocator.initialized = true;
         Ok(())
     }
 
     fn allocate(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
+
         let frame = allocator.bit_idx_to_frame(allocator.next_free_frame).ok_or(MemoryError::NotEnoughPhyMemory)?;
         allocator.bitmap.as_mut().unwrap().set(allocator.next_free_frame, true);
         allocator.next_free_frame = allocator.get_next_free_frame().ok_or(MemoryError::NotEnoughPhyMemory)?;
@@ -206,6 +224,8 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
     // TODO: maybe it would make sense to check if the frame to be deallocated is in the kernel prohibited ranges
     fn deallocate(&self, frame: Frame) {
         let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
+
         let bit_idx = allocator.frame_to_bit_idx(frame).unwrap_or_else(|| panic!("Got Invalid frame for deallocation: {:#x}", frame.0));
 
         let bitmap = allocator.bitmap.as_mut().unwrap();
@@ -217,10 +237,14 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
 
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
         let allocator = &*self.0.lock();
+        assert!(allocator.initialized);
         Some(allocator.prohibited_mem_range)
     }
 
     unsafe fn remap(&self, kernel: &Kernel) {
+        assert!(self.0.lock().initialized);
+        assert_called_once!("Cannot call BitmapFrameAllocator::remap() more than once");
+
         // to avoid a deadlock, we do this before acquiring the lock
         let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
 
@@ -230,8 +254,12 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         let bitmap_start_addr = (bitmap.data_ptr_mut() as VirtualAddress + fa_lh_hh_offset) as *mut u8;
         serial_println!("Remapping frame allocator to: {:#x}", bitmap_start_addr as VirtualAddress);
 
+        let bitmap_frames_count = bitmap.len().align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
         allocator.bitmap = Some(unsafe {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap.len(), Some(bitmap.bit_len()))
         });
+
+        let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
+        allocator.prohibited_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
     }
 }

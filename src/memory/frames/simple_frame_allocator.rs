@@ -1,4 +1,4 @@
-use crate::{kernel::{Kernel, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
+use crate::{assert_called_once, kernel::{Kernel, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
 use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType, MemoryMapEntries};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
@@ -14,6 +14,8 @@ struct SimpleFrameAllocatorInner {
 
     // memory ranges that we need to avoid using so we don't override important memory
     kernel_prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
+
+    initialized: bool,
 }
 
 pub struct SimpleFrameAllocator(Mutex<SimpleFrameAllocatorInner>);
@@ -25,20 +27,32 @@ impl Default for SimpleFrameAllocator {
 }
 
 impl SimpleFrameAllocator {
+    #[cfg(not(test))]
+    pub(in crate::memory::frames) const fn new() -> Self {
+        SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
+            areas: None,
+            current_area: 0,
+            next_frame: Frame(0x0),
+            kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+            initialized: false,
+        }))
+    }
+
+    #[cfg(test)]
     pub const fn new() -> Self {
         SimpleFrameAllocator(Mutex::new(SimpleFrameAllocatorInner {
             areas: None,
             current_area: 0,
-
             next_frame: Frame(0x0),
-
             kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+            initialized: false,
         }))
     }
 }
 
 unsafe impl FrameAllocator for SimpleFrameAllocator {
     unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+        assert_called_once!("Cannot call SimpleFrameAllocator::init() more than once");
         let allocator = &mut *self.0.lock();
 
         let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
@@ -59,11 +73,13 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
             allocator.get_next_free_frame()?;
         }
 
+        allocator.initialized = true;
         Ok(())
     }
 
     fn allocate(&self) -> Result<Frame, MemoryError> {
         let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
 
         let frame = Ok(allocator.next_frame)?;
         allocator.get_next_free_frame()?;
@@ -76,16 +92,20 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         Ok(frame)
     }
 
-    /// This allocator does not support deallocation, what means that this will panic.
+    // This allocator does not support deallocation.
     fn deallocate(&self, _frame: Frame) {
-        unimplemented!();
+        assert!(self.0.lock().initialized);
     }
 
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+        assert!(self.0.lock().initialized);
         None
     }
 
-    unsafe fn remap(&self, _kernel: &Kernel) {}
+    unsafe fn remap(&self, _kernel: &Kernel) {
+        assert!(self.0.lock().initialized);
+        assert_called_once!("Cannot call SimpleFrameAllocator::remap() more than once");
+    }
 }
 
 impl SimpleFrameAllocatorInner {

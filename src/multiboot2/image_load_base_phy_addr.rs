@@ -2,7 +2,7 @@ use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[allow(dead_code)]
-pub(crate) struct ImageLoadBasePhysicalAdress {
+pub struct ImageLoadBasePhysicalAdress {
     header: MbTagHeader,
     load_base_addr: u32,
 }

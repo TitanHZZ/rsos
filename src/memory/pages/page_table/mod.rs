@@ -1,6 +1,6 @@
 pub mod page_table_entry;
 
-use crate::{globals::FRAME_ALLOCATOR, memory::{MemoryError}};
+use crate::memory::{frames::FrameAllocator, MemoryError, MEMORY_SUBSYSTEM};
 use page_table_entry::{Entry, EntryFlags};
 use core::marker::PhantomData;
 
@@ -109,7 +109,7 @@ impl<L: HierarchicalLevel> Table<L> {
         // check if page table is already allocated
         if self.next_table(table_index).is_none() {
             // page table is not yet created so allocate a new frame to hold the new page table
-            let frame = FRAME_ALLOCATOR.allocate()?;
+            let frame = MEMORY_SUBSYSTEM.frame_allocator().allocate()?;
 
             // set the new entry
             self.entries[table_index].set(frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);

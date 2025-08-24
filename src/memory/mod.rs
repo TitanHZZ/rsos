@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{globals::FRAME_ALLOCATOR, kernel::Kernel, memory::{frames::GlobalFrameAllocator, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{kernel::Kernel, memory::{frames::{FrameAllocator, GlobalFrameAllocator}, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
@@ -190,12 +190,12 @@ pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagin
         }
 
         // higher half map the frame allocator metadata memory region
-        if FRAME_ALLOCATOR.metadata_memory_range().is_none() {
+        if MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().is_none() {
             return Ok(());
         }
 
         let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
-        let prohibited_mem_range = FRAME_ALLOCATOR.metadata_memory_range().unwrap();
+        let prohibited_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
         for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;

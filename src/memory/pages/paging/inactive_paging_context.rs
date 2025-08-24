@@ -1,5 +1,5 @@
-use crate::memory::{pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, PageAllocator}, MemoryError, MEMORY_SUBSYSTEM};
-use crate::{globals::{FRAME_ALLOCATOR}, memory::{cr3::CR3, frames::Frame}};
+use crate::memory::{frames::FrameAllocator, pages::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT}, PageAllocator}, MemoryError, MEMORY_SUBSYSTEM};
+use crate::memory::{cr3::CR3, frames::Frame};
 use super::ActivePagingContext;
 
 pub struct InactivePagingContext {
@@ -12,7 +12,7 @@ impl InactivePagingContext {
     pub fn new(active_paging: &ActivePagingContext) -> Result<Self, MemoryError> {
         let page_allocator = MEMORY_SUBSYSTEM.page_allocator();
 
-        let p4_frame = FRAME_ALLOCATOR.allocate()?;
+        let p4_frame = MEMORY_SUBSYSTEM.frame_allocator().allocate()?;
         let p4_page = page_allocator.allocate()?;
 
         // map the p4 frame

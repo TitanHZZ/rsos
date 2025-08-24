@@ -1,22 +1,21 @@
 #![allow(dead_code)]
-
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
-pub(crate) struct CmdLine {
+pub struct CmdLine {
     header: MbTagHeader,
     string: [u8],
 }
 
 #[derive(Debug)]
-pub(crate) enum CmdLineError {
+pub enum CmdLineError {
     StringMissingNull,
     StringNotUtf8,
 }
 
 impl CmdLine {
-    pub(crate) fn string(&self) -> Result<&str, CmdLineError> {
+    pub fn string(&self) -> Result<&str, CmdLineError> {
         // get the cstr using ffi and return it as a &str
         let cstr = core::ffi::CStr::from_bytes_until_nul(&self.string).map_err(|_| CmdLineError::StringMissingNull)?;
         cstr.to_str().map_err(|_| CmdLineError::StringNotUtf8)

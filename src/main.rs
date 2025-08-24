@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{globals::FRAME_ALLOCATOR, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -99,11 +99,12 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
     // initialize the frame allocator
-    unsafe { FRAME_ALLOCATOR.init(&kernel) }.expect("Could not initialize the frame allocator");
-    log!(ok, "Frame allocator allocation initialized.");
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().init(&kernel) }.expect("Could not initialize the frame allocator");
+    log!(ok, "Frame allocator initialized.");
 
     // initialize the first stage page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
+    log!(ok, "First stage page allocator initialized.");
 
     // get the current paging context and create a new (empty) one
     log!(ok, "Remapping the kernel memory and the multiboot2 info.");
@@ -131,7 +132,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     let kernel = Kernel::new(mb_info);
 
     // fix the frame allocator
-    unsafe { FRAME_ALLOCATOR.remap(&kernel) };
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap(&kernel) };
 
     rsos::hlt();
 

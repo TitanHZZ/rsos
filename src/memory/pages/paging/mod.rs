@@ -1,8 +1,8 @@
 pub mod inactive_paging_context;
 
 use crate::memory::{cr3::CR3, frames::{Frame, FrameAllocator}, pages::PageAllocator, MemoryError, PhysicalAddress, VirtualAddress};
-use crate::{{globals::{FRAME_ALLOCATOR}, serial_println}, memory::{FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}};
 use super::{page_table::{page_table_entry::EntryFlags, Level4, Table, ENTRY_COUNT, P4}, Page};
+use crate::{serial_println, memory::{FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}};
 use inactive_paging_context::InactivePagingContext;
 use core::{marker::PhantomData, ptr::NonNull};
 use spin::Mutex;
@@ -61,7 +61,7 @@ impl ActivePagingContextInner {
     /// Maps a specific Page to a (random) Frame.
     pub(in crate::memory) fn map_page(&mut self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
-        let frame = FRAME_ALLOCATOR.allocate()?;
+        let frame = MEMORY_SUBSYSTEM.frame_allocator().allocate()?;
         self.map_page_to_frame(page, frame, flags)
     }
 
@@ -92,7 +92,7 @@ impl ActivePagingContextInner {
         p1.set_used_entries_count(p1.used_entries_count() - 1);
 
         if deallocate_frame {
-            FRAME_ALLOCATOR.deallocate(frame);
+            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
         }
 
         if p1.used_entries_count() == 0 {
@@ -105,7 +105,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-            FRAME_ALLOCATOR.deallocate(frame);
+            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
             serial_println!("Deallocated a P1 table.");
         }
 
@@ -119,7 +119,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p3.set_used_entries_count(p3.used_entries_count() - 1);
 
-            FRAME_ALLOCATOR.deallocate(frame);
+            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
             serial_println!("Deallocated a P2 table.");
         }
 
@@ -131,7 +131,7 @@ impl ActivePagingContextInner {
             let frame = entry.pointed_frame().unwrap();
 
             entry.set_unused();
-            FRAME_ALLOCATOR.deallocate(frame);
+            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
             serial_println!("Deallocated a P3 table.");
         }
 
