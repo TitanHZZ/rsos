@@ -1,4 +1,4 @@
-use crate::{assert_called_once, kernel::{Kernel, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
+use crate::{assert_called_once, kernel::{Kernel, KERNEL, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
 use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType, MemoryMapEntries};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
@@ -51,15 +51,15 @@ impl SimpleFrameAllocator {
 }
 
 unsafe impl FrameAllocator for SimpleFrameAllocator {
-    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+    unsafe fn init(&self) -> Result<(), MemoryError> {
         assert_called_once!("Cannot call SimpleFrameAllocator::init() more than once");
         let allocator = &mut *self.0.lock();
 
-        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
+        let mem_map = KERNEL.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
 
         allocator.areas = Some(mem_map_entries);
-        allocator.kernel_prohibited_memory_ranges = kernel.prohibited_memory_ranges();
+        allocator.kernel_prohibited_memory_ranges = KERNEL.prohibited_memory_ranges();
 
         // get the first area of type `MemoryMapEntryType::AvailableRAM` with enough space
         // if this does not work, it means that we do not have enough physical memory (more specifically, available RAM)
@@ -102,7 +102,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         None
     }
 
-    unsafe fn remap(&self, _kernel: &Kernel) {
+    unsafe fn remap(&self) {
         assert!(self.0.lock().initialized);
         assert_called_once!("Cannot call SimpleFrameAllocator::remap() more than once");
     }

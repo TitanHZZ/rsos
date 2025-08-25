@@ -1,8 +1,8 @@
-use spin::Mutex;
-
 use crate::memory::{frames::FrameAllocator, AddrOps, ProhibitedMemoryRange, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use crate::{memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
 use crate::{multiboot2::{memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo}, serial_println};
+use crate::assert_called_once;
+use core::cell::Cell;
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
@@ -19,15 +19,17 @@ const _: () = assert!(ORIGINALLY_HIGHER_HALF_MAPPED.is_multiple_of(FRAME_PAGE_SI
 
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
-static KERNEL: Kernel = Kernel(Mutex::new(KernelInner {
+// TODO: check the whole panic and asserts thing
+
+pub static KERNEL: Kernel = Kernel(Cell::new(KernelInner {
     k_start : 0,
     k_end   : 0,
     mb_info : None,
     mb_start: 0,
     mb_end  : 0,
+    initialized: false,
 }));
 
-// TODO: this should probably be a static and hold a mutex
 struct KernelInner {
     // kernel (physical addrs)
     k_start: usize,
@@ -37,14 +39,16 @@ struct KernelInner {
     mb_info: Option<MbBootInfo>,
     mb_start: usize,
     mb_end: usize,
+
+    initialized: bool,
 }
 
-pub struct Kernel(Mutex<KernelInner>);
+pub struct Kernel(Cell<KernelInner>);
 
-impl Kernel {
-    pub unsafe fn init(&self, mb_info: MbBootInfo) {
-        let kernel = &mut *self.0.lock();
+unsafe impl Sync for Kernel {}
 
+impl KernelInner {
+    fn new(mb_info: MbBootInfo) -> Self {
         // get the necessary mb2 tags and data
         let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
         let elf_sections: ElfSymbolsIter = elf_symbols.sections().expect("Elf sections are invalid");
@@ -62,17 +66,55 @@ impl Kernel {
         let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
         serial_println!("kernel start (lower half):  {:#x}, kernel end: {:#x}", k_start, k_end);
-        serial_println!("kernel start (higher half): {:#x}, kernel end: {:#x}", k_start + Self::k_lh_hh_offset(), k_end + Self::k_lh_hh_offset());
+        serial_println!("kernel start (higher half): {:#x}, kernel end: {:#x}", k_start + Kernel::k_lh_hh_offset(), k_end + Kernel::k_lh_hh_offset());
         serial_println!("mb start: {:#x}, mb end: {:#x}", mb_start, mb_end);
 
-        *kernel = KernelInner {
+        KernelInner {
             k_start,
             k_end,
 
             mb_info: Some(mb_info),
             mb_start,
             mb_end,
+
+            initialized: true,
         }
+    }
+}
+
+impl Kernel {
+    /// Get a reference to the inner data.
+    fn inner(&self) -> &KernelInner {
+        // Safety: This is safe since we know that the pointer in the Cell will always point to some data and will never be null.
+        unsafe { &*self.0.as_ptr() }
+    }
+
+    /// Initialize the Kernel main structure.
+    /// 
+    /// # Safety
+    /// 
+    /// This operation is **NOT** thread safe.
+    /// 
+    /// # Panics
+    /// 
+    /// If called more than once.
+    pub unsafe fn init(&self, mb_info: MbBootInfo) {
+        assert_called_once!("Cannot call Kernel::init() more than once");
+        self.0.set(KernelInner::new(mb_info));
+    }
+
+    /// Rebuilds the main kernel structure with the new, higher half, multiboot2 information structure.
+    /// 
+    /// # Safety
+    /// 
+    /// This operation is **NOT** thread safe.
+    /// 
+    /// # Panics
+    /// 
+    /// If called more than once.
+    pub unsafe fn rebuild(&self, mb_info: MbBootInfo) {
+        assert_called_once!("Cannot call Kernel::rebuild() more than once");
+        self.0.set(KernelInner::new(mb_info));
     }
 
     /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
@@ -81,6 +123,9 @@ impl Kernel {
     /// 
     /// If any of these fail, **Err([MemoryError::BadMemoryPlacement])** or **Err([MemoryError::BadTemporaryHigherHalfMapping])** will be returned.
     pub fn check_placements(&self) -> Result<(), MemoryError> {
+        let inner = self.inner();
+        assert!(inner.initialized);
+
         let mem_map = self.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
         let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
 
@@ -99,8 +144,7 @@ impl Kernel {
         }
 
         // check initial higher half mapping placement
-        let kernel = &*self.0.lock();
-        if (kernel.k_end - kernel.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
+        if (inner.k_end - inner.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
             return Err(MemoryError::BadTemporaryHigherHalfMapping);
         }
 
@@ -114,11 +158,12 @@ impl Kernel {
     /// 
     /// There are no order guarantees for the memory ranges.
     pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
-        let kernel = &*self.0.lock();
+        let inner = self.inner();
+        assert!(inner.initialized);
         [
             ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
-            ProhibitedMemoryRange::new(kernel.k_start,  kernel.k_end),
-            ProhibitedMemoryRange::new(kernel.mb_start, kernel.mb_end),
+            ProhibitedMemoryRange::new(inner.k_start,  inner.k_end),
+            ProhibitedMemoryRange::new(inner.mb_start, inner.mb_end),
         ]
     }
 
@@ -162,32 +207,36 @@ impl Kernel {
 
     /// Kernel start address in physical memory.
     pub fn k_start(&self) -> VirtualAddress {
-        self.0.lock().k_start
+        assert!(self.inner().initialized);
+        self.inner().k_start
     }
 
     /// Kernel end address in physical memory.
     pub fn k_end(&self) -> VirtualAddress {
-        self.0.lock().k_end
+        assert!(self.inner().initialized);
+        self.inner().k_end
     }
 
-    // TODO: fix this
     pub fn mb_info(&self) -> &MbBootInfo {
-        let a = self.0.lock().mb_info.as_ref().unwrap();
-        todo!()
+        assert!(self.inner().initialized);
+        self.inner().mb_info.as_ref().unwrap()
     }
 
     /// Multiboot2 info start address in physical memory.
     pub fn mb_start(&self) -> VirtualAddress {
-        self.0.lock().mb_start
+        assert!(self.inner().initialized);
+        self.inner().mb_start
     }
 
     /// Multiboot2 info end address in physical memory.
     pub fn mb_end(&self) -> VirtualAddress {
-        self.0.lock().mb_end
+        assert!(self.inner().initialized);
+        self.inner().mb_end
     }
 
     /// Get the offset between the higher half multiboot2 mapping and the lower half multiboot2 mapping.
     pub fn mb2_lh_hh_offset(&self) -> usize {
+        assert!(self.inner().initialized);
         (self.k_end() + Self::k_lh_hh_offset() - self.mb_start()).align_up(FRAME_PAGE_SIZE)
     }
 
@@ -198,6 +247,7 @@ impl Kernel {
     /// 
     /// If [FRAME_ALLOCATOR.metadata_memory_range()](crate::memory::frames::FrameAllocator::metadata_memory_range()) is **None**.
     pub fn fa_lh_hh_offset(&self) -> usize {
+        assert!(self.inner().initialized);
         let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range()
             .expect("fa_lh_hh_offset() can only be called when using a frame allocator with a metadata range");
         (self.k_end() + Self::k_lh_hh_offset() + (self.mb_end() - self.mb_start()) - metadata_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)

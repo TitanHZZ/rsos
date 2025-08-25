@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{kernel::Kernel, memory::{frames::{FrameAllocator, GlobalFrameAllocator}, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{kernel::{Kernel, KERNEL}, memory::{frames::{FrameAllocator, GlobalFrameAllocator}, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
@@ -154,10 +154,10 @@ impl MemorySubsystem {
 
 /// Remaps (to the higher half) the kernel, the multiboot2 info and the prohibited memory regions
 /// from the frame allocator into an InactivePagingContext.
-pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Result<(), MemoryError> {
+pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Result<(), MemoryError> {
     ctx.update_inactive_context(new_ctx, |active_ctx| {
         // get the kernel elf sections
-        let elf_symbols = kernel.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
+        let elf_symbols = KERNEL.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
         let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
 
         // remap the kernel (just the allocated sections)
@@ -182,8 +182,8 @@ pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagin
         }
 
         // higher half map the multiboot2 info
-        let mb2_lh_hh_offset = kernel.mb2_lh_hh_offset();
-        for addr in (kernel.mb_start()..=kernel.mb_end()).step_by(FRAME_PAGE_SIZE) {
+        let mb2_lh_hh_offset = KERNEL.mb2_lh_hh_offset();
+        for addr in (KERNEL.mb_start()..=KERNEL.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + mb2_lh_hh_offset)?;
             active_ctx.map_page_to_frame(page, frame, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
@@ -194,7 +194,7 @@ pub fn remap(kernel: &Kernel, ctx: &ActivePagingContext, new_ctx: &InactivePagin
             return Ok(());
         }
 
-        let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
+        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset();
         let prohibited_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
         for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);

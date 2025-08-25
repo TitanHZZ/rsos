@@ -72,7 +72,7 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// # Panics
     /// 
     /// If called more than once.
-    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError>;
+    unsafe fn init(&self) -> Result<(), MemoryError>;
 
     /// Remaps the frame allocator to use higher half mapping with its metadata.
     /// 
@@ -87,7 +87,7 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// 
     /// - If called before [initialization](FrameAllocator::init()).
     /// - If called more than once.
-    unsafe fn remap(&self, kernel: &Kernel);
+    unsafe fn remap(&self);
 
     /// Get the metadata memory range that **must** be correctly mapped and that **cannot** be used for allocations.
     /// 
@@ -140,12 +140,12 @@ unsafe impl FrameAllocator for GlobalFrameAllocator {
         self.fa.get().deallocate(frame);
     }
 
-    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
-        unsafe { self.fa.get().init(kernel) }
+    unsafe fn init(&self) -> Result<(), MemoryError> {
+        unsafe { self.fa.get().init() }
     }
 
-    unsafe fn remap(&self, kernel: &Kernel) {
-        unsafe { self.fa.get().remap(kernel) };
+    unsafe fn remap(&self) {
+        unsafe { self.fa.get().remap() };
     }
 
     fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {

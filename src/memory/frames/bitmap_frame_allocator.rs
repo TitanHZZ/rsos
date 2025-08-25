@@ -1,4 +1,4 @@
-use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
 use crate::{{serial_println, multiboot2::memory_map::MemoryMap}, multiboot2::memory_map::MemoryMapEntries};
 use crate::memory::{AddrOps, MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
@@ -114,11 +114,11 @@ impl<'a> BitmapFrameAllocator<'a> {
 }
 
 unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
-    unsafe fn init(&self, kernel: &Kernel) -> Result<(), MemoryError> {
+    unsafe fn init(&self) -> Result<(), MemoryError> {
         assert_called_once!("Cannot call BitmapFrameAllocator::init() more than once");
 
         let allocator = &mut *self.0.lock();
-        let mem_map = kernel.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
+        let mem_map = KERNEL.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
 
         allocator.mem_map_entries = Some(mem_map.entries().map_err(MemoryError::MemoryMapErr)?);
         let mem_map_entries = allocator.mem_map_entries.unwrap();
@@ -149,7 +149,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
                 // the chosen region must not overlap with any of the prohibited regions
                 while (cursor_end <= area_end) && (cursor_end < ORIGINALLY_IDENTITY_MAPPED) {
                     // https://stackoverflow.com/a/3269471/22836431
-                    let overlaps = kernel.prohibited_memory_ranges().iter().any(|range|
+                    let overlaps = KERNEL.prohibited_memory_ranges().iter().any(|range|
                         cursor_start <= range.end_addr() && range.start_addr() <= cursor_end
                     );
 
@@ -177,7 +177,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         });
 
         // mark the prohibited kernel memory ranges as allocated
-        for range in kernel.prohibited_memory_ranges() {
+        for range in KERNEL.prohibited_memory_ranges() {
             // this *must* work
             let start_bit_idx = allocator.addr_to_bit_idx(range.start_addr()).unwrap();
             let bitmap = allocator.bitmap.as_mut().unwrap();
@@ -241,12 +241,12 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         Some(allocator.prohibited_mem_range)
     }
 
-    unsafe fn remap(&self, kernel: &Kernel) {
+    unsafe fn remap(&self) {
         assert!(self.0.lock().initialized);
         assert_called_once!("Cannot call BitmapFrameAllocator::remap() more than once");
 
         // to avoid a deadlock, we do this before acquiring the lock
-        let fa_lh_hh_offset = kernel.fa_lh_hh_offset();
+        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset();
 
         let allocator = &mut *self.0.lock();
         let bitmap = allocator.bitmap.as_mut().unwrap();

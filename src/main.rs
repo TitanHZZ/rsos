@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -88,18 +88,18 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     print_mem_status(&mb_info);
 
     // build the main Kernel structure
-    let kernel = Kernel::new(mb_info);
-    kernel.check_placements().expect("The kernel/mb2 must be well placed and mapped");
+    unsafe { KERNEL.init(mb_info) };
+    KERNEL.check_placements().expect("The kernel/mb2 must be well placed and mapped");
 
     let a = unsafe  {
-        hash_memory_region(kernel.mb_start(), kernel.mb_end() - kernel.mb_start() + 1)
+        hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
     };
 
     // EFI boot services are not supported
-    assert!(kernel.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
+    assert!(KERNEL.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
 
     // initialize the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().init(&kernel) }.expect("Could not initialize the frame allocator");
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
     log!(ok, "Frame allocator initialized.");
 
     // initialize the first stage page allocator
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
 
         // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
-        memory::remap(&kernel, active_paging_context, inactive_paging).expect("Could not remap the kernel");
+        memory::remap(active_paging_context, inactive_paging).expect("Could not remap the kernel");
 
         active_paging_context.switch(inactive_paging);
 
@@ -125,14 +125,14 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // use the new higher half mapped multiboot2
-    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + kernel.mb2_lh_hh_offset()) as *const u8;
+    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb2_lh_hh_offset()) as *const u8;
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
 
     // rebuild the main Kernel structure (with the new multiboot2)
-    let kernel = Kernel::new(mb_info);
+    unsafe { KERNEL.rebuild(mb_info) };
 
     // fix the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap(&kernel) };
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() };
 
     rsos::hlt();
 
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
         // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
         // and thus, we can start the kernel heap at the biggest of the 2
-        let heap_start = max(kernel.k_end(), kernel.mb_end()).align_up(FRAME_PAGE_SIZE);
+        let heap_start = max(KERNEL.k_end(), KERNEL.mb_end()).align_up(FRAME_PAGE_SIZE);
         HEAP_ALLOCATOR.init(heap_start, 100 * 1024, MEMORY_SUBSYSTEM.active_paging_context())
             .expect("Could not initialize the heap allocator");
         log!(ok, "Heap allocator initialized.");
@@ -196,10 +196,10 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // to be used later
-    let acpi_new_rsdp = kernel.mb_info().get_tag::<AcpiNewRsdp>();
+    let acpi_new_rsdp = KERNEL.mb_info().get_tag::<AcpiNewRsdp>();
     assert!(acpi_new_rsdp.is_some());
 
-    let framebuffer = kernel.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
+    let framebuffer = KERNEL.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
     serial_println!("framebuffer type: {:#?}", fb_type);
 
@@ -207,7 +207,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
     let b = unsafe  {
-        hash_memory_region(kernel.mb_start(), kernel.mb_end() - kernel.mb_start() + 1)
+        hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
     };
 
     // if this fails, the mb2 memory got corrupted
