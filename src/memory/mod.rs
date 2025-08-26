@@ -157,8 +157,9 @@ impl MemorySubsystem {
 pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Result<(), MemoryError> {
     ctx.update_inactive_context(new_ctx, |active_ctx| {
         // get the kernel elf sections
-        let elf_symbols = KERNEL.mb_info().get_tag::<ElfSymbols>().ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?;
-        let elf_sections = elf_symbols.sections().map_err(MemoryError::ElfSectionErr)?;
+        let elf_sections = KERNEL.mb_info().get_tag::<ElfSymbols>()
+            .ok_or(MemoryError::ElfSymbolsMbTagDoesNotExist)?
+            .sections().map_err(MemoryError::ElfSectionErr)?;
 
         // remap the kernel (just the allocated sections)
         for elf_section in elf_sections.filter(|s| s.flags().contains(ElfSectionFlags::ELF_SECTION_ALLOCATED)) {

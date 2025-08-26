@@ -1,4 +1,4 @@
-use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{KERNEL, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
 use crate::{{serial_println, multiboot2::memory_map::MemoryMap}, multiboot2::memory_map::MemoryMapEntries};
 use crate::memory::{AddrOps, MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
@@ -118,9 +118,11 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         assert_called_once!("Cannot call BitmapFrameAllocator::init() more than once");
 
         let allocator = &mut *self.0.lock();
-        let mem_map = KERNEL.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
-
-        allocator.mem_map_entries = Some(mem_map.entries().map_err(MemoryError::MemoryMapErr)?);
+        allocator.mem_map_entries = Some(
+            KERNEL.mb_info().get_tag::<MemoryMap>()
+            .ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?
+            .entries().map_err(MemoryError::MemoryMapErr)?
+        );
         let mem_map_entries = allocator.mem_map_entries.unwrap();
 
         // get the amount of frames available in valid RAM

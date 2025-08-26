@@ -55,8 +55,9 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         assert_called_once!("Cannot call SimpleFrameAllocator::init() more than once");
         let allocator = &mut *self.0.lock();
 
-        let mem_map = KERNEL.mb_info().get_tag::<MemoryMap>().ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?;
-        let mem_map_entries = mem_map.entries().map_err(MemoryError::MemoryMapErr)?;
+        let mem_map_entries = KERNEL.mb_info().get_tag::<MemoryMap>()
+            .ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?
+            .entries().map_err(MemoryError::MemoryMapErr)?;
 
         allocator.areas = Some(mem_map_entries);
         allocator.kernel_prohibited_memory_ranges = KERNEL.prohibited_memory_ranges();
