@@ -47,6 +47,11 @@ pub struct ProhibitedMemoryRange {
 
 impl ProhibitedMemoryRange {
     /// Creates a `ProhibitedMemoryRange`.
+    /// 
+    /// # Panics
+    /// 
+    /// - If `start_addr` is not a multiple of [FRAME_PAGE_SIZE].
+    /// - If `end_addr` is not 0 or `end_addr` + 1 is not a multiple of [FRAME_PAGE_SIZE].
     pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> ProhibitedMemoryRange {
         assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
         assert!((end_addr == 0) || (end_addr + 1).is_multiple_of(FRAME_PAGE_SIZE));
@@ -195,9 +200,9 @@ pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Resu
             return Ok(());
         }
 
-        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset();
-        let prohibited_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
-        for addr in (prohibited_mem_range.start_addr()..=prohibited_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
+        let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
+        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(metadata_mem_range);
+        for addr in (metadata_mem_range.start_addr()..=metadata_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;
             active_ctx.map_page_to_frame(page, frame, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;

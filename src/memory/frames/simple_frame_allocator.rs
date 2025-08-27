@@ -1,5 +1,5 @@
-use crate::{assert_called_once, kernel::{Kernel, KERNEL, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE}};
-use crate::multiboot2::memory_map::{MemoryMap, MemoryMapEntryType, MemoryMapEntries};
+use crate::{assert_called_once, kernel::{KERNEL, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange}};
+use crate::{multiboot2::memory_map::{MemoryMap, MemoryMapEntryType, MemoryMapEntries}, memory::FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -60,7 +60,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
             .entries().map_err(MemoryError::MemoryMapErr)?;
 
         allocator.areas = Some(mem_map_entries);
-        allocator.kernel_prohibited_memory_ranges = KERNEL.prohibited_memory_ranges();
+        allocator.kernel_prohibited_memory_ranges = *KERNEL.prohibited_memory_ranges();
 
         // get the first area of type `MemoryMapEntryType::AvailableRAM` with enough space
         // if this does not work, it means that we do not have enough physical memory (more specifically, available RAM)

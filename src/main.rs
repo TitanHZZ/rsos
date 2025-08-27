@@ -88,7 +88,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     print_mem_status(&mb_info);
 
     // build the main Kernel structure
-    unsafe { KERNEL.init(mb_info) };
+    KERNEL.init(mb_info);
     KERNEL.check_placements().expect("The kernel/mb2 must be well placed and mapped");
 
     let a = unsafe  {
@@ -129,7 +129,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
 
     // rebuild the main Kernel structure (with the new multiboot2)
-    unsafe { KERNEL.rebuild(mb_info) };
+    KERNEL.rebuild(mb_info);
 
     // fix the frame allocator
     unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() };

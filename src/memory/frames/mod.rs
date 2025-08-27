@@ -1,7 +1,7 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use crate::{kernel::Kernel, memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator, ProhibitedMemoryRange}};
+use crate::memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator, ProhibitedMemoryRange};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
 use core::cell::Cell;
 
@@ -109,6 +109,12 @@ pub struct GlobalFrameAllocator {
 }
 
 unsafe impl Sync for GlobalFrameAllocator {}
+
+impl Default for GlobalFrameAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl GlobalFrameAllocator {
     pub const fn new() -> Self {

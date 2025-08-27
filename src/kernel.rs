@@ -1,9 +1,8 @@
-use crate::data_structures::mapped_rwlockreadguard::MappedRwLockReadGuard;
-use crate::memory::{frames::FrameAllocator, AddrOps, ProhibitedMemoryRange, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use crate::{multiboot2::{memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo}, serial_println, assert_called_once};
 use crate::{memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
+use crate::memory::{AddrOps, ProhibitedMemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
+use spin::lock_api::{RwLock, RwLockReadGuard};
 use core::ops::Deref;
-use spin::RwLock;
 
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
@@ -20,9 +19,12 @@ const _: () = assert!(ORIGINALLY_HIGHER_HALF_MAPPED.is_multiple_of(FRAME_PAGE_SI
 
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
+// TODO: check the "unsafety" of init() and rebuild()
+
 pub static KERNEL: Kernel = Kernel(RwLock::new(KernelInner {
     k_start : 0,
     k_end   : 0,
+    prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
     mb_info : None,
     mb_start: 0,
     mb_end  : 0,
@@ -33,6 +35,8 @@ struct KernelInner {
     // kernel (physical addrs)
     k_start: usize,
     k_end: usize,
+
+    prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 
     // multiboot2 (physical addrs)
     mb_info: Option<MbBootInfo>,
@@ -45,6 +49,7 @@ struct KernelInner {
 pub struct Kernel(RwLock<KernelInner>);
 
 impl KernelInner {
+    /// Create a [KernelInner] structure from the `mb_info`.
     fn new(mb_info: MbBootInfo) -> Self {
         // get the necessary mb2 tags and data
         let elf_symbols: &ElfSymbols     = mb_info.get_tag::<ElfSymbols>().expect("Elf symbols tag is not present");
@@ -70,6 +75,12 @@ impl KernelInner {
             k_start,
             k_end,
 
+            prohibited_memory_ranges: [
+                ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
+                ProhibitedMemoryRange::new(k_start,  k_end),
+                ProhibitedMemoryRange::new(mb_start, mb_end),
+            ],
+
             mb_info: Some(mb_info),
             mb_start,
             mb_end,
@@ -84,42 +95,33 @@ impl KernelInner {
     /// These ranges live in available RAM.
     /// 
     /// There are no order guarantees for the memory ranges.
-    fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
-        [
-            ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
-            ProhibitedMemoryRange::new(self.k_start,  self.k_end),
-            ProhibitedMemoryRange::new(self.mb_start, self.mb_end),
-        ]
+    fn prohibited_memory_ranges(&self) -> &[ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
+        &self.prohibited_memory_ranges
     }
 }
 
 impl Kernel {
     /// Initialize the Kernel main structure.
     /// 
-    /// # Safety
-    /// 
-    /// This operation is **NOT** thread safe.
-    /// 
     /// # Panics
     /// 
     /// If called more than once.
-    pub unsafe fn init(&self, mb_info: MbBootInfo) {
+    pub fn init(&self, mb_info: MbBootInfo) {
         assert_called_once!("Cannot call Kernel::init() more than once");
         *self.0.write() = KernelInner::new(mb_info);
     }
 
     /// Rebuilds the main kernel structure with the new, higher half, multiboot2 information structure.
     /// 
-    /// # Safety
-    /// 
-    /// This operation is **NOT** thread safe.
-    /// 
     /// # Panics
     /// 
-    /// If called more than once.
-    pub unsafe fn rebuild(&self, mb_info: MbBootInfo) {
+    /// - If called more than once.
+    /// - If called before [initialization](Kernel::init()).
+    pub fn rebuild(&self, mb_info: MbBootInfo) {
+        let mut inner = self.0.write();
         assert_called_once!("Cannot call Kernel::rebuild() more than once");
-        *self.0.write() = KernelInner::new(mb_info);
+        assert!(inner.initialized);
+        *inner = KernelInner::new(mb_info);
     }
 
     /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
@@ -127,6 +129,10 @@ impl Kernel {
     /// This will also check if the kernel fits well in the original (temporary) higher half mapping.
     /// 
     /// If any of these fail, **Err([MemoryError::BadMemoryPlacement])** or **Err([MemoryError::BadTemporaryHigherHalfMapping])** will be returned.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn check_placements(&self) -> Result<(), MemoryError> {
         let inner = &*self.0.read();
         assert!(inner.initialized);
@@ -158,6 +164,10 @@ impl Kernel {
     }
 
     /// Kernel start address in physical memory.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn k_start(&self) -> VirtualAddress {
         let inner = &*self.0.read();
         assert!(inner.initialized);
@@ -165,6 +175,10 @@ impl Kernel {
     }
 
     /// Kernel end address in physical memory.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn k_end(&self) -> VirtualAddress {
         let inner = &*self.0.read();
         assert!(inner.initialized);
@@ -172,6 +186,10 @@ impl Kernel {
     }
 
     /// Multiboot2 info start address in physical memory.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn mb_start(&self) -> VirtualAddress {
         let inner = &*self.0.read();
         assert!(inner.initialized);
@@ -179,20 +197,32 @@ impl Kernel {
     }
 
     /// Multiboot2 info end address in physical memory.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn mb_end(&self) -> VirtualAddress {
         let inner = &*self.0.read();
         assert!(inner.initialized);
         inner.mb_end
     }
 
-    // the impl Deref "hides" the KernelInner type
+    /// Get a reference to the internal [MbBootInfo] structure.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn mb_info(&self) -> impl Deref<Target = MbBootInfo> {
         let inner = self.0.read();
         assert!(inner.initialized);
-        MappedRwLockReadGuard::new(inner, |data| data.mb_info.as_ref().unwrap())
+        RwLockReadGuard::map(inner, |data| data.mb_info.as_ref().unwrap())
     }
 
     /// Get the offset between the higher half multiboot2 mapping and the lower half multiboot2 mapping.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
     pub fn mb2_lh_hh_offset(&self) -> usize {
         let inner = &*self.0.read();
         assert!(inner.initialized);
@@ -205,10 +235,14 @@ impl Kernel {
     /// These ranges live in available RAM.
     /// 
     /// There are no order guarantees for the memory ranges.
-    pub fn prohibited_memory_ranges(&self) -> [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
-        let inner = &*self.0.read();
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
+    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
+        let inner = self.0.read();
         assert!(inner.initialized);
-        inner.prohibited_memory_ranges()
+        RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
     }
 
     /// Get the lower half link time physical/virtual start address.
@@ -249,17 +283,14 @@ impl Kernel {
         k_lh_hh_offset
     }
 
-    // TODO: this should probably not be able to create deadlocks
     /// Get the offset between the higher half frame allocator mapping and the lower half frame allocator mapping.
     /// 
     /// # Panics
     /// 
-    /// If [FRAME_ALLOCATOR.metadata_memory_range()](crate::memory::frames::FrameAllocator::metadata_memory_range()) is **None**.
-    pub fn fa_lh_hh_offset(&self) -> usize {
+    /// If called before [initialization](Kernel::init()).
+    pub fn fa_lh_hh_offset(&self, metadata_memory_range: ProhibitedMemoryRange) -> usize {
         let inner = &*self.0.read();
         assert!(inner.initialized);
-        let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range()
-            .expect("fa_lh_hh_offset() can only be called when using a frame allocator with a metadata range");
-        (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start) - metadata_mem_range.start_addr()).align_up(FRAME_PAGE_SIZE)
+        (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start) - metadata_memory_range.start_addr()).align_up(FRAME_PAGE_SIZE)
     }
 }
