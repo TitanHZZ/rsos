@@ -252,8 +252,6 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(allocator.metadata_mem_range);
 
         let bitmap_start_addr = (bitmap.data_ptr_mut() as VirtualAddress + fa_lh_hh_offset) as *mut u8;
-        serial_println!("Remapping frame allocator to: {:#x}", bitmap_start_addr as VirtualAddress);
-
         let bitmap_frames_count = bitmap.len().align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
         allocator.bitmap = Some(unsafe {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap.len(), Some(bitmap.bit_len()))
@@ -261,5 +259,6 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
 
         let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
         allocator.metadata_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
+        serial_println!("Remapping frame allocator to: {:#x} -- {:#x}", bitmap_start_addr as VirtualAddress, end_addr);
     }
 }

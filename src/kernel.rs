@@ -19,8 +19,6 @@ const _: () = assert!(ORIGINALLY_HIGHER_HALF_MAPPED.is_multiple_of(FRAME_PAGE_SI
 
 pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 
-// TODO: check the "unsafety" of init() and rebuild()
-
 pub static KERNEL: Kernel = Kernel(RwLock::new(KernelInner {
     k_start : 0,
     k_end   : 0,
@@ -88,16 +86,6 @@ impl KernelInner {
             initialized: true,
         }
     }
-
-    /// All the memory ranges that **must be left untouched** meaning that these regions
-    /// cannot be used for allocations in the physical (frame allocator) memory space.
-    /// 
-    /// These ranges live in available RAM.
-    /// 
-    /// There are no order guarantees for the memory ranges.
-    fn prohibited_memory_ranges(&self) -> &[ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN] {
-        &self.prohibited_memory_ranges
-    }
 }
 
 impl Kernel {
@@ -113,11 +101,17 @@ impl Kernel {
 
     /// Rebuilds the main kernel structure with the new, higher half, multiboot2 information structure.
     /// 
+    /// # Safety
+    /// 
+    /// - **Must** be called right after remapping to the higher half and rebuilding the multiboot2 structure but before anything else is done.
+    /// 
+    /// Failure to follow the rules will result in data corruption.
+    /// 
     /// # Panics
     /// 
     /// - If called more than once.
     /// - If called before [initialization](Kernel::init()).
-    pub fn rebuild(&self, mb_info: MbBootInfo) {
+    pub unsafe fn rebuild(&self, mb_info: MbBootInfo) {
         let mut inner = self.0.write();
         assert_called_once!("Cannot call Kernel::rebuild() more than once");
         assert!(inner.initialized);
@@ -142,7 +136,7 @@ impl Kernel {
             .entries().map_err(MemoryError::MemoryMapErr)?;
 
         // check `prohibited_memory_ranges()` placements
-        if inner.prohibited_memory_ranges().iter().any(|range|
+        if inner.prohibited_memory_ranges.iter().any(|range|
             mem_map_entries.into_iter()
             .filter(|&area| area.entry_type() != MemoryMapEntryType::AvailableRAM)
             .any(|area| {

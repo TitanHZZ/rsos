@@ -129,7 +129,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
 
     // rebuild the main Kernel structure (with the new multiboot2)
-    KERNEL.rebuild(mb_info);
+    unsafe { KERNEL.rebuild(mb_info) };
 
     // fix the frame allocator
     unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() };

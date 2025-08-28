@@ -20,7 +20,7 @@ use spin::Mutex;
 // All calculations are in Python syntax.
 
 pub struct BitmapPageAllocator<'a> {
-    // every bitmap is 16kb
+    // every level 1 bitmap is 16kb
     l1: Mutex<[Option<BitmapRefMut<'a>>; 261120]>,
 }
 
@@ -43,6 +43,9 @@ impl<'a> BitmapPageAllocator<'a> {
 unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
     unsafe fn init(&self) -> Result<(), MemoryError> {
         assert_called_once!("Cannot call BitmapPageAllocator::init() more than once");
+
+        // TODO: - set following memory ranges as "allocated": kernel, multiboot2, frame allocator
+        //       - this will require the mapping of the first few level 2 bitmaps
         todo!()
     }
 

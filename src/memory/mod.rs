@@ -122,6 +122,8 @@ pub enum MemoryError {
 
 pub static MEMORY_SUBSYSTEM: MemorySubsystem = MemorySubsystem::new();
 
+// TODO: maybe the global allocators should use a RwLock<T> just like the Kernel structure??
+
 pub struct MemorySubsystem {
     pa: GlobalPageAllocator,
     fa: GlobalFrameAllocator,
