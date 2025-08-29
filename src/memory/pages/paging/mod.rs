@@ -191,7 +191,7 @@ impl ActivePagingContext {
     }
 
     /// Maps a specific Page to a (random) Frame.
-    pub fn map_page<A: FrameAllocator>(&self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
+    pub fn map_page(&self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         self.0.lock().map_page(page, flags)
     }
 

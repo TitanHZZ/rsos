@@ -3,7 +3,7 @@ pub mod pages;
 pub mod frames;
 mod cr3;
 
-use crate::{kernel::{Kernel, KERNEL}, memory::{frames::{FrameAllocator, GlobalFrameAllocator}, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}};
+use crate::{kernel::{Kernel, KERNEL}, memory::{frames::{FrameAllocator, GlobalFrameAllocator}, pages::{GlobalPageAllocator, Page}}, multiboot2::elf_symbols::{ElfSectionError, ElfSectionFlags, ElfSymbols}, serial_println};
 use pages::{page_table::page_table_entry::EntryFlags, paging::{inactive_paging_context::InactivePagingContext, ActivePagingContext}};
 use crate::multiboot2::memory_map::MemoryMapError;
 use frames::Frame;
@@ -203,7 +203,7 @@ pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Resu
         }
 
         let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
-        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(metadata_mem_range);
+        let fa_lh_hh_offset = KERNEL.fa_hh_start() - metadata_mem_range.start_addr();
         for addr in (metadata_mem_range.start_addr()..=metadata_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + fa_lh_hh_offset)?;

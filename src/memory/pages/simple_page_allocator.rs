@@ -1,4 +1,4 @@
-use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, memory::{pages::{Page, PageAllocator}, MemoryError}};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL}, memory::{frames::{Frame, FrameAllocator}, pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}, serial_println};
 use spin::Mutex;
 
 // This page allocator manages the entire higher half of the 48 bit address space, 2 ** 48 // 2 bytes.
@@ -19,23 +19,60 @@ use spin::Mutex;
 // 
 // All calculations are in Python syntax.
 
-pub struct BitmapPageAllocator<'a> {
+struct BitmapPageAllocatorInner<'a> {
     // every level 1 bitmap is 16kb
-    l1: Mutex<[Option<BitmapRefMut<'a>>; 261120]>,
+    l1: [Option<BitmapRefMut<'a>>; 261120],
+    initialized: bool,
 }
+
+impl<'a> BitmapPageAllocatorInner<'a> {
+    fn allocate_level2_bitmap(&self, bitmap_idx: usize) -> Result<(), MemoryError> {
+        assert!(bitmap_idx < 261120);
+
+        let bitmap_start_addr = BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * bitmap_idx);
+        for addr in (bitmap_start_addr..=bitmap_start_addr + BitmapPageAllocator::level2_bitmap_lenght()).step_by(FRAME_PAGE_SIZE) {
+            let page = Page::from_virt_addr(addr)?;
+            MEMORY_SUBSYSTEM.active_paging_context().map_page(page, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
+        }
+
+        Ok(())
+    }
+}
+
+pub struct BitmapPageAllocator<'a>(Mutex<BitmapPageAllocatorInner<'a>>);
 
 impl<'a> BitmapPageAllocator<'a> {
     #[cfg(not(test))]
     pub(in crate::memory::pages) const fn new() -> Self {
-        BitmapPageAllocator {
-            l1: Mutex::new([const { None }; 261120]),
-        }
+        BitmapPageAllocator(Mutex::new(BitmapPageAllocatorInner {
+            l1: [const { None }; 261120],
+            initialized: false,
+        }))
     }
 
     #[cfg(test)]
     pub const fn new() -> Self {
-        BitmapPageAllocator {
-            l1: Mutex::new([const { None }; 261120]),
+        BitmapPageAllocator(Mutex::new(BitmapPageAllocatorInner {
+            l1: [const { None }; 261120],
+            initialized: false,
+        }))
+    }
+
+    /// Get the size of a level 2 bitmap in bytes.
+    const fn level2_bitmap_lenght() -> usize {
+        FRAME_PAGE_SIZE * 4
+    }
+
+    /// Get the size of a level 2 bitmap in bits.
+    const fn level2_bitmap_bit_lenght() -> usize {
+        BitmapPageAllocator::level2_bitmap_lenght() * 8
+    }
+
+    /// Get the address where the first level 2 bitmap will start.
+    fn level2_bitmaps_start_addr() -> VirtualAddress {
+        KERNEL.fa_hh_start() + match MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range() {
+            Some(metadata) => metadata.length(),
+            None => 0,
         }
     }
 }
@@ -43,10 +80,22 @@ impl<'a> BitmapPageAllocator<'a> {
 unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
     unsafe fn init(&self) -> Result<(), MemoryError> {
         assert_called_once!("Cannot call BitmapPageAllocator::init() more than once");
+        let allocator = &mut *self.0.lock();
 
         // TODO: - set following memory ranges as "allocated": kernel, multiboot2, frame allocator
         //       - this will require the mapping of the first few level 2 bitmaps
-        todo!()
+
+        // the amount of bytes currently "allocated" in the higher half
+        let allocated_size = BitmapPageAllocator::level2_bitmaps_start_addr() - Kernel::k_hh_start();
+
+        let allocated_size_in_pages = allocated_size / FRAME_PAGE_SIZE;
+        let level2_bitmap_count = allocated_size_in_pages.align_up(BitmapPageAllocator::level2_bitmap_bit_lenght())
+            / BitmapPageAllocator::level2_bitmap_bit_lenght();
+
+        serial_println!("allocated size: {:#x}", allocated_size);
+        serial_println!("level2 bitmap count: {}", level2_bitmap_count);
+
+        Ok(())
     }
 
     fn allocate(&self) -> Result<Page, MemoryError> {

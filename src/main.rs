@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::{self, KERNEL}, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
@@ -88,8 +88,9 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     print_mem_status(&mb_info);
 
     // build the main Kernel structure
-    KERNEL.init(mb_info);
+    unsafe { KERNEL.init(mb_info) };
     KERNEL.check_placements().expect("The kernel/mb2 must be well placed and mapped");
+    serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", KERNEL.mb_start() + KERNEL.mb2_lh_hh_offset(), KERNEL.mb_end() + KERNEL.mb2_lh_hh_offset());
 
     let a = unsafe  {
         hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
@@ -133,6 +134,12 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // fix the frame allocator
     unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() };
+
+    // switch to the permanent page allocator
+    unsafe { MEMORY_SUBSYSTEM.page_allocator().switch() };
+
+    // initialize the second stage page allocator
+    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
 
     rsos::hlt();
 

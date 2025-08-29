@@ -34,10 +34,11 @@ struct KernelInner {
     k_start: usize,
     k_end: usize,
 
+    // these are physical addrs
     prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 
     // multiboot2 (physical addrs)
-    mb_info: Option<MbBootInfo>,
+    mb_info: Option<MbBootInfo>, // this changes from before to after the higher half remapping
     mb_start: usize,
     mb_end: usize,
 
@@ -65,9 +66,9 @@ impl KernelInner {
         let mb_end   = mb_info.addr() + mb_info.size() as usize - 1;
         let mb_end   = mb_end.align_up(FRAME_PAGE_SIZE) - 1;
 
-        serial_println!("kernel start (lower half):  {:#x}, kernel end: {:#x}", k_start, k_end);
+        serial_println!("kernel start (lower half) : {:#x},\t\tkernel end: {:#x}", k_start, k_end);
         serial_println!("kernel start (higher half): {:#x}, kernel end: {:#x}", k_start + Kernel::k_lh_hh_offset(), k_end + Kernel::k_lh_hh_offset());
-        serial_println!("mb start: {:#x}, mb end: {:#x}", mb_start, mb_end);
+        serial_println!("mb start     (lower half) : {:#x},\t\tmb end:     {:#x}", mb_start, mb_end);
 
         KernelInner {
             k_start,
@@ -91,10 +92,16 @@ impl KernelInner {
 impl Kernel {
     /// Initialize the Kernel main structure.
     /// 
+    /// # Safety
+    /// 
+    /// - **Must** be done *before* anything gets higher half remapped.
+    /// 
+    /// Failure to follow the rules will result in data corruption.
+    /// 
     /// # Panics
     /// 
     /// If called more than once.
-    pub fn init(&self, mb_info: MbBootInfo) {
+    pub unsafe fn init(&self, mb_info: MbBootInfo) {
         assert_called_once!("Cannot call Kernel::init() more than once");
         *self.0.write() = KernelInner::new(mb_info);
     }
@@ -115,7 +122,8 @@ impl Kernel {
         let mut inner = self.0.write();
         assert_called_once!("Cannot call Kernel::rebuild() more than once");
         assert!(inner.initialized);
-        *inner = KernelInner::new(mb_info);
+
+        inner.mb_info = Some(mb_info);
     }
 
     /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
@@ -239,7 +247,7 @@ impl Kernel {
         RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
     }
 
-    /// Get the lower half link time physical/virtual start address.
+    /// Get the lower half, link time, kernel start address.
     pub fn k_lh_start() -> usize {
         // symbol defined in the linker script
         unsafe extern "C" {
@@ -251,9 +259,7 @@ impl Kernel {
         k_lh_start
     }
 
-    /// Get the higher half link time virtual start address.
-    /// 
-    /// To get the higher half link time physical address, subtract `k_lh_hh_offset()`.
+    /// Get the higher half, link time, kernel start address.
     pub fn k_hh_start() -> usize {
         // symbol defined in the linker script
         unsafe extern "C" {
@@ -277,14 +283,14 @@ impl Kernel {
         k_lh_hh_offset
     }
 
-    /// Get the offset between the higher half frame allocator mapping and the lower half frame allocator mapping.
+    /// Get the start address for the frame allocator to use with higher half mappings.
     /// 
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn fa_lh_hh_offset(&self, metadata_memory_range: ProhibitedMemoryRange) -> usize {
+    pub fn fa_hh_start(&self) -> usize {
         let inner = &*self.0.read();
         assert!(inner.initialized);
-        (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start) - metadata_memory_range.start_addr()).align_up(FRAME_PAGE_SIZE)
+        (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start)).align_up(FRAME_PAGE_SIZE)
     }
 }

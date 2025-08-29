@@ -249,9 +249,11 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         assert!(allocator.initialized);
 
         let bitmap = allocator.bitmap.as_mut().unwrap();
-        let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(allocator.metadata_mem_range);
 
-        let bitmap_start_addr = (bitmap.data_ptr_mut() as VirtualAddress + fa_lh_hh_offset) as *mut u8;
+        // let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(allocator.metadata_mem_range);
+        // let bitmap_start_addr = (bitmap.data_ptr_mut() as VirtualAddress + fa_lh_hh_offset) as *mut u8;
+        let bitmap_start_addr = KERNEL.fa_hh_start() as *mut u8;
+
         let bitmap_frames_count = bitmap.len().align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
         allocator.bitmap = Some(unsafe {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap.len(), Some(bitmap.bit_len()))

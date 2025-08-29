@@ -167,7 +167,8 @@ impl GlobalPageAllocator {
     /// 
     /// # Safety
     /// 
-    /// - **Must** be called *after* the remap to the higher half and before any higher half page allocations.
+    /// - **Must** be called *after* the remap to the higher half, *after* [fixing the Kernel structure](crate::kernel::Kernel::rebuild()) and
+    ///   *after* [remapping the frame allocator](crate::memory::frames::FrameAllocator::remap()) but before any higher half page allocations.
     /// - No allocations/deallocations can ever cross the switch so, users cannot allocate in the first stage, switch and then deallocate for example.
     /// - This operation is **NOT** thread safe.
     /// 
