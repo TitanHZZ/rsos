@@ -1,6 +1,6 @@
 use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{KERNEL, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
 use crate::{{serial_println, multiboot2::memory_map::MemoryMap}, multiboot2::memory_map::MemoryMapEntries};
-use crate::memory::{AddrOps, MemoryError, PhysicalAddress, ProhibitedMemoryRange, FRAME_PAGE_SIZE};
+use crate::memory::{AddrOps, MemoryError, PhysicalAddress, MemoryRange, FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
 
@@ -11,7 +11,7 @@ struct BitmapFrameAllocatorInner<'a> {
     bitmap: Option<BitmapRefMut<'a>>,
     next_free_frame: usize,
 
-    metadata_mem_range: ProhibitedMemoryRange,
+    metadata_mem_range: MemoryRange,
 
     initialized: bool,
 }
@@ -96,7 +96,7 @@ impl<'a> BitmapFrameAllocator<'a> {
             mem_map_entries: None,
             bitmap: None,
             next_free_frame: 0,
-            metadata_mem_range: ProhibitedMemoryRange::empty(),
+            metadata_mem_range: MemoryRange::empty(),
             initialized: false,
         }))
     }
@@ -107,7 +107,7 @@ impl<'a> BitmapFrameAllocator<'a> {
             mem_map_entries: None,
             bitmap: None,
             next_free_frame: 0,
-            metadata_mem_range: ProhibitedMemoryRange::empty(),
+            metadata_mem_range: MemoryRange::empty(),
             initialized: false,
         }))
     }
@@ -175,7 +175,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         // create the actual bitmap
         let (_, _, bitmap_start_addr) = suitable_area.unwrap();
         allocator.bitmap = Some(unsafe {
-            BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap_bytes_count, Some(usable_frame_count))
+            BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap_bytes_count, Some(usable_frame_count), true)
         });
 
         // mark the prohibited kernel memory ranges as allocated
@@ -202,7 +202,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         allocator.next_free_frame = allocator.get_next_free_frame().ok_or(MemoryError::NotEnoughPhyMemory)?;
 
         let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
-        allocator.metadata_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
+        allocator.metadata_mem_range = MemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
 
         serial_println!("Bitmap created! Starting at addr : {:#x}", bitmap_start_addr as PhysicalAddress);
 
@@ -237,30 +237,35 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
         serial_println!("Deallocated frame: {:#x}", frame.0);
     }
 
-    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+    fn metadata_memory_range(&self) -> Option<MemoryRange> {
         let allocator = &*self.0.lock();
         assert!(allocator.initialized);
         Some(allocator.metadata_mem_range)
     }
 
-    unsafe fn remap(&self) {
+    unsafe fn remap(&self) -> Result<(), MemoryError> {
         let allocator = &mut *self.0.lock();
         assert_called_once!("Cannot call BitmapFrameAllocator::remap() more than once");
         assert!(allocator.initialized);
 
         let bitmap = allocator.bitmap.as_mut().unwrap();
-
-        // let fa_lh_hh_offset = KERNEL.fa_lh_hh_offset(allocator.metadata_mem_range);
-        // let bitmap_start_addr = (bitmap.data_ptr_mut() as VirtualAddress + fa_lh_hh_offset) as *mut u8;
         let bitmap_start_addr = KERNEL.fa_hh_start() as *mut u8;
 
         let bitmap_frames_count = bitmap.len().align_up(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
         allocator.bitmap = Some(unsafe {
-            BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap.len(), Some(bitmap.bit_len()))
+            BitmapRefMut::from_raw_parts_mut(bitmap_start_addr, bitmap.len(), Some(bitmap.bit_len()), false)
         });
 
-        let end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
-        allocator.metadata_mem_range = ProhibitedMemoryRange::new(bitmap_start_addr as PhysicalAddress, end_addr);
-        serial_println!("Remapping frame allocator to: {:#x} -- {:#x}", bitmap_start_addr as VirtualAddress, end_addr);
+        allocator.mem_map_entries = Some(
+            KERNEL.mb_info().get_tag::<MemoryMap>()
+            .ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?
+            .entries().map_err(MemoryError::MemoryMapErr)?
+        );
+
+        let bitmap_end_addr = bitmap_start_addr as PhysicalAddress + bitmap_frames_count * FRAME_PAGE_SIZE - 1;
+        allocator.metadata_mem_range = MemoryRange::new(bitmap_start_addr as PhysicalAddress, bitmap_end_addr);
+        serial_println!("Remapping frame allocator to: {:#x} -- {:#x}", bitmap_start_addr as VirtualAddress, bitmap_end_addr);
+
+        Ok(())
     }
 }

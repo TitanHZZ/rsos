@@ -1,6 +1,6 @@
 use crate::{multiboot2::{memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo}, serial_println, assert_called_once};
 use crate::{memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
-use crate::memory::{AddrOps, ProhibitedMemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
+use crate::memory::{AddrOps, MemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
 use spin::lock_api::{RwLock, RwLockReadGuard};
 use core::ops::Deref;
 
@@ -22,7 +22,7 @@ pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
 pub static KERNEL: Kernel = Kernel(RwLock::new(KernelInner {
     k_start : 0,
     k_end   : 0,
-    prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+    prohibited_memory_ranges: [MemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
     mb_info : None,
     mb_start: 0,
     mb_end  : 0,
@@ -35,7 +35,7 @@ struct KernelInner {
     k_end: usize,
 
     // these are physical addrs
-    prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
+    prohibited_memory_ranges: [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 
     // multiboot2 (physical addrs)
     mb_info: Option<MbBootInfo>, // this changes from before to after the higher half remapping
@@ -75,9 +75,9 @@ impl KernelInner {
             k_end,
 
             prohibited_memory_ranges: [
-                ProhibitedMemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
-                ProhibitedMemoryRange::new(k_start,  k_end),
-                ProhibitedMemoryRange::new(mb_start, mb_end),
+                MemoryRange::new(0, FRAME_PAGE_SIZE - 1), // to avoid problems with NULL ptrs and detect NULL derefs
+                MemoryRange::new(k_start,  k_end),
+                MemoryRange::new(mb_start, mb_end),
             ],
 
             mb_info: Some(mb_info),
@@ -241,14 +241,14 @@ impl Kernel {
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
+    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
         let inner = self.0.read();
         assert!(inner.initialized);
         RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
     }
 
     /// Get the lower half, link time, kernel start address.
-    pub fn k_lh_start() -> usize {
+    pub fn k_lh_start() -> VirtualAddress {
         // symbol defined in the linker script
         unsafe extern "C" {
             static KERNEL_LH_START: u32;
@@ -260,7 +260,7 @@ impl Kernel {
     }
 
     /// Get the higher half, link time, kernel start address.
-    pub fn k_hh_start() -> usize {
+    pub fn k_hh_start() -> VirtualAddress {
         // symbol defined in the linker script
         unsafe extern "C" {
             static KERNEL_HH_START: usize;
@@ -288,9 +288,18 @@ impl Kernel {
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn fa_hh_start(&self) -> usize {
+    pub fn fa_hh_start(&self) -> VirtualAddress {
         let inner = &*self.0.read();
         assert!(inner.initialized);
         (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start)).align_up(FRAME_PAGE_SIZE)
+    }
+
+    /// Get the last valid higher half address.
+    /// 
+    /// To get the first valid address, please use [Kernel::k_hh_start()].
+    pub fn hh_end() -> VirtualAddress {
+        // Kernel::k_hh_start() + ((2**48 // 2 - (2**30 * 512)) - 1)
+        // Kernel::k_hh_start() - (2**30 * 512) = 0x7F8000000000
+        Kernel::k_hh_start() + 0x7F8000000000 - 1
     }
 }

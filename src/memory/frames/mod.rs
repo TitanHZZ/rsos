@@ -1,7 +1,7 @@
 pub mod simple_frame_allocator;
 pub mod bitmap_frame_allocator;
 
-use crate::memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator, ProhibitedMemoryRange};
+use crate::memory::{frames::bitmap_frame_allocator::BitmapFrameAllocator, MemoryRange};
 use super::{MemoryError, PhysicalAddress, FRAME_PAGE_SIZE};
 use core::cell::Cell;
 
@@ -87,7 +87,7 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// 
     /// - If called before [initialization](FrameAllocator::init()).
     /// - If called more than once.
-    unsafe fn remap(&self);
+    unsafe fn remap(&self) -> Result<(), MemoryError>;
 
     /// Get the metadata memory range that **must** be correctly mapped and that **cannot** be used for allocations.
     /// 
@@ -98,7 +98,7 @@ pub unsafe trait FrameAllocator: Send + Sync {
     /// # Panics
     /// 
     /// If called before [initialization](FrameAllocator::init()).
-    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange>;
+    fn metadata_memory_range(&self) -> Option<MemoryRange>;
 }
 
 static FA: BitmapFrameAllocator = BitmapFrameAllocator::new();
@@ -150,11 +150,11 @@ unsafe impl FrameAllocator for GlobalFrameAllocator {
         unsafe { self.fa.get().init() }
     }
 
-    unsafe fn remap(&self) {
-        unsafe { self.fa.get().remap() };
+    unsafe fn remap(&self) -> Result<(), MemoryError> {
+        unsafe { self.fa.get().remap() }
     }
 
-    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+    fn metadata_memory_range(&self) -> Option<MemoryRange> {
         self.fa.get().metadata_memory_range()
     }
 }

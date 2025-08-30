@@ -10,24 +10,27 @@ pub struct BitmapRefMut<'a> {
 
 impl<'a> BitmapRefMut<'a> {
     /// Creates a new **BitmapRefMut** that points to `data`.
-    /// The data pointed to by `data` will be zeroed out.
+    /// The data pointed to by `data` will be zeroed out if requested by `clear`.
     /// 
     /// `bit_len` is an optional parameter that specifies how many of the bits in `data` will actually be used.
     /// 
     /// If `bit_len` is bigger than the total number of bits in `data`, this will panic.
     /// 
     /// In case this parameter is **None**, all the bits available in `data` will be used.
-    pub fn new(data: &'a mut [u8], bit_len: Option<usize>) -> Self {
+    pub fn new(data: &'a mut [u8], bit_len: Option<usize>, clear: bool) -> Self {
         // get the real length
         let bit_len = match bit_len {
-            Some(len) => len,
+            Some(b_len) => b_len,
             None => data.len() * 8,
         };
 
         // make sure that the real length is a valid value
         assert!(bit_len <= data.len() * 8);
 
-        data.fill(0);
+        if clear {
+            data.fill(0);
+        }
+
         BitmapRefMut {
             data,
             bit_len,
@@ -40,13 +43,13 @@ impl<'a> BitmapRefMut<'a> {
     /// 
     /// In case `bit_len` is **None**, all the bits available in `data` will be used.
     /// 
-    /// The data pointed to by `data` with `len` elements will be zeroed out.
+    /// The data pointed to by `data` with `len` elements will be zeroed out if requested by `clear`.
     /// 
     /// # Safety
     /// 
     /// The caller must ensure that `data` is valid, points to mapped memory and is big enough to hold `len` elements.
-    pub unsafe fn from_raw_parts_mut(data: *mut u8, len: usize, bit_len: Option<usize>) -> Self {
-        Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) }, bit_len)
+    pub unsafe fn from_raw_parts_mut(data: *mut u8, len: usize, bit_len: Option<usize>, clear: bool) -> Self {
+        Self::new(unsafe { &mut *slice_from_raw_parts_mut(data, len) }, bit_len, clear)
     }
 
     /// Get the value (true/false) in the position `bit` that works as an index in the array of bits.

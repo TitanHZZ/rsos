@@ -113,7 +113,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
         let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
 
-        // remap (identity map) the kernel, mb2 info and vga buffer with the correct flags and permissions into the new paging context
+        // remap (to the higher half) the kernel and the mb2 info with the correct flags and permissions into the new paging context
         memory::remap(active_paging_context, inactive_paging).expect("Could not remap the kernel");
 
         active_paging_context.switch(inactive_paging);
@@ -131,9 +131,11 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // rebuild the main Kernel structure (with the new multiboot2)
     unsafe { KERNEL.rebuild(mb_info) };
+    serial_println!("Main kernel structure rebuilt.");
 
     // fix the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() };
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() }.expect("fuck");
+    serial_println!("Frame allocator remapped.");
 
     // switch to the permanent page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().switch() };

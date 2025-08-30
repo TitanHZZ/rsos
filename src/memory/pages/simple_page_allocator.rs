@@ -26,14 +26,27 @@ struct BitmapPageAllocatorInner<'a> {
 }
 
 impl<'a> BitmapPageAllocatorInner<'a> {
-    fn allocate_level2_bitmap(&self, bitmap_idx: usize) -> Result<(), MemoryError> {
+    fn addr_to_bit_idxs(&self, addr: VirtualAddress) -> (usize, usize) {
+        assert!(addr >= Kernel::k_hh_start() && addr <= Kernel::hh_end());
+
+        todo!()
+    }
+
+    fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
         assert!(bitmap_idx < 261120);
 
         let bitmap_start_addr = BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * bitmap_idx);
-        for addr in (bitmap_start_addr..=bitmap_start_addr + BitmapPageAllocator::level2_bitmap_lenght()).step_by(FRAME_PAGE_SIZE) {
-            let page = Page::from_virt_addr(addr)?;
-            MEMORY_SUBSYSTEM.active_paging_context().map_page(page, EntryFlags::PRESENT | EntryFlags::NO_EXECUTE)?;
+        for addr in (bitmap_start_addr..bitmap_start_addr + BitmapPageAllocator::level2_bitmap_lenght()).step_by(FRAME_PAGE_SIZE) {
+            MEMORY_SUBSYSTEM.active_paging_context().map(addr, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
         }
+
+        self.l1[bitmap_idx] = Some(unsafe {
+            BitmapRefMut::from_raw_parts_mut(bitmap_start_addr as _, BitmapPageAllocator::level2_bitmap_lenght(), None, true)
+        });
+
+        serial_println!("aspdksaçldsadjskd");
+        self.addr_to_bit_idxs(bitmap_start_addr);
+        serial_println!("aspdksaçldsadjskdsakldjsaldjskdjks");
 
         Ok(())
     }
@@ -94,6 +107,8 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
 
         serial_println!("allocated size: {:#x}", allocated_size);
         serial_println!("level2 bitmap count: {}", level2_bitmap_count);
+
+        allocator.allocate_level2_bitmap(0)?;
 
         Ok(())
     }

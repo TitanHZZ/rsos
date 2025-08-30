@@ -33,38 +33,36 @@ impl AddrOps for usize {
     }
 }
 
-/// Represents a memory range that MUST not be touched by frame/page allocators.
-/// 
-/// This memory regions are expected to be identity mapped and as such, these addrs are virtual and physical.
+/// Represents a memory range.
 /// 
 /// The addrs are both inclusive. The start address is guaranteed to be **0** or a multiple of **FRAME_PAGE_SIZE**, while the end address is guaranteed
 /// to be **0** or else, the **end address + 1** is a multiple of **FRAME_PAGE_SIZE**.
 #[derive(Clone, Copy)]
-pub struct ProhibitedMemoryRange {
+pub struct MemoryRange {
     start_addr: PhysicalAddress,
     end_addr: PhysicalAddress,
 }
 
-impl ProhibitedMemoryRange {
+impl MemoryRange {
     /// Creates a `ProhibitedMemoryRange`.
     /// 
     /// # Panics
     /// 
     /// - If `start_addr` is not a multiple of [FRAME_PAGE_SIZE].
     /// - If `end_addr` is not 0 or `end_addr` + 1 is not a multiple of [FRAME_PAGE_SIZE].
-    pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> ProhibitedMemoryRange {
+    pub const fn new(start_addr: PhysicalAddress, end_addr: PhysicalAddress) -> MemoryRange {
         assert!(start_addr.is_multiple_of(FRAME_PAGE_SIZE));
         assert!((end_addr == 0) || (end_addr + 1).is_multiple_of(FRAME_PAGE_SIZE));
 
-        ProhibitedMemoryRange {
+        MemoryRange {
             start_addr,
             end_addr,
         }
     }
 
     /// Creates a `ProhibitedMemoryRange` with both addrs as 0.
-    pub const fn empty() -> ProhibitedMemoryRange {
-        ProhibitedMemoryRange::new(0, 0)
+    pub const fn empty() -> MemoryRange {
+        MemoryRange::new(0, 0)
     }
 
     pub fn start_addr(&self) -> PhysicalAddress {
@@ -198,11 +196,11 @@ pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Resu
         }
 
         // higher half map the frame allocator metadata memory region
-        if MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().is_none() {
-            return Ok(());
-        }
+        let metadata_mem_range = match MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range() {
+            Some(metadata) => metadata,
+            None => return Ok(()),
+        };
 
-        let metadata_mem_range = MEMORY_SUBSYSTEM.frame_allocator().metadata_memory_range().unwrap();
         let fa_lh_hh_offset = KERNEL.fa_hh_start() - metadata_mem_range.start_addr();
         for addr in (metadata_mem_range.start_addr()..=metadata_mem_range.end_addr()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);

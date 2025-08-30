@@ -24,6 +24,7 @@ cmd=(
     -drive if=pflash,format=raw,unit=0,file=/usr/share/OVMF/OVMF_CODE.fd,readonly=on
     -drive if=pflash,format=raw,unit=1,file=/tmp/OVMF_VARS.fd
     -net none
+    -no-reboot
 )
 
 # make a writable copy of OVMF_VARS.fd for UEFI support
@@ -48,12 +49,12 @@ if $TEST_MODE; then
 
     # hide qemu
     cmd+=(-display none)
-
-    # prevent qemu from rebooting forever in case of an OS crash
-    cmd+=(-no-reboot)
 else
     # set the appropriate grub timeout
     sed -i "s/GRUB_TIMEOUT/${GRUB_TIMEOUT_RELEASE}/g" target/isofiles/boot/grub/grub.cfg
+
+    # prevent qemu from shutting down forever in case of an OS crash
+    cmd+=(-no-shutdown)
 fi
 
 ### TEMPORARY

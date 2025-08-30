@@ -1,4 +1,4 @@
-use crate::{assert_called_once, kernel::{KERNEL, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, ProhibitedMemoryRange}};
+use crate::{assert_called_once, kernel::{KERNEL, KERNEL_PROHIBITED_MEM_RANGES_LEN}, memory::{MemoryError, PhysicalAddress, MemoryRange}};
 use crate::{multiboot2::memory_map::{MemoryMap, MemoryMapEntryType, MemoryMapEntries}, memory::FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
@@ -13,7 +13,7 @@ struct SimpleFrameAllocatorInner {
     next_frame: Frame,
 
     // memory ranges that we need to avoid using so we don't override important memory
-    kernel_prohibited_memory_ranges: [ProhibitedMemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
+    kernel_prohibited_memory_ranges: [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
 
     initialized: bool,
 }
@@ -33,7 +33,7 @@ impl SimpleFrameAllocator {
             areas: None,
             current_area: 0,
             next_frame: Frame(0x0),
-            kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+            kernel_prohibited_memory_ranges: [MemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
             initialized: false,
         }))
     }
@@ -44,7 +44,7 @@ impl SimpleFrameAllocator {
             areas: None,
             current_area: 0,
             next_frame: Frame(0x0),
-            kernel_prohibited_memory_ranges: [ProhibitedMemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+            kernel_prohibited_memory_ranges: [MemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
             initialized: false,
         }))
     }
@@ -98,14 +98,15 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
         assert!(self.0.lock().initialized);
     }
 
-    fn metadata_memory_range(&self) -> Option<ProhibitedMemoryRange> {
+    fn metadata_memory_range(&self) -> Option<MemoryRange> {
         assert!(self.0.lock().initialized);
         None
     }
 
-    unsafe fn remap(&self) {
+    unsafe fn remap(&self) -> Result<(), MemoryError> {
         assert!(self.0.lock().initialized);
         assert_called_once!("Cannot call SimpleFrameAllocator::remap() more than once");
+        Ok(())
     }
 }
 
