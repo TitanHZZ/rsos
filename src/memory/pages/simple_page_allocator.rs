@@ -29,7 +29,7 @@ impl<'a> BitmapPageAllocatorInner<'a> {
     fn addr_to_bit_idxs(&self, addr: VirtualAddress) -> (usize, usize) {
         assert!(addr >= Kernel::k_hh_start() && addr <= Kernel::hh_end());
 
-        todo!()
+        (0, 0)
     }
 
     fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
@@ -44,10 +44,7 @@ impl<'a> BitmapPageAllocatorInner<'a> {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr as _, BitmapPageAllocator::level2_bitmap_lenght(), None, true)
         });
 
-        serial_println!("aspdksaçldsadjskd");
         self.addr_to_bit_idxs(bitmap_start_addr);
-        serial_println!("aspdksaçldsadjskdsakldjsaldjskdjks");
-
         Ok(())
     }
 }

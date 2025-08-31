@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # globals
 TEST_MODE=false        # determines if cargo is running in test mode
