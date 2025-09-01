@@ -28,8 +28,9 @@ struct BitmapPageAllocatorInner<'a> {
 impl<'a> BitmapPageAllocatorInner<'a> {
     fn addr_to_bit_idxs(&self, addr: VirtualAddress) -> (usize, usize) {
         assert!(addr >= Kernel::k_hh_start() && addr <= Kernel::hh_end());
+        let page_idx = addr.align_down(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
 
-        (0, 0)
+        (page_idx / BitmapPageAllocator::level2_bitmap_bit_lenght(), page_idx % BitmapPageAllocator::level2_bitmap_bit_lenght())
     }
 
     fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {

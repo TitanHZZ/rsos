@@ -294,6 +294,7 @@ impl Kernel {
         (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start)).align_up(FRAME_PAGE_SIZE)
     }
 
+    // TODO: this needs a lot of improvement
     /// Get the last valid higher half address.
     /// 
     /// To get the first valid address, please use [Kernel::k_hh_start()].
