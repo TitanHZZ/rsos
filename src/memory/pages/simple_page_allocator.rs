@@ -28,7 +28,7 @@ struct BitmapPageAllocatorInner<'a> {
 impl<'a> BitmapPageAllocatorInner<'a> {
     fn addr_to_bit_idxs(&self, addr: VirtualAddress) -> (usize, usize) {
         assert!(addr >= Kernel::k_hh_start() && addr <= Kernel::hh_end());
-        let page_idx = addr.align_down(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
+        let page_idx = (addr - Kernel::k_hh_start()).align_down(FRAME_PAGE_SIZE) / FRAME_PAGE_SIZE;
 
         (page_idx / BitmapPageAllocator::level2_bitmap_bit_lenght(), page_idx % BitmapPageAllocator::level2_bitmap_bit_lenght())
     }
@@ -45,7 +45,17 @@ impl<'a> BitmapPageAllocatorInner<'a> {
             BitmapRefMut::from_raw_parts_mut(bitmap_start_addr as _, BitmapPageAllocator::level2_bitmap_lenght(), None, true)
         });
 
-        self.addr_to_bit_idxs(bitmap_start_addr);
+        // TODO: the following code must be repeated for all pages belonging to the bitmap
+
+        let (l1_idx, l2_idx) = self.addr_to_bit_idxs(bitmap_start_addr);
+        serial_println!("l1: {}; l2: {}", l1_idx, l2_idx);
+        if self.l1[l1_idx].is_none() {
+            // TODO: allocate this bitmap
+            todo!()
+        }
+
+        // mark the allocator page as allocated in the allocator itself
+        self.l1[l1_idx].as_mut().unwrap().set(l2_idx, true);
         Ok(())
     }
 }
