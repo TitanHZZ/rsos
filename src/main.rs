@@ -89,8 +89,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // build the main Kernel structure
     unsafe { KERNEL.init(mb_info) };
-    KERNEL.check_placements().expect("The kernel/mb2 must be well placed and mapped");
-    serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", KERNEL.mb_start() + KERNEL.mb2_lh_hh_offset(), KERNEL.mb_end() + KERNEL.mb2_lh_hh_offset());
+    KERNEL.initial_checks().expect("The kernel/mb2 must be well placed and mapped");
+    serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", KERNEL.mb_start() + KERNEL.mb_lh_hh_offset(), KERNEL.mb_end() + KERNEL.mb_lh_hh_offset());
 
     let a = unsafe  {
         hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
@@ -126,7 +126,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // use the new higher half mapped multiboot2
-    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb2_lh_hh_offset()) as *const u8;
+    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
 
     // rebuild the main Kernel structure (with the new multiboot2)

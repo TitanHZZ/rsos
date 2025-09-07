@@ -4,6 +4,8 @@ use crate::memory::{AddrOps, MemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
 use spin::lock_api::{RwLock, RwLockReadGuard};
 use core::ops::Deref;
 
+// TODO: this 3 constans should probably also be part of the Kernel struct
+
 // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
 /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
 /// 
@@ -126,18 +128,17 @@ impl Kernel {
         inner.mb_info = Some(mb_info);
     }
 
-    // TODO: this needs to do more checks
-    // TODO: the name should be initial_checks()
-    /// This checks if the kernel `prohibited_memory_ranges()` are in an invalid memory
-    /// place such as in an area that is not of type **AvailableRAM**.
-    /// This will also check if the kernel fits well in the original (temporary) higher half mapping.
+    /// This will perform the following checks:
+    /// - Checks if the kernel `prohibited_memory_ranges()` are in an invalid memory place such as in an area that is not of type **AvailableRAM**.
+    /// - Check if the kernel fits well in the original (temporary) higher half mapping.
+    /// - Checks the linker configs and addresses.
     /// 
     /// If any of these fail, **Err([MemoryError::BadMemoryPlacement])** or **Err([MemoryError::BadTemporaryHigherHalfMapping])** will be returned.
     /// 
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn check_placements(&self) -> Result<(), MemoryError> {
+    pub fn initial_checks(&self) -> Result<(), MemoryError> {
         let inner = &*self.0.read();
         assert!(inner.initialized);
 
@@ -152,7 +153,7 @@ impl Kernel {
             .any(|area| {
                 let area_start = area.aligned_base_addr(FRAME_PAGE_SIZE) as usize;
                 let area_end   = area_start + area.aligned_length(FRAME_PAGE_SIZE) as usize - 1;
-                
+
                 area_start <= range.end_addr() && range.start_addr() <= area_end
             })
         ) {
@@ -164,7 +165,38 @@ impl Kernel {
             return Err(MemoryError::BadTemporaryHigherHalfMapping);
         }
 
+        // check linker configs and addresses
+        unsafe extern "C" {
+            static KERNEL_HH_START: u8;
+            static KERNEL_LH_START: u8;
+            static KERNEL_LH_HH_OFFSET: u8;
+        }
+
+        let k_hh_start     = unsafe { &KERNEL_HH_START as *const u8 as usize };
+        let k_lh_start     = unsafe { &KERNEL_LH_START as *const u8 as usize };
+        let k_lh_hh_offset = unsafe { &KERNEL_LH_HH_OFFSET as *const u8 as usize };
+
+        if k_hh_start != Kernel::k_hh_start() || k_lh_start != Kernel::k_lh_start() || k_lh_hh_offset != Kernel::k_lh_hh_offset() {
+            return Err(MemoryError::BadLinkerConfig);
+        }
+
         Ok(())
+    }
+
+    /// All the memory ranges that **must be left untouched** meaning that these regions
+    /// cannot be used for allocations in the physical (frame allocator) memory space.
+    /// 
+    /// These ranges live in available RAM.
+    /// 
+    /// There are no order guarantees for the memory ranges.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](Kernel::init()).
+    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
+        let inner = self.0.read();
+        assert!(inner.initialized);
+        RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
     }
 
     /// Kernel start address in physical memory.
@@ -227,62 +259,10 @@ impl Kernel {
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn mb2_lh_hh_offset(&self) -> usize {
+    pub fn mb_lh_hh_offset(&self) -> usize {
         let inner = &*self.0.read();
         assert!(inner.initialized);
         (inner.k_end + Kernel::k_lh_hh_offset() - inner.mb_start).align_up(FRAME_PAGE_SIZE)
-    }
-
-    /// All the memory ranges that **must be left untouched** meaning that these regions
-    /// cannot be used for allocations in the physical (frame allocator) memory space.
-    /// 
-    /// These ranges live in available RAM.
-    /// 
-    /// There are no order guarantees for the memory ranges.
-    /// 
-    /// # Panics
-    /// 
-    /// If called before [initialization](Kernel::init()).
-    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
-        let inner = self.0.read();
-        assert!(inner.initialized);
-        RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
-    }
-
-    /// Get the lower half, link time, kernel start address.
-    pub fn k_lh_start() -> VirtualAddress {
-        // symbol defined in the linker script
-        unsafe extern "C" {
-            static KERNEL_LH_START: u32;
-        }
-
-        let k_lh_start = unsafe { &KERNEL_LH_START as *const u32 as usize };
-        assert!(k_lh_start.is_multiple_of(FRAME_PAGE_SIZE));
-        k_lh_start
-    }
-
-    /// Get the higher half, link time, kernel start address.
-    pub fn k_hh_start() -> VirtualAddress {
-        // symbol defined in the linker script
-        unsafe extern "C" {
-            static KERNEL_HH_START: usize;
-        }
-
-        let k_hh_start = unsafe { &KERNEL_HH_START as *const usize as usize };
-        assert!(k_hh_start.is_multiple_of(FRAME_PAGE_SIZE));
-        k_hh_start
-    }
-
-    /// Get the offset between the higher half kernel mapping and the lower half kernel mapping.
-    pub fn k_lh_hh_offset() -> usize {
-        // symbol defined in the linker script
-        unsafe extern "C" {
-            static KERNEL_LH_HH_OFFSET: usize;
-        }
-
-        let k_lh_hh_offset = unsafe { &KERNEL_LH_HH_OFFSET as *const usize as usize };
-        assert!(k_lh_hh_offset.is_multiple_of(FRAME_PAGE_SIZE));
-        k_lh_hh_offset
     }
 
     /// Get the start address for the frame allocator to use with higher half mappings.
@@ -296,13 +276,24 @@ impl Kernel {
         (inner.k_end + Kernel::k_lh_hh_offset() + (inner.mb_end - inner.mb_start)).align_up(FRAME_PAGE_SIZE)
     }
 
-    // TODO: this needs a lot of improvement
+    /// Get the lower half kernel start address.
+    pub const fn k_lh_start() -> VirtualAddress {
+        0x1000000
+    }
+
+    /// Get the higher half kernel start address.
+    pub const fn k_hh_start() -> VirtualAddress {
+        0xFFFF800000000000
+    }
+
     /// Get the last valid higher half address.
-    /// 
-    /// To get the first valid address, please use [Kernel::k_hh_start()].
-    pub fn hh_end() -> VirtualAddress {
-        // Kernel::k_hh_start() + ((2**48 // 2 - (2**30 * 512)) - 1)
-        // Kernel::k_hh_start() - (2**30 * 512) = 0x7F8000000000
-        Kernel::k_hh_start() + 0x7F8000000000 - 1
+    pub const fn hh_end() -> VirtualAddress {
+        // 0xFFFF800000000000 + ((2**48 // 2 - (2**30 * 512)) - 1)
+        0xFFFFFF7FFFFFFFFF
+    }
+
+    /// Get the offset between the higher half kernel start and the lower half kernel start.
+    pub const fn k_lh_hh_offset() -> usize {
+        Self::k_hh_start() - Self::k_lh_start()
     }
 }

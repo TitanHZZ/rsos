@@ -49,23 +49,26 @@ SECTIONS
 	/* Group all the higher half text (code) sections. */
 	.text : AT(LOADADDR(.rodata.lower_half) + SIZEOF(.rodata.lower_half))
 	{
-		*(.text .text.*) /* group together all the text sections made by the rust compiler */
+		/* group together all the text sections made by the rust compiler */
+		*(.text .text.*)
+		*(.ltext .ltext.*)
 		. = ALIGN(4K);
 	}
 
 	/* Read-only data. */
 	.rodata : AT(LOADADDR(.text) + SIZEOF(.text))
 	{
-		KEEP(*(.rodata .rodata.*)) /* group together all the rodata sections made by the rust compiler */
+		/* group together all the rodata sections made by the rust compiler */
+		KEEP(*(.rodata .rodata.*))
+		KEEP(*(.lrodata .lrodata.*))
 		. = ALIGN(4K);
 	}
 
     /* Group more rust compiler sections. */
 	.data.rel.ro : AT(LOADADDR(.rodata) + SIZEOF(.rodata))
     {
-        KEEP(*(.data.rel.ro.local*))
-		KEEP(*(.data.rel.ro .data.rel.ro.*))
-		KEEP(*(.got))
+		KEEP(*(.data.rel.ro .data.rel.ro.* .data.rel.ro.local*))
+		KEEP(*(.ldata.rel.ro .ldata.rel.ro.* .ldata.rel.ro.local*))
 		. = ALIGN(4K);
     }
 
@@ -73,6 +76,7 @@ SECTIONS
 	.data : AT(LOADADDR(.data.rel.ro) + SIZEOF(.data.rel.ro))
 	{
 		KEEP(*(.data .data.*))
+		KEEP(*(.ldata .ldata.*))
 		. = ALIGN(4K);
 	}
 
@@ -81,18 +85,12 @@ SECTIONS
 	{
 		KEEP(*(COMMON))
 		KEEP(*(.bss .bss.*))
-		. = ALIGN(4K);
-	}
-
-	/* Procedure Linkage Table. */
-	.got.plt : AT(LOADADDR(.bss) + SIZEOF(.bss))
-	{
-		*(.got.plt)
+		KEEP(*(.lbss .lbss.*))
 		. = ALIGN(4K);
 	}
 
 	/* Exception Frames. */
-	.eh_frame : AT(LOADADDR(.got.plt) + SIZEOF(.got.plt))
+	.eh_frame : AT(LOADADDR(.data) + SIZEOF(.data))
 	{
 		*(.eh_frame .eh_frame.*)
 		. = ALIGN(4K);

@@ -106,6 +106,8 @@ pub enum MemoryError {
     BadTemporaryHigherHalfMapping,
     /// The start address given to the temporary page allocator conflicts with other mappings.
     BadTemporaryPageAllocator,
+    // The linker config or addresses are wrong.
+    BadLinkerConfig,
 
     // TODO: perhaps these should be considered multiboot2 errors??
     /// The `ElfSymbols` multiboot2 tag does not exist.
@@ -188,7 +190,7 @@ pub fn remap(ctx: &ActivePagingContext, new_ctx: &InactivePagingContext) -> Resu
         }
 
         // higher half map the multiboot2 info
-        let mb2_lh_hh_offset = KERNEL.mb2_lh_hh_offset();
+        let mb2_lh_hh_offset = KERNEL.mb_lh_hh_offset();
         for addr in (KERNEL.mb_start()..=KERNEL.mb_end()).step_by(FRAME_PAGE_SIZE) {
             let frame = Frame::from_phy_addr(addr);
             let page = Page::from_virt_addr(addr + mb2_lh_hh_offset)?;

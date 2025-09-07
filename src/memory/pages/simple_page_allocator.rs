@@ -111,9 +111,6 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         assert_called_once!("Cannot call BitmapPageAllocator::init() more than once");
         let allocator = &mut *self.0.lock();
 
-        // TODO: - set following memory ranges as "allocated": kernel, multiboot2, frame allocator
-        //       - this will require the mapping of the first few level 2 bitmaps
-
         // the amount of bytes currently "allocated" in the higher half
         let allocated_size = BitmapPageAllocator::level2_bitmaps_start_addr() - Kernel::k_hh_start();
 

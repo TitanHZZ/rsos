@@ -12,6 +12,8 @@
     "panic-strategy": "abort",
     "features": "-mmx,-sse,+soft-float",
     "rustc-abi": "x86-softfloat",
+    "relocation-model": "static",
+    "code-model": "large",
     "pre-link-args": {
         "gcc": [
             "-Wl,--script=setup/linker.ld",
