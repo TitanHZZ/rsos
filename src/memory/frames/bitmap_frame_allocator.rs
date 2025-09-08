@@ -1,5 +1,5 @@
-use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{KERNEL, ORIGINALLY_IDENTITY_MAPPED}, memory::VirtualAddress};
-use crate::{{serial_println, multiboot2::memory_map::MemoryMap}, multiboot2::memory_map::MemoryMapEntries};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{KERNEL, Kernel}, memory::VirtualAddress};
+use crate::{serial_println, multiboot2::memory_map::MemoryMap, multiboot2::memory_map::MemoryMapEntries};
 use crate::memory::{AddrOps, MemoryError, PhysicalAddress, MemoryRange, FRAME_PAGE_SIZE};
 use super::{Frame, FrameAllocator};
 use spin::Mutex;
@@ -138,7 +138,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
             // must be large enough and sit below the identity-mapped ceiling
             .filter(|&(_, area)|
                 (area.aligned_length(FRAME_PAGE_SIZE) as usize >= bitmap_bytes_count) &&
-                (area.aligned_base_addr(FRAME_PAGE_SIZE) as usize + bitmap_bytes_count - 1 < ORIGINALLY_IDENTITY_MAPPED)
+                (area.aligned_base_addr(FRAME_PAGE_SIZE) as usize + bitmap_bytes_count - 1 < Kernel::originally_identity_mapped())
             )
             // must not overlap any prohibited kernel range
             .find_map(|(idx, area)| {
@@ -149,7 +149,7 @@ unsafe impl<'a> FrameAllocator for BitmapFrameAllocator<'a> {
                 let mut cursor_end   = cursor_start + bitmap_bytes_count - 1;
 
                 // the chosen region must not overlap with any of the prohibited regions
-                while (cursor_end <= area_end) && (cursor_end < ORIGINALLY_IDENTITY_MAPPED) {
+                while (cursor_end <= area_end) && (cursor_end < Kernel::originally_identity_mapped()) {
                     // https://stackoverflow.com/a/3269471/22836431
                     let overlaps = KERNEL.prohibited_memory_ranges().iter().any(|range|
                         cursor_start <= range.end_addr() && range.start_addr() <= cursor_end

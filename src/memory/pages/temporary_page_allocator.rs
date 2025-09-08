@@ -1,6 +1,6 @@
 use crate::memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
-use crate::{assert_called_once, kernel::ORIGINALLY_IDENTITY_MAPPED};
 use crate::{data_structures::bitmap::Bitmap, serial_println};
+use crate::{assert_called_once, kernel::Kernel};
 use spin::Mutex;
 
 struct TemporaryPageAllocatorInner {
@@ -19,7 +19,7 @@ impl TemporaryPageAllocator {
     pub(in crate::memory::pages) const fn new() -> Self {
         TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
             bitmap: Bitmap::new(None),
-            start_addr: ORIGINALLY_IDENTITY_MAPPED,
+            start_addr: Kernel::originally_identity_mapped(),
 
             initialized: false,
         }))
@@ -30,7 +30,7 @@ impl TemporaryPageAllocator {
     pub const fn new() -> Self {
         TemporaryPageAllocator(Mutex::new(TemporaryPageAllocatorInner {
             bitmap: Bitmap::new(None),
-            start_addr: ORIGINALLY_IDENTITY_MAPPED,
+            start_addr: Kernel::originally_identity_mapped(),
 
             initialized: false,
         }))

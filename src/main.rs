@@ -134,14 +134,26 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     serial_println!("Main kernel structure rebuilt.");
 
     // fix the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() }.expect("fuck");
+    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() }.expect("Could not remap the frame allocator");
     serial_println!("Frame allocator remapped.");
 
     // switch to the permanent page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().switch() };
+    serial_println!("Page allocator switch performed.");
 
     // initialize the second stage page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
+    serial_println!("Second stage page allocated initialized.");
+
+    MEMORY_SUBSYSTEM.page_allocator().allocate().expect("well, ...");
+    MEMORY_SUBSYSTEM.page_allocator().allocate().expect("well, ...");
+
+    let b = unsafe  {
+        hash_memory_region(KERNEL.mb_start() + KERNEL.mb_lh_hh_offset(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
+    };
+
+    // if this fails, the mb2 memory got corrupted
+    assert!(a == b);
 
     rsos::hlt();
 

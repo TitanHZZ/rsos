@@ -1,4 +1,6 @@
-use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL}, memory::{frames::FrameAllocator, pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}, serial_println};
+use crate::memory::{frames::FrameAllocator, pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, AddrOps, MemoryError, VirtualAddress};
+use crate::{assert_called_once, data_structures::bitmap_ref_mut::BitmapRefMut, kernel::{Kernel, KERNEL}};
+use crate::memory::{serial_println, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use spin::Mutex;
 
 // This page allocator manages the entire higher half of the 48 bit address space, 2 ** 48 // 2 bytes.
@@ -26,7 +28,7 @@ struct BitmapPageAllocatorInner<'a> {
 }
 
 impl<'a> BitmapPageAllocatorInner<'a> {
-    fn page_idx_to_bit_idxs(&self, page_idx: usize) -> (usize, usize) {
+    const fn page_idx_to_bit_idxs(&self, page_idx: usize) -> (usize, usize) {
         assert!(page_idx < (Kernel::hh_end() / FRAME_PAGE_SIZE));
         (page_idx / BitmapPageAllocator::level2_bitmap_bit_lenght(), page_idx % BitmapPageAllocator::level2_bitmap_bit_lenght())
     }
@@ -118,25 +120,58 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         let level2_bitmap_count = allocated_size_in_pages.align_up(BitmapPageAllocator::level2_bitmap_bit_lenght())
             / BitmapPageAllocator::level2_bitmap_bit_lenght();
 
-        // TODO: this can be improved for performance
+        // allocate all the necessary level2 bitmaps
+        for bitmap_idx in 0..level2_bitmap_count {
+            assert!(allocator.l1[bitmap_idx].is_none());
+            allocator.allocate_level2_bitmap(bitmap_idx)?;
+        }
+
+        // mark the kernel, the multiboot2 and the frame allocator memory regions as allocated
         for page_idx in 0..allocated_size_in_pages {
             let (l1_idx, l2_idx) = allocator.page_idx_to_bit_idxs(page_idx);
-
-            if allocator.l1[l1_idx].is_none() {
-                allocator.allocate_level2_bitmap(l1_idx)?;
-            }
-
             allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, true);
         }
 
-        serial_println!("allocated size: {:#x}", allocated_size);
-        serial_println!("allocated size in pages: {:#x}", allocated_size_in_pages);
-        serial_println!("level2 bitmap count: {}", level2_bitmap_count);
+        let bitmap_start_addr = BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * (261120 - 1));
+        serial_println!("bruh: {:?}", allocator.addr_to_bit_idxs(bitmap_start_addr));
+        allocator.initialized = true;
         Ok(())
     }
 
     fn allocate(&self) -> Result<Page, MemoryError> {
-        todo!()
+        let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized);
+
+        // find the first l2 bitmap that is None or the first free page in any l2 bitmap
+        let idxs = allocator.l1.iter()
+            .enumerate()
+            .find_map(|(l1_idx, l2_bitmap)| {
+                match l2_bitmap {
+                    None => Some((l1_idx, None)),
+                    Some(l2_bitmap) => l2_bitmap.iter()
+                        .position(|bit| !bit)
+                        .map(|l2_idx| (l1_idx, Some(l2_idx)))
+                }
+            });
+
+        let (l1_idx, l2_idx) = match idxs {
+            None => return Err(MemoryError::NotEnoughVirMemory),
+            Some((l1_idx, l2_idx)) => {
+                let l2_idx = match l2_idx {
+                    Some(l2_idx) => l2_idx,
+                    None => {
+                        allocator.allocate_level2_bitmap(l1_idx)?;
+                        0
+                    }
+                };
+
+                allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, true);
+                (l1_idx, l2_idx)
+            }
+        };
+
+        serial_println!("Got idxs: {} -- {}", l1_idx, l2_idx);
+        Ok(Page(0))
     }
 
     fn allocate_contiguous(&self, _count: usize) -> Result<Page, MemoryError> {

@@ -4,27 +4,14 @@ use crate::memory::{AddrOps, MemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
 use spin::lock_api::{RwLock, RwLockReadGuard};
 use core::ops::Deref;
 
-// TODO: this 3 constans should probably also be part of the Kernel struct
-
-// each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
-/// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
-/// 
-/// It is guaranteed to be a multiple of FRAME_PAGE_SIZE.
-pub const ORIGINALLY_IDENTITY_MAPPED: usize = 4096 * 512 * 512;
-const _: () = assert!(ORIGINALLY_IDENTITY_MAPPED.is_multiple_of(FRAME_PAGE_SIZE));
-
-/// Represents the number of sequential bytes starting at address KERNEL_HH_START that are mapped to KERNEL_LH_START when the Rust code first starts.
-/// 
-/// It is guaranteed to be a multiple of FRAME_PAGE_SIZE.
-pub const ORIGINALLY_HIGHER_HALF_MAPPED: usize = 4096 * 512 * 8;
-const _: () = assert!(ORIGINALLY_HIGHER_HALF_MAPPED.is_multiple_of(FRAME_PAGE_SIZE));
-
-pub const KERNEL_PROHIBITED_MEM_RANGES_LEN: usize = 3;
+// static Kernel asserts
+const _: () = assert!(Kernel::originally_identity_mapped().is_multiple_of(FRAME_PAGE_SIZE));
+const _: () = assert!(Kernel::originally_higher_half_mapped().is_multiple_of(FRAME_PAGE_SIZE));
 
 pub static KERNEL: Kernel = Kernel(RwLock::new(KernelInner {
     k_start : 0,
     k_end   : 0,
-    prohibited_memory_ranges: [MemoryRange::empty(); KERNEL_PROHIBITED_MEM_RANGES_LEN],
+    prohibited_memory_ranges: [MemoryRange::empty(); Kernel::prohibited_mem_ranges_len()],
     mb_info : None,
     mb_start: 0,
     mb_end  : 0,
@@ -37,7 +24,7 @@ struct KernelInner {
     k_end: usize,
 
     // these are physical addrs
-    prohibited_memory_ranges: [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN],
+    prohibited_memory_ranges: [MemoryRange; Kernel::prohibited_mem_ranges_len()],
 
     // multiboot2 (physical addrs)
     mb_info: Option<MbBootInfo>, // this changes from before to after the higher half remapping
@@ -161,7 +148,7 @@ impl Kernel {
         }
 
         // check initial higher half mapping placement
-        if (inner.k_end - inner.k_start) > ORIGINALLY_HIGHER_HALF_MAPPED {
+        if (inner.k_end - inner.k_start) > Kernel::originally_higher_half_mapped() {
             return Err(MemoryError::BadTemporaryHigherHalfMapping);
         }
 
@@ -193,7 +180,7 @@ impl Kernel {
     /// # Panics
     /// 
     /// If called before [initialization](Kernel::init()).
-    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [MemoryRange; KERNEL_PROHIBITED_MEM_RANGES_LEN]> {
+    pub fn prohibited_memory_ranges(&self) -> impl Deref<Target = [MemoryRange; Kernel::prohibited_mem_ranges_len()]> {
         let inner = self.0.read();
         assert!(inner.initialized);
         RwLockReadGuard::map(inner, |data| &data.prohibited_memory_ranges)
@@ -295,5 +282,24 @@ impl Kernel {
     /// Get the offset between the higher half kernel start and the lower half kernel start.
     pub const fn k_lh_hh_offset() -> usize {
         Self::k_hh_start() - Self::k_lh_start()
+    }
+
+    /// Represents the number of sequential bytes starting at address 0x0 that are identity mapped when the Rust code first starts.
+    /// 
+    /// It is guaranteed to be a multiple of [FRAME_PAGE_SIZE].
+    pub const fn originally_identity_mapped() -> usize {
+        // each table maps 4096 bytes, has 512 entries and there are 512 P1 page tables
+        4096 * 512 * 512
+    }
+
+    /// Represents the number of sequential bytes starting at address [k_hh_start](Self::k_hh_start()) that are mapped to [k_lh_start](Self::k_lh_start()) when the Rust code first starts.
+    /// 
+    /// It is guaranteed to be a multiple of [FRAME_PAGE_SIZE].
+    pub const fn originally_higher_half_mapped() -> usize {
+        4096 * 512 * 8
+    }
+
+    pub const fn prohibited_mem_ranges_len() -> usize {
+        3
     }
 }
