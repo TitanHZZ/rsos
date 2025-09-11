@@ -24,6 +24,7 @@ use spin::Mutex;
 struct BitmapPageAllocatorInner<'a> {
     // every level 1 bitmap is 16kb
     l1: [Option<BitmapRefMut<'a>>; 261120],
+    used_idxs_end: (usize, usize), // the last idxs used by the initialization (must NOT be used for allocations)
     initialized: bool,
 }
 
@@ -39,11 +40,19 @@ impl<'a> BitmapPageAllocatorInner<'a> {
         self.page_idx_to_bit_idxs(page_idx)
     }
 
-    fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
-        assert!(bitmap_idx < 261120);
+    const fn bit_idxs_to_addr(&self, idxs: (usize, usize)) -> VirtualAddress {
+        let page_idx = idxs.0 * BitmapPageAllocator::level2_bitmap_bit_lenght() + idxs.1;
+        Kernel::k_hh_start() + page_idx * FRAME_PAGE_SIZE
+    }
 
+    fn level2_bitmap_addr(&self, bitmap_idx: usize) -> VirtualAddress {
+        assert!(bitmap_idx < 261120);
+        BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * bitmap_idx)
+    }
+
+    fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
         // allocate and map all the required pages for the second level bitmap
-        let bitmap_start_addr = BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * bitmap_idx);
+        let bitmap_start_addr = self.level2_bitmap_addr(bitmap_idx);
         for addr in (bitmap_start_addr..bitmap_start_addr + BitmapPageAllocator::level2_bitmap_lenght()).step_by(FRAME_PAGE_SIZE) {
             MEMORY_SUBSYSTEM.active_paging_context().map(addr, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
         }
@@ -55,14 +64,12 @@ impl<'a> BitmapPageAllocatorInner<'a> {
 
         // recursively allocate the second level bitmap that marks the current one as allocated
         let (l1_idx, l2_idx) = self.addr_to_bit_idxs(bitmap_start_addr);
-        serial_println!("bitmap start addr: {:#x}, index: {}", bitmap_start_addr, bitmap_idx);
-        serial_println!("l1 index: {}; l2 index: {}", l1_idx, l2_idx);
         if self.l1[l1_idx].is_none() {
             self.allocate_level2_bitmap(l1_idx)?;
         }
 
         // mark the current second level bitmap pages as allocated in the new, recursively allocated, second level bitmap
-        for offset in 0..(BitmapPageAllocator::level2_bitmap_lenght() / FRAME_PAGE_SIZE) {
+        for offset in 0..BitmapPageAllocator::level2_bitmap_page_lenght() {
             self.l1[l1_idx].as_mut().unwrap().set(l2_idx + offset, true);
         }
 
@@ -77,6 +84,7 @@ impl<'a> BitmapPageAllocator<'a> {
     pub(in crate::memory::pages) const fn new() -> Self {
         BitmapPageAllocator(Mutex::new(BitmapPageAllocatorInner {
             l1: [const { None }; 261120],
+            used_idxs_end: (0, 0),
             initialized: false,
         }))
     }
@@ -85,6 +93,7 @@ impl<'a> BitmapPageAllocator<'a> {
     pub const fn new() -> Self {
         BitmapPageAllocator(Mutex::new(BitmapPageAllocatorInner {
             l1: [const { None }; 261120],
+            used_idxs_end: (0, 0),
             initialized: false,
         }))
     }
@@ -97,6 +106,11 @@ impl<'a> BitmapPageAllocator<'a> {
     /// Get the size of a level 2 bitmap in bits.
     const fn level2_bitmap_bit_lenght() -> usize {
         BitmapPageAllocator::level2_bitmap_lenght() * 8
+    }
+
+    /// Get the size of a level 2 bitmap in pages.
+    const fn level2_bitmap_page_lenght() -> usize {
+        BitmapPageAllocator::level2_bitmap_lenght() / FRAME_PAGE_SIZE
     }
 
     /// Get the address where the first level 2 bitmap will start.
@@ -132,53 +146,112 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
             allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, true);
         }
 
-        let bitmap_start_addr = BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * (261120 - 1));
-        serial_println!("bruh: {:?}", allocator.addr_to_bit_idxs(bitmap_start_addr));
+        let idxs = allocator.addr_to_bit_idxs(allocator.level2_bitmap_addr(261120 - 1));
+        allocator.used_idxs_end = (idxs.0, idxs.1 + BitmapPageAllocator::level2_bitmap_page_lenght() - 1);
         allocator.initialized = true;
+
+        serial_println!("Page allocator last used idxs: {:?}", allocator.used_idxs_end);
         Ok(())
     }
 
     fn allocate(&self) -> Result<Page, MemoryError> {
+        self.allocate_contiguous(1)
+    }
+
+    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError> {
+        let allocator = &mut *self.0.lock();
+        assert!(allocator.initialized && count > 0);
+
+        let mut consecutive_free_count = 0;
+        let mut start_of_block_idxs = None;
+
+        // 'search block to find a contiguous region of `count` free pages
+        'search: for l1_idx in allocator.used_idxs_end.0..allocator.l1.len() {
+            let level2_bitmap_skip = if allocator.used_idxs_end.0 == l1_idx {
+                allocator.used_idxs_end.1 + 1
+            } else {
+                0
+            };
+
+            match &allocator.l1[l1_idx] {
+                // this l2 bitmap hasn't been allocated yet
+                None => {
+                    if start_of_block_idxs.is_none() {
+                        start_of_block_idxs = Some((l1_idx, level2_bitmap_skip));
+                    }
+
+                    consecutive_free_count += Self::level2_bitmap_bit_lenght() - level2_bitmap_skip;
+                    if consecutive_free_count >= count {
+                        break 'search;
+                    }
+                }
+
+                // this l2 bitmap is mapped, so we need to inspect the bits
+                Some(l2_bitmap) => {
+                    for l2_idx in level2_bitmap_skip..Self::level2_bitmap_bit_lenght() {
+                        // check if the page is free
+                        if !l2_bitmap.get(l2_idx).unwrap() {
+                            if start_of_block_idxs.is_none() {
+                                start_of_block_idxs = Some((l1_idx, l2_idx));
+                            }
+
+                            consecutive_free_count += 1;
+                            if consecutive_free_count >= count {
+                                break 'search;
+                            }
+                        } else {
+                            // the page is used so, the contiguous block is broken
+                            consecutive_free_count = 0;
+                            start_of_block_idxs = None;
+                        }
+                    }
+                }
+            }
+        }
+
+        // a block large enough was not found
+        if consecutive_free_count < count {
+            return Err(MemoryError::NotEnoughVirMemory);
+        }
+
+        let start_of_block_idxs = start_of_block_idxs.unwrap();
+        let (mut current_l1_idx, mut current_l2_idx) = start_of_block_idxs;
+
+        // mark the `count` pages as used
+        for _ in 0..count {
+            if allocator.l1[current_l1_idx].is_none() {
+                allocator.allocate_level2_bitmap(current_l1_idx)?;
+            }
+
+            // set the page as used
+            allocator.l1[current_l1_idx].as_mut().unwrap().set(current_l2_idx, true);
+
+            // go to the next page index
+            current_l2_idx += 1;
+            if current_l2_idx == Self::level2_bitmap_bit_lenght() {
+                current_l2_idx = 0;
+                current_l1_idx += 1;
+            }
+        }
+
+        let start_addr = allocator.bit_idxs_to_addr(start_of_block_idxs);
+        if count == 1 {
+            serial_println!("Allocated page: {:#x} {:?}", start_addr, start_of_block_idxs);
+        } else {
+            serial_println!("Allocated {} contiguous pages: {:#x} {:?}", count, start_addr, start_of_block_idxs);
+        }
+
+        Page::from_virt_addr(start_addr)
+    }
+
+    fn deallocate(&self, page: Page) {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized);
 
-        // find the first l2 bitmap that is None or the first free page in any l2 bitmap
-        let idxs = allocator.l1.iter()
-            .enumerate()
-            .find_map(|(l1_idx, l2_bitmap)| {
-                match l2_bitmap {
-                    None => Some((l1_idx, None)),
-                    Some(l2_bitmap) => l2_bitmap.iter()
-                        .position(|bit| !bit)
-                        .map(|l2_idx| (l1_idx, Some(l2_idx)))
-                }
-            });
+        let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page.addr());
+        assert!(allocator.l1[l1_idx].is_some());
+        assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap() == true);
 
-        let (l1_idx, l2_idx) = match idxs {
-            None => return Err(MemoryError::NotEnoughVirMemory),
-            Some((l1_idx, l2_idx)) => {
-                let l2_idx = match l2_idx {
-                    Some(l2_idx) => l2_idx,
-                    None => {
-                        allocator.allocate_level2_bitmap(l1_idx)?;
-                        0
-                    }
-                };
-
-                allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, true);
-                (l1_idx, l2_idx)
-            }
-        };
-
-        serial_println!("Got idxs: {} -- {}", l1_idx, l2_idx);
-        Ok(Page(0))
-    }
-
-    fn allocate_contiguous(&self, _count: usize) -> Result<Page, MemoryError> {
-        todo!()
-    }
-
-    fn deallocate(&self, _page: Page) {
-        todo!()
+        allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
     }
 }

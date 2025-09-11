@@ -90,7 +90,7 @@ SECTIONS
 	}
 
 	/* Exception Frames. */
-	.eh_frame : AT(LOADADDR(.data) + SIZEOF(.data))
+	.eh_frame : AT(LOADADDR(.bss) + SIZEOF(.bss))
 	{
 		*(.eh_frame .eh_frame.*)
 		. = ALIGN(4K);

@@ -106,7 +106,8 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// 
     /// # Panics
     /// 
-    /// If called before [initialization](PageAllocator::init()).
+    /// - If called before [initialization](PageAllocator::init()).
+    /// - If `count` is 0.
     fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError>;
 
     /// Deallocates `page`.
