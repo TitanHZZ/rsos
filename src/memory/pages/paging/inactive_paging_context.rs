@@ -25,7 +25,7 @@ impl InactivePagingContext {
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
         // deallocate the page
-        page_allocator.deallocate(p4_page);
+        unsafe { page_allocator.deallocate(p4_page) };
 
         // don't deallocate the frame because we need it to remain valid
         active_paging.unmap_page(p4_page, false)?;

@@ -1,6 +1,6 @@
-use crate::{memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE}, serial_print, serial_println};
-use crate::{memory::pages::{page_table::page_table_entry::EntryFlags, paging::ActivePagingContext}};
+use crate::{memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}, serial_print, serial_println};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
+use crate::memory::pages::page_table::page_table_entry::EntryFlags;
 use spin::Mutex;
 
 struct FreedBlock {
@@ -16,8 +16,6 @@ struct SimpleHeapAllocatorInner {
     freed_blocks: Option<NonNull<FreedBlock>>,
 
     max_mapped_addr: VirtualAddress,
-
-    apc: Option<&'static ActivePagingContext>,
 }
 
 unsafe impl Send for SimpleHeapAllocatorInner {}
@@ -32,7 +30,6 @@ pub static HEAP_ALLOCATOR: SimpleHeapAllocator = SimpleHeapAllocator(Mutex::new(
     next_block     : 0x0,
     freed_blocks   : None,
     max_mapped_addr: 0,
-    apc: None,
 }));
 
 impl SimpleHeapAllocator {
@@ -40,7 +37,7 @@ impl SimpleHeapAllocator {
     /// 
     /// Can only be called once or the allocator might get into an inconsistent state.  
     /// However, it must be called as the allocator expects it.
-    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize, apc: &'static ActivePagingContext) -> Result<(), MemoryError> {
+    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize) -> Result<(), MemoryError> {
         assert!(heap_start.is_multiple_of(FRAME_PAGE_SIZE));
         assert!(heap_size.is_multiple_of(FRAME_PAGE_SIZE));
 
@@ -49,11 +46,9 @@ impl SimpleHeapAllocator {
         allocator.heap_size  = heap_size;
         allocator.next_block = heap_start;
 
-        allocator.apc = Some(apc);
-
         // we are going to lazily allocate the required frames (for now we allocate just the first one)
         allocator.max_mapped_addr = heap_start + FRAME_PAGE_SIZE - 1;
-        apc.map(heap_start, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+        MEMORY_SUBSYSTEM.active_paging_context().map(heap_start, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
     }
 
     // DEBUG fn
@@ -286,7 +281,7 @@ unsafe impl GlobalAlloc for SimpleHeapAllocator {
             let end_addr = (allocator.next_block + 1).align_up(FRAME_PAGE_SIZE) - 1;
 
             for addr in (start_addr..=end_addr).step_by(FRAME_PAGE_SIZE) {
-                allocator.apc.unwrap().map(addr, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
+                MEMORY_SUBSYSTEM.active_paging_context().map(addr, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)
                     .expect("Could not allocate more frames for the heap memory.");
             }
 

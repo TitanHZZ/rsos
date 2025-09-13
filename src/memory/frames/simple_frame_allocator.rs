@@ -94,7 +94,7 @@ unsafe impl FrameAllocator for SimpleFrameAllocator {
     }
 
     // This allocator does not support deallocation.
-    fn deallocate(&self, _frame: Frame) {
+    unsafe fn deallocate(&self, _frame: Frame) {
         assert!(self.0.lock().initialized);
     }
 

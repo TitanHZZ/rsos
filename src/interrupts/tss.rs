@@ -4,6 +4,8 @@ use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
 
+// TODO: this should probably not use the heap to allocate stacks but instead, the page allocator
+
 // https://wiki.osdev.org/Task_State_Segment#Long_Mode
 #[repr(C, packed)]
 pub struct TSS {

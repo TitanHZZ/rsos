@@ -92,7 +92,7 @@ impl ActivePagingContextInner {
         p1.set_used_entries_count(p1.used_entries_count() - 1);
 
         if deallocate_frame {
-            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
+            unsafe { MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame) };
         }
 
         if p1.used_entries_count() == 0 {
@@ -105,7 +105,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p2.set_used_entries_count(p2.used_entries_count() - 1);
 
-            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
+            unsafe { MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame) };
             serial_println!("Deallocated a P1 table.");
         }
 
@@ -119,7 +119,7 @@ impl ActivePagingContextInner {
             entry.set_unused();
             p3.set_used_entries_count(p3.used_entries_count() - 1);
 
-            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
+            unsafe { MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame) };
             serial_println!("Deallocated a P2 table.");
         }
 
@@ -131,7 +131,7 @@ impl ActivePagingContextInner {
             let frame = entry.pointed_frame().unwrap();
 
             entry.set_unused();
-            MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame);
+            unsafe { MEMORY_SUBSYSTEM.frame_allocator().deallocate(frame) };
             serial_println!("Deallocated a P3 table.");
         }
 
@@ -176,6 +176,7 @@ impl Default for ActivePagingContext {
     }
 }
 
+// TODO: shouldn't the unmaps be unsafe??
 impl ActivePagingContext {
     pub(in crate::memory) const fn new() -> Self {
         ActivePagingContext(Mutex::new(ActivePagingContextInner {
@@ -270,7 +271,7 @@ impl ActivePagingContext {
         CR3::invalidate_all();
 
         // deallocate the page
-        page_allocator.deallocate(p4_page);
+        unsafe { page_allocator.deallocate(p4_page) };
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         apc.unmap_page(p4_page, false)

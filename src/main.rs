@@ -26,11 +26,11 @@ use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, Seg
 use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::memory::{AddrOps, FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
+use rsos::memory::{FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext}};
 use rsos::memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
-use core::{arch::asm, cmp::max, panic::PanicInfo, slice};
+use core::{arch::asm, panic::PanicInfo, slice};
 use rsos::{log, memory};
 use alloc::boxed::Box;
 
@@ -108,13 +108,14 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     log!(ok, "First stage page allocator initialized.");
 
     // get the current paging context and create a new (empty) one
-    log!(ok, "Remapping the kernel memory and the multiboot2 info.");
+    log!(ok, "Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
     { // this scope makes sure that the inactive context does not get used again
         let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
         let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
 
-        // remap (to the higher half) the kernel and the mb2 info with the correct flags and permissions into the new paging context
-        memory::remap(active_paging_context, inactive_paging).expect("Could not remap the kernel");
+        // remap (to the higher half) the kernel, the mb2 info and the frame allocator metadata
+        // with the correct flags and permissions into the new paging context
+        memory::remap(active_paging_context, inactive_paging).expect("Could not perform the higher half remapping");
 
         active_paging_context.switch(inactive_paging);
 
@@ -122,8 +123,16 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
         active_paging_context.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
-        serial_println!("guard_page_addr: {:#x}", guard_page_addr.addr());
+        serial_println!("Guard page addr: {:#x}", guard_page_addr.addr());
     }
+
+    // at this point, we are using a new paging context that maps the kernel, mb2 and frame allocator metadata to the higher half
+    // the paging context created during the asm bootstrapping is now being used as stack for the kernel
+    // except for the p4 table that is being used as a guard page
+    // because of this, we now have just over 2MiB of stack
+
+    log!(ok, "Higher half remapping completed.");
+    log!(ok, "Stack guard page created.");
 
     // use the new higher half mapped multiboot2
     let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
@@ -145,37 +154,14 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
     serial_println!("Second stage page allocator initialized.");
 
-    MEMORY_SUBSYSTEM.page_allocator().allocate().expect("well, ...");
-    MEMORY_SUBSYSTEM.page_allocator().allocate().expect("well, ...");
-    MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(10).expect("Well, ...");
-    MEMORY_SUBSYSTEM.page_allocator().allocate().expect("well, ...");
-
-    let b = unsafe  {
-        hash_memory_region(KERNEL.mb_start() + KERNEL.mb_lh_hh_offset(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
-    };
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
-
-    rsos::hlt();
-
-    // at this point, we are using a new paging context that just identity maps the kernel, mb2 info and vga buffer
-    // the paging context created during the asm bootstrapping is now being used as stack for the kernel
-    // except for the p4 table that is being used as a guard page
-    // because of this, we now have just over 2MiB of stack
-
-    log!(ok, "Kernel remapping completed.");
-    log!(ok, "Stack guard page created.");
-
+    // TODO: this should be improved
     // set up the heap allocator
     unsafe {
-        // we know that the addr of the vga buffer and the start of the kernel will never change at runtime
-        // and that the addr of the kernel is bigger so, we only need to avoid the mb2 info struct
-        // and thus, we can start the kernel heap at the biggest of the 2
-        let heap_start = max(KERNEL.k_end(), KERNEL.mb_end()).align_up(FRAME_PAGE_SIZE);
-        HEAP_ALLOCATOR.init(heap_start, 100 * 1024, MEMORY_SUBSYSTEM.active_paging_context())
-            .expect("Could not initialize the heap allocator");
+        let heap_bytes_size = 100 * 1024;
+        let heap_start = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(heap_bytes_size / FRAME_PAGE_SIZE).unwrap().addr();
+        HEAP_ALLOCATOR.init(heap_start, heap_bytes_size).expect("Could not initialize the heap allocator");
         log!(ok, "Heap allocator initialized.");
+        serial_println!("Heap allocator initialized.");
     }
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
@@ -219,18 +205,18 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     }
 
     // to be used later
-    let acpi_new_rsdp = KERNEL.mb_info().get_tag::<AcpiNewRsdp>();
-    assert!(acpi_new_rsdp.is_some());
+    let mb_info = KERNEL.mb_info();
+    assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
 
-    let framebuffer = KERNEL.mb_info().get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
+    let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
     let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
-    serial_println!("framebuffer type: {:#?}", fb_type);
+    serial_println!("Framebuffer type: {:#?}", fb_type);
 
     MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
     let b = unsafe  {
-        hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
+        hash_memory_region(KERNEL.mb_lh_hh_offset() + KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
     };
 
     // if this fails, the mb2 memory got corrupted
@@ -238,12 +224,6 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     #[cfg(test)]
     test_main();
-
-    let page = Page::from_virt_addr(0xFFFF800000000000).unwrap();
-    serial_println!("p4 index: {}", page.p4_index());
-    serial_println!("p3 index: {}", page.p3_index());
-    serial_println!("p2 index: {}", page.p2_index());
-    serial_println!("p1 index: {}", page.p1_index());
 
     serial_println!("Hello, World!");
     rsos::hlt();

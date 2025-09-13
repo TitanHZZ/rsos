@@ -96,6 +96,11 @@ impl<'a> BitmapRefMut<'a> {
         self.data.as_mut_ptr()
     }
 
+    /// Does the iterator holds just 0s.
+    pub fn zeroed(&self) -> bool {
+        !self.iter().any(|bit| bit)
+    }
+
     pub fn iter(&self) -> BitmapRefMutIter<'_> {
         BitmapRefMutIter {
             curr_bit_idx: 0,

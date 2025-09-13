@@ -73,20 +73,43 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         todo!()
     }
 
-    fn deallocate(&self, page: Page) {
+    unsafe fn deallocate(&self, page: Page) {
+        // let allocator = &mut *self.0.lock();
+        // assert!(allocator.initialized);
+        // // make sure that the address is valid and within range
+        // assert!(page.addr() >= allocator.start_addr && page.addr() < (allocator.start_addr + allocator.bitmap.len() * FRAME_PAGE_SIZE));
+        // // make sure that the page was previously allocated
+        // let bit_idx = (page.addr() - allocator.start_addr) / FRAME_PAGE_SIZE;
+        // assert!(allocator.bitmap.get(bit_idx).is_some());
+        // // deallocate
+        // allocator.bitmap.set(bit_idx, false);
+        // serial_println!("Deallocated page: {:#x}", page.0);
+
+        unsafe { self.deallocate_contiguous(page, 1) };
+    }
+
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
         let allocator = &mut *self.0.lock();
-        assert!(allocator.initialized);
+        assert!(allocator.initialized && count > 0);
 
-        // make sure that the address is valid and within range
-        assert!(page.addr() >= allocator.start_addr && page.addr() < (allocator.start_addr + allocator.bitmap.len() * FRAME_PAGE_SIZE));
+        for offset in 0..count {
+            let page_at_offset = Page::from_virt_addr(page.addr() + offset * FRAME_PAGE_SIZE).unwrap();
 
-        // make sure that the page was previously allocated
-        let bit_idx = (page.addr() - allocator.start_addr) / FRAME_PAGE_SIZE;
-        assert!(allocator.bitmap.get(bit_idx).is_some());
+            // make sure that the address is valid and within range
+            assert!(page_at_offset.addr() >= allocator.start_addr && page_at_offset.addr() < (allocator.start_addr + allocator.bitmap.len() * FRAME_PAGE_SIZE));
 
-        // deallocate
-        allocator.bitmap.set(bit_idx, false);
+            // make sure that the page was previously allocated
+            let bit_idx = (page_at_offset.addr() - allocator.start_addr) / FRAME_PAGE_SIZE;
+            assert!(allocator.bitmap.get(bit_idx).is_some());
 
-        serial_println!("Deallocated page: {:#x}", page.0);
+            // deallocate
+            allocator.bitmap.set(bit_idx, false);
+        }
+
+        if count == 1 {
+            serial_println!("Deallocated page: {:#x}", page.0);
+        } else {
+            serial_println!("Deallocated {} contiguous pages: {:#x}", count, page.0);
+        }
     }
 }

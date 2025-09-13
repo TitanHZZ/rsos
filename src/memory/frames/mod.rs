@@ -53,11 +53,17 @@ pub unsafe trait FrameAllocator: Send + Sync {
 
     /// Deallocates `frame`.
     /// 
+    /// # Safety
+    /// 
+    /// The consumer deallocating a frame **must** be the same as the one that previously allocated it.
+    /// 
+    /// Otherwise, the consumer might cause memory corruption or undefined behavior.
+    /// 
     /// # Panics
     /// 
     /// - May panic when trying to deallocate a frame not currently allocated by this frame allocator (implementation dependent).
     /// - If called before [initialization](FrameAllocator::init()).
-    fn deallocate(&self, frame: Frame);
+    unsafe fn deallocate(&self, frame: Frame);
 
     /// Resets the frame allocator state.
     /// 
@@ -142,8 +148,8 @@ unsafe impl FrameAllocator for GlobalFrameAllocator {
         self.fa.get().allocate()
     }
 
-    fn deallocate(&self, frame: Frame) {
-        self.fa.get().deallocate(frame);
+    unsafe fn deallocate(&self, frame: Frame) {
+        unsafe { self.fa.get().deallocate(frame) };
     }
 
     unsafe fn init(&self) -> Result<(), MemoryError> {

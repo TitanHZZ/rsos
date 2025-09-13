@@ -29,27 +29,32 @@ struct BitmapPageAllocatorInner<'a> {
 }
 
 impl<'a> BitmapPageAllocatorInner<'a> {
+    /// Convert from a `page_idx` in the higher half to the l1 and l2 bitmap indexes that map the respective page.
     const fn page_idx_to_bit_idxs(&self, page_idx: usize) -> (usize, usize) {
         assert!(page_idx < (Kernel::hh_end() / FRAME_PAGE_SIZE));
         (page_idx / BitmapPageAllocator::level2_bitmap_bit_lenght(), page_idx % BitmapPageAllocator::level2_bitmap_bit_lenght())
     }
 
+    /// Get the l1 and l2 bitmap indexes that map the respective `addr`.
     fn addr_to_bit_idxs(&self, addr: VirtualAddress) -> (usize, usize) {
         assert!(addr >= Kernel::k_hh_start() && addr <= Kernel::hh_end());
         let page_idx = (addr.align_down(FRAME_PAGE_SIZE) - Kernel::k_hh_start()) / FRAME_PAGE_SIZE;
         self.page_idx_to_bit_idxs(page_idx)
     }
 
+    /// Get the address that is mapped by the l1 and l2 bitmap `idxs`.
     const fn bit_idxs_to_addr(&self, idxs: (usize, usize)) -> VirtualAddress {
         let page_idx = idxs.0 * BitmapPageAllocator::level2_bitmap_bit_lenght() + idxs.1;
         Kernel::k_hh_start() + page_idx * FRAME_PAGE_SIZE
     }
 
+    /// Get the l2 bitmap start address from the respective l1 `bitmap_idx`.
     fn level2_bitmap_addr(&self, bitmap_idx: usize) -> VirtualAddress {
         assert!(bitmap_idx < 261120);
         BitmapPageAllocator::level2_bitmaps_start_addr() + (BitmapPageAllocator::level2_bitmap_lenght() * bitmap_idx)
     }
 
+    /// Allocate the l2 bitmap with the respective l1 `bitmap_idx`, as well as, the necessary bitmaps to map the requested l2 bitmap.
     fn allocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
         // allocate and map all the required pages for the second level bitmap
         let bitmap_start_addr = self.level2_bitmap_addr(bitmap_idx);
@@ -71,6 +76,33 @@ impl<'a> BitmapPageAllocatorInner<'a> {
         // mark the current second level bitmap pages as allocated in the new, recursively allocated, second level bitmap
         for offset in 0..BitmapPageAllocator::level2_bitmap_page_lenght() {
             self.l1[l1_idx].as_mut().unwrap().set(l2_idx + offset, true);
+        }
+
+        Ok(())
+    }
+
+    /// Deallocate the l2 bitmap with the respective l1 `bitmap_idx`, as well as, the necessary bitmaps that mapped the requested l2 bitmap for deallocation.
+    fn deallocate_level2_bitmap(&mut self, bitmap_idx: usize) -> Result<(), MemoryError> {
+        // allocate and map all the required pages for the second level bitmap
+        let bitmap_start_addr = self.level2_bitmap_addr(bitmap_idx);
+        for addr in (bitmap_start_addr..bitmap_start_addr + BitmapPageAllocator::level2_bitmap_lenght()).step_by(FRAME_PAGE_SIZE) {
+            MEMORY_SUBSYSTEM.active_paging_context().unmap_page(Page::from_virt_addr(addr)?, true)?;
+        }
+
+        self.l1[bitmap_idx] = None;
+
+        // recursively deallocate the second level bitmap
+        let (l1_idx, l2_idx) = self.addr_to_bit_idxs(bitmap_start_addr);
+        assert!(self.l1[l1_idx].is_some());
+
+        // mark the current second level bitmap pages as deallocated
+        for offset in 0..BitmapPageAllocator::level2_bitmap_page_lenght() {
+            self.l1[l1_idx].as_mut().unwrap().set(l2_idx + offset, false);
+        }
+
+        // recursively deallocate the second level bitmap that marked the current one, but is now empty
+        if self.l1[l1_idx].as_ref().unwrap().zeroed() {
+            self.deallocate_level2_bitmap(l1_idx)?;
         }
 
         Ok(())
@@ -167,7 +199,7 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
 
         // 'search block to find a contiguous region of `count` free pages
         'search: for l1_idx in allocator.used_idxs_end.0..allocator.l1.len() {
-            let level2_bitmap_skip = if allocator.used_idxs_end.0 == l1_idx {
+            let level2_bitmap_offset = if allocator.used_idxs_end.0 == l1_idx {
                 allocator.used_idxs_end.1 + 1
             } else {
                 0
@@ -177,10 +209,10 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
                 // this l2 bitmap hasn't been allocated yet
                 None => {
                     if start_of_block_idxs.is_none() {
-                        start_of_block_idxs = Some((l1_idx, level2_bitmap_skip));
+                        start_of_block_idxs = Some((l1_idx, level2_bitmap_offset));
                     }
 
-                    consecutive_free_count += Self::level2_bitmap_bit_lenght() - level2_bitmap_skip;
+                    consecutive_free_count += BitmapPageAllocator::level2_bitmap_bit_lenght() - level2_bitmap_offset;
                     if consecutive_free_count >= count {
                         break 'search;
                     }
@@ -188,7 +220,7 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
 
                 // this l2 bitmap is mapped, so we need to inspect the bits
                 Some(l2_bitmap) => {
-                    for l2_idx in level2_bitmap_skip..Self::level2_bitmap_bit_lenght() {
+                    for l2_idx in level2_bitmap_offset..BitmapPageAllocator::level2_bitmap_bit_lenght() {
                         // check if the page is free
                         if !l2_bitmap.get(l2_idx).unwrap() {
                             if start_of_block_idxs.is_none() {
@@ -244,14 +276,40 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         Page::from_virt_addr(start_addr)
     }
 
-    fn deallocate(&self, page: Page) {
+    unsafe fn deallocate(&self, page: Page) {
+        // let allocator = &mut *self.0.lock();
+        // assert!(allocator.initialized);
+        // let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page.addr());
+        // assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap() == true);
+        // allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
+        // if allocator.l1[l1_idx].as_ref().unwrap().zeroed() {
+        //     allocator.deallocate_level2_bitmap(l1_idx).unwrap();
+        // }
+        // serial_println!("Deallocated page: {:#x} {:?}", page.addr(), (l1_idx, l2_idx));
+
+        unsafe { self.deallocate_contiguous(page, 1) };
+    }
+
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
         let allocator = &mut *self.0.lock();
-        assert!(allocator.initialized);
+        assert!(allocator.initialized && count > 0);
 
-        let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page.addr());
-        assert!(allocator.l1[l1_idx].is_some());
-        assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap() == true);
+        for offset in 0..count {
+            let page_at_offset = Page::from_virt_addr(page.addr() + offset * FRAME_PAGE_SIZE).unwrap();
 
-        allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
+            let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page_at_offset.addr());
+            assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap());
+
+            allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
+            if allocator.l1[l1_idx].as_ref().unwrap().zeroed() {
+                allocator.deallocate_level2_bitmap(l1_idx).unwrap();
+            }
+        }
+
+        if count == 1 {
+            serial_println!("Deallocated page: {:#x} {:?}", page.0, allocator.addr_to_bit_idxs(page.addr()));
+        } else {
+            serial_println!("Deallocated {} contiguous pages: {:#x} {:?}", count, page.0, allocator.addr_to_bit_idxs(page.addr()));
+        }
     }
 }

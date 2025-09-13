@@ -104,6 +104,8 @@ pub unsafe trait PageAllocator: Send + Sync {
 
     /// Allocate multiple, contiguous, pages.
     /// 
+    /// Returns the first page in the contiguous block.
+    /// 
     /// # Panics
     /// 
     /// - If called before [initialization](PageAllocator::init()).
@@ -112,11 +114,32 @@ pub unsafe trait PageAllocator: Send + Sync {
 
     /// Deallocates `page`.
     /// 
+    /// # Safety
+    /// 
+    /// The consumer deallocating a page **must** be the same as the one that previously allocated it.
+    /// 
+    /// Otherwise, the consumer might cause memory corruption or undefined behavior.
+    /// 
     /// # Panics
     /// 
     /// - May panic when trying to deallocate a page not currently allocated by this page allocator (implementation dependent).
     /// - If called before [initialization](PageAllocator::init()).
-    fn deallocate(&self, page: Page);
+    unsafe fn deallocate(&self, page: Page);
+
+    /// Deallocates `count` pages starting at `page`.
+    /// 
+    /// # Safety
+    /// 
+    /// The consumer deallocating the pages **must** be the same as the one that previously allocated them.
+    /// 
+    /// Otherwise, the consumer might cause memory corruption or undefined behavior.
+    /// 
+    /// # Panics
+    /// 
+    /// - May panic when trying to deallocate pages not currently allocated by this page allocator (implementation dependent).
+    /// - If called before [initialization](PageAllocator::init()).
+    /// - If `count` is 0.
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize);
 
     /// Resets the page allocator state.
     /// 
@@ -219,8 +242,12 @@ unsafe impl PageAllocator for GlobalPageAllocator {
         self.current().allocate_contiguous(count)
     }
 
-    fn deallocate(&self, page: Page) {
-        self.current().deallocate(page);
+    unsafe fn deallocate(&self, page: Page) {
+        unsafe { self.current().deallocate(page) };
+    }
+
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
+        unsafe { self.current().deallocate_contiguous(page, count) };
     }
 
     unsafe fn init(&self) -> Result<(), MemoryError> {
