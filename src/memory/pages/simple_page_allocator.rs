@@ -277,16 +277,6 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
     }
 
     unsafe fn deallocate(&self, page: Page) {
-        // let allocator = &mut *self.0.lock();
-        // assert!(allocator.initialized);
-        // let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page.addr());
-        // assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap() == true);
-        // allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
-        // if allocator.l1[l1_idx].as_ref().unwrap().zeroed() {
-        //     allocator.deallocate_level2_bitmap(l1_idx).unwrap();
-        // }
-        // serial_println!("Deallocated page: {:#x} {:?}", page.addr(), (l1_idx, l2_idx));
-
         unsafe { self.deallocate_contiguous(page, 1) };
     }
 

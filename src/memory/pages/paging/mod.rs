@@ -59,6 +59,8 @@ impl ActivePagingContextInner {
     }
 
     /// Maps a specific Page to a (random) Frame.
+    /// 
+    /// A frame will be allocated to map the page to.
     pub(in crate::memory) fn map_page(&mut self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         // get a random (free) frame
         let frame = MEMORY_SUBSYSTEM.frame_allocator().allocate()?;
@@ -66,12 +68,16 @@ impl ActivePagingContextInner {
     }
 
     /// Maps the Page containing the `virtual_addr` to a (random) Frame.
+    /// 
+    /// A frame will be allocated and the page containing the `virtual_addr` will be mapped to it.
     pub(in crate::memory) fn map(&mut self, virtual_addr: VirtualAddress, flags: EntryFlags) -> Result<(), MemoryError> {
         let page = Page::from_virt_addr(virtual_addr)?;
         self.map_page(page, flags)
     }
 
     /// Maps a Frame to a Page with same addr (identity mapping).
+    /// 
+    /// The page will not be allocated.
     pub(in crate::memory) fn identity_map(&mut self, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         self.map_page_to_frame(Page::from_virt_addr(frame.addr())?, frame, flags)
     }
@@ -192,16 +198,22 @@ impl ActivePagingContext {
     }
 
     /// Maps a specific Page to a (random) Frame.
+    /// 
+    /// A frame will be allocated to map the page to.
     pub fn map_page(&self, page: Page, flags: EntryFlags) -> Result<(), MemoryError> {
         self.0.lock().map_page(page, flags)
     }
 
     /// Maps the Page containing the `virtual_addr` to a (random) Frame.
+    /// 
+    /// A frame will be allocated and the page containing the `virtual_addr` will be mapped to it.
     pub fn map(&self, virtual_addr: VirtualAddress, flags: EntryFlags) -> Result<(), MemoryError> {
         self.0.lock().map(virtual_addr, flags)
     }
 
     /// Maps a Frame to a Page with same addr (identity mapping).
+    /// 
+    /// The page will not be allocated.
     pub fn identity_map(&self, frame: Frame, flags: EntryFlags) -> Result<(), MemoryError> {
         self.0.lock().identity_map(frame, flags)
     }

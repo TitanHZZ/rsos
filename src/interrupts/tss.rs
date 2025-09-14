@@ -1,8 +1,8 @@
 // https://wiki.osdev.org/Task_State_Segment
-use crate::memory::{pages::{Page, page_table::page_table_entry::EntryFlags}, MemoryError, simple_heap_allocator::HEAP_ALLOCATOR};
+use crate::memory::{pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, MemoryError};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
-use core::{alloc::{GlobalAlloc, Layout}, arch::asm};
 use super::gdt::SegmentSelector;
+use core::arch::asm;
 
 // TODO: this should probably not use the heap to allocate stacks but instead, the page allocator
 
@@ -22,7 +22,7 @@ pub struct TSS {
     iopb: u16,
 
     // this is not part of the structure but it is needed as metadata fot managing heap allocated stacks
-    // this holds the size (in bytes) for each of tuse paging::ActivePagingContext;he currently allocated stacks and if they used a page guard
+    // this holds the size (in pages) for each of the currently allocated stacks and if they used a page guard
     previous_stack: [(usize, bool); 7],
 }
 
@@ -83,14 +83,13 @@ impl TSS {
             return Err(TssError::PageCountIsZero);
         }
 
-        // this is a u16 to avoid overflows
-        let real_page_count = page_count as u16 + use_guard_page as u16;
+        // this is a usize to avoid overflows
+        let real_page_count = page_count as usize + use_guard_page as usize;
 
         // if a stack is already present, remove it so that a new can can be placed there
         if self.ist[stack_number as usize] != 0 {
-            let previous_stack_size: usize    = self.previous_stack[stack_number as usize].0;
-            let previous_stack_layout: Layout = Layout::from_size_align(previous_stack_size, FRAME_PAGE_SIZE).unwrap();
-            let previous_stack_ptr: *mut u8   = (self.ist[stack_number as usize] - previous_stack_size + 1)  as *mut u8;
+            let previous_stack_size = self.previous_stack[stack_number as usize].0;
+            let previous_stack_ptr = (self.ist[stack_number as usize] - previous_stack_size * FRAME_PAGE_SIZE) + 1;
 
             // if the previous stack used a guard page, we need to map it again
             if self.previous_stack[stack_number as usize].1 {
@@ -99,21 +98,19 @@ impl TSS {
                 active_paging_context.map(guard_page_addr, flags).map_err(TssError::Memory)?;
             }
 
-            unsafe { HEAP_ALLOCATOR.dealloc(previous_stack_ptr, previous_stack_layout) };
+            let stack_first_page = Page::from_virt_addr(previous_stack_ptr).map_err(TssError::Memory)?;
+            unsafe { MEMORY_SUBSYSTEM.page_allocator().deallocate_contiguous(stack_first_page, previous_stack_size) };
         }
 
         // alocate enough memory for the stack
-        let size = real_page_count as usize * FRAME_PAGE_SIZE;
-        let layout = Layout::from_size_align(size, FRAME_PAGE_SIZE).unwrap();
-        let stack = unsafe { HEAP_ALLOCATOR.alloc(layout) } as VirtualAddress;
+        let stack = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(real_page_count).map_err(TssError::Memory)?;
 
         // in x86_64, the stack grows downwards so, it must point to the last stack byte
-        self.ist[stack_number as usize] = (stack + real_page_count as usize * FRAME_PAGE_SIZE) - 1;
-        self.previous_stack[stack_number as usize] = (size, use_guard_page);
+        self.ist[stack_number as usize] = (stack.addr() + real_page_count * FRAME_PAGE_SIZE) - 1;
+        self.previous_stack[stack_number as usize] = (real_page_count, use_guard_page);
 
         if use_guard_page {
-            // the unwrap() **should** be fine as the addr was returned from the allocator itself
-            active_paging_context.unmap_page(Page::from_virt_addr(stack).unwrap(), true).map_err(TssError::Memory)?;
+            active_paging_context.unmap_page(stack, true).map_err(TssError::Memory)?;
         }
 
         Ok(())
