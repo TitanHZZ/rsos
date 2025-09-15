@@ -13,10 +13,10 @@ impl InactivePagingContext {
         let page_allocator = MEMORY_SUBSYSTEM.page_allocator();
 
         let p4_frame = MEMORY_SUBSYSTEM.frame_allocator().allocate()?;
-        let p4_page = page_allocator.allocate()?;
+        let p4_page = page_allocator.allocate(false)?;
 
         // map the p4 frame
-        active_paging.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        active_paging.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
 
         // recursively map the table
         // the unsafe block *is* safe as we know that the page is valid
@@ -25,7 +25,7 @@ impl InactivePagingContext {
         table.entries[ENTRY_COUNT - 1].set(p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE);
 
         // deallocate the page
-        unsafe { page_allocator.deallocate(p4_page) };
+        unsafe { page_allocator.deallocate(p4_page, false) };
 
         // don't deallocate the frame because we need it to remain valid
         active_paging.unmap_page(p4_page, false)?;

@@ -67,6 +67,7 @@ impl Page {
     }
 }
 
+// TODO: this should show the flags that the allocate methods use for mapping
 /// Represents the public interface of a page allocator.
 /// 
 /// # Safety
@@ -97,12 +98,16 @@ impl Page {
 pub unsafe trait PageAllocator: Send + Sync {
     /// Allocate a single page.
     /// 
+    /// The page will be mapped to a random frame if requested with `map_page` (the frame will be allocated).
+    /// 
     /// # Panics
     /// 
     /// If called before [initialization](PageAllocator::init()).
-    fn allocate(&self) -> Result<Page, MemoryError>;
+    fn allocate(&self, map_page: bool) -> Result<Page, MemoryError>;
 
     /// Allocate multiple, contiguous, pages.
+    /// 
+    /// The pages will be mapped to random frames if requested with `map_pages` (the frames will be allocated).
     /// 
     /// Returns the first page in the contiguous block.
     /// 
@@ -110,9 +115,11 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// 
     /// - If called before [initialization](PageAllocator::init()).
     /// - If `count` is 0.
-    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError>;
+    fn allocate_contiguous(&self, count: usize, map_pages: bool) -> Result<Page, MemoryError>;
 
     /// Deallocates `page`.
+    /// 
+    /// The page will be unmapped (and the respective frame deallocated), if requested with `unmap_page`.
     /// 
     /// # Safety
     /// 
@@ -124,9 +131,11 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// 
     /// - May panic when trying to deallocate a page not currently allocated by this page allocator (implementation dependent).
     /// - If called before [initialization](PageAllocator::init()).
-    unsafe fn deallocate(&self, page: Page);
+    unsafe fn deallocate(&self, page: Page, unmap_page: bool);
 
     /// Deallocates `count` pages starting at `page`.
+    /// 
+    /// The pages will be unmapped (and the respective frames deallocated), if requested with `unmap_pages`.
     /// 
     /// # Safety
     /// 
@@ -139,7 +148,7 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// - May panic when trying to deallocate pages not currently allocated by this page allocator (implementation dependent).
     /// - If called before [initialization](PageAllocator::init()).
     /// - If `count` is 0.
-    unsafe fn deallocate_contiguous(&self, page: Page, count: usize);
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize, unmap_pages: bool);
 
     /// Resets the page allocator state.
     /// 
@@ -234,20 +243,20 @@ impl GlobalPageAllocator {
 }
 
 unsafe impl PageAllocator for GlobalPageAllocator {
-    fn allocate(&self) -> Result<Page, MemoryError> {
-        self.current().allocate()
+    fn allocate(&self, map_page: bool) -> Result<Page, MemoryError> {
+        self.current().allocate(map_page)
     }
 
-    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError> {
-        self.current().allocate_contiguous(count)
+    fn allocate_contiguous(&self, count: usize, map_pages: bool) -> Result<Page, MemoryError> {
+        self.current().allocate_contiguous(count, map_pages)
     }
 
-    unsafe fn deallocate(&self, page: Page) {
-        unsafe { self.current().deallocate(page) };
+    unsafe fn deallocate(&self, page: Page, unmap_page: bool) {
+        unsafe { self.current().deallocate(page, unmap_page) };
     }
 
-    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
-        unsafe { self.current().deallocate_contiguous(page, count) };
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize, unmap_pages: bool) {
+        unsafe { self.current().deallocate_contiguous(page, count, unmap_pages) };
     }
 
     unsafe fn init(&self) -> Result<(), MemoryError> {

@@ -262,8 +262,8 @@ impl ActivePagingContext {
 
         // backup the current active paging p4 frame addr and map the current p4 table so we can change it later
         let p4_frame = Frame::from_phy_addr(CR3::get());
-        let p4_page = page_allocator.allocate()?;
-        apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE)?;
+        let p4_page = page_allocator.allocate(false)?;
+        apc.map_page_to_frame(p4_page, p4_frame, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
 
         // set the recusive entry on the current paging context to the inactive p4 frame
         apc.p4_mut().entries[ENTRY_COUNT - 1].set_phy_addr(inactive_context.p4_frame());
@@ -283,7 +283,7 @@ impl ActivePagingContext {
         CR3::invalidate_all();
 
         // deallocate the page
-        unsafe { page_allocator.deallocate(p4_page) };
+        unsafe { page_allocator.deallocate(p4_page, false) };
 
         // do not deallocate the frame as it needs to remain valid (after all, it is the current p4 frame)
         apc.unmap_page(p4_page, false)

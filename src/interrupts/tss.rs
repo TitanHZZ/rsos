@@ -4,8 +4,6 @@ use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use super::gdt::SegmentSelector;
 use core::arch::asm;
 
-// TODO: this should probably not use the heap to allocate stacks but instead, the page allocator
-
 // https://wiki.osdev.org/Task_State_Segment#Long_Mode
 #[repr(C, packed)]
 pub struct TSS {
@@ -99,11 +97,11 @@ impl TSS {
             }
 
             let stack_first_page = Page::from_virt_addr(previous_stack_ptr).map_err(TssError::Memory)?;
-            unsafe { MEMORY_SUBSYSTEM.page_allocator().deallocate_contiguous(stack_first_page, previous_stack_size) };
+            unsafe { MEMORY_SUBSYSTEM.page_allocator().deallocate_contiguous(stack_first_page, previous_stack_size, true) };
         }
 
         // alocate enough memory for the stack
-        let stack = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(real_page_count).map_err(TssError::Memory)?;
+        let stack = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(real_page_count, true).map_err(TssError::Memory)?;
 
         // in x86_64, the stack grows downwards so, it must point to the last stack byte
         self.ist[stack_number as usize] = (stack.addr() + real_page_count * FRAME_PAGE_SIZE) - 1;

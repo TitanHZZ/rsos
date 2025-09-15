@@ -186,11 +186,11 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         Ok(())
     }
 
-    fn allocate(&self) -> Result<Page, MemoryError> {
-        self.allocate_contiguous(1)
+    fn allocate(&self, map_page: bool) -> Result<Page, MemoryError> {
+        self.allocate_contiguous(1, map_page)
     }
 
-    fn allocate_contiguous(&self, count: usize) -> Result<Page, MemoryError> {
+    fn allocate_contiguous(&self, count: usize, map_pages: bool) -> Result<Page, MemoryError> {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized && count > 0);
 
@@ -258,6 +258,11 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
             // set the page as used
             allocator.l1[current_l1_idx].as_mut().unwrap().set(current_l2_idx, true);
 
+            if map_pages {
+                let page = Page::from_virt_addr(allocator.bit_idxs_to_addr((current_l1_idx, current_l2_idx)))?;
+                MEMORY_SUBSYSTEM.active_paging_context().map_page(page, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
+            }
+
             // go to the next page index
             current_l2_idx += 1;
             if current_l2_idx == Self::level2_bitmap_bit_lenght() {
@@ -276,11 +281,11 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
         Page::from_virt_addr(start_addr)
     }
 
-    unsafe fn deallocate(&self, page: Page) {
-        unsafe { self.deallocate_contiguous(page, 1) };
+    unsafe fn deallocate(&self, page: Page, unmap_page: bool) {
+        unsafe { self.deallocate_contiguous(page, 1, unmap_page) };
     }
 
-    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize, unmap_pages: bool) {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized && count > 0);
 
@@ -290,7 +295,12 @@ unsafe impl<'a> PageAllocator for BitmapPageAllocator<'a> {
             let (l1_idx, l2_idx) = allocator.addr_to_bit_idxs(page_at_offset.addr());
             assert!(allocator.l1[l1_idx].as_ref().unwrap().get(l2_idx).unwrap());
 
+            // deallocate
             allocator.l1[l1_idx].as_mut().unwrap().set(l2_idx, false);
+            if unmap_pages {
+                MEMORY_SUBSYSTEM.active_paging_context().unmap_page(page_at_offset, true).unwrap();
+            }
+
             if allocator.l1[l1_idx].as_ref().unwrap().zeroed() {
                 allocator.deallocate_level2_bitmap(l1_idx).unwrap();
             }

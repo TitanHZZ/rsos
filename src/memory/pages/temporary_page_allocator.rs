@@ -1,4 +1,4 @@
-use crate::memory::{pages::{Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::memory::{pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use crate::{data_structures::bitmap::Bitmap, serial_println};
 use crate::{assert_called_once, kernel::Kernel};
 use spin::Mutex;
@@ -52,7 +52,7 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         Ok(())
     }
 
-    fn allocate(&self) -> Result<Page, MemoryError> {
+    fn allocate(&self, map_page: bool) -> Result<Page, MemoryError> {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized);
 
@@ -61,34 +61,26 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
         allocator.bitmap.set(idx, true);
 
         let page = Page::from_virt_addr(allocator.start_addr + idx * FRAME_PAGE_SIZE)?;
-        serial_println!("Allocated page: {:#x}", page.0);
+        if map_page {
+            MEMORY_SUBSYSTEM.active_paging_context().map_page(page, EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE)?;
+        }
 
+        serial_println!("Allocated page: {:#x}", page.0);
         Ok(page)
     }
 
-    fn allocate_contiguous(&self, _count: usize) -> Result<Page, MemoryError> {
+    fn allocate_contiguous(&self, _count: usize, _map_pages: bool) -> Result<Page, MemoryError> {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized);
 
         todo!()
     }
 
-    unsafe fn deallocate(&self, page: Page) {
-        // let allocator = &mut *self.0.lock();
-        // assert!(allocator.initialized);
-        // // make sure that the address is valid and within range
-        // assert!(page.addr() >= allocator.start_addr && page.addr() < (allocator.start_addr + allocator.bitmap.len() * FRAME_PAGE_SIZE));
-        // // make sure that the page was previously allocated
-        // let bit_idx = (page.addr() - allocator.start_addr) / FRAME_PAGE_SIZE;
-        // assert!(allocator.bitmap.get(bit_idx).is_some());
-        // // deallocate
-        // allocator.bitmap.set(bit_idx, false);
-        // serial_println!("Deallocated page: {:#x}", page.0);
-
-        unsafe { self.deallocate_contiguous(page, 1) };
+    unsafe fn deallocate(&self, page: Page, unmap_page: bool) {
+        unsafe { self.deallocate_contiguous(page, 1, unmap_page) };
     }
 
-    unsafe fn deallocate_contiguous(&self, page: Page, count: usize) {
+    unsafe fn deallocate_contiguous(&self, page: Page, count: usize, unmap_pages: bool) {
         let allocator = &mut *self.0.lock();
         assert!(allocator.initialized && count > 0);
 
@@ -104,6 +96,9 @@ unsafe impl PageAllocator for TemporaryPageAllocator {
 
             // deallocate
             allocator.bitmap.set(bit_idx, false);
+            if unmap_pages {
+                MEMORY_SUBSYSTEM.active_paging_context().unmap_page(page_at_offset, true).unwrap();
+            }
         }
 
         if count == 1 {

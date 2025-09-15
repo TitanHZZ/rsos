@@ -46,12 +46,16 @@ impl Frame {
 pub unsafe trait FrameAllocator: Send + Sync {
     /// Allocate a single frame.
     /// 
+    /// The frame will not mapped and thus, no page is allocated no map it to.
+    /// 
     /// # Panics
     /// 
     /// If called before [initialization](FrameAllocator::init()).
     fn allocate(&self) -> Result<Frame, MemoryError>;
 
     /// Deallocates `frame`.
+    /// 
+    /// If the `frame` is mapped, it will not be unmapped and thus, the page that maps it, will also not deallocated.
     /// 
     /// # Safety
     /// 

@@ -154,15 +154,17 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
     serial_println!("Second stage page allocator initialized.");
 
-    // TODO: this should be improved
     // set up the heap allocator
-    unsafe {
-        let heap_bytes_size = 100 * 1024;
-        let heap_start = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(heap_bytes_size / FRAME_PAGE_SIZE).unwrap().addr();
-        HEAP_ALLOCATOR.init(heap_start, heap_bytes_size).expect("Could not initialize the heap allocator");
-        log!(ok, "Heap allocator initialized.");
-        serial_println!("Heap allocator initialized.");
-    }
+    unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
+    serial_println!("Heap allocator initialized.");
+
+    let mb_info = KERNEL.mb_info();
+    let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
+    let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
+    serial_println!("Framebuffer type: {:#?}", fb_type);
+
+    MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
+    framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
@@ -204,16 +206,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         asm!("int3");
     }
 
-    // to be used later
-    let mb_info = KERNEL.mb_info();
-    assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
-
-    let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
-    let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
-    serial_println!("Framebuffer type: {:#?}", fb_type);
-
-    MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
-    framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
+    // // to be used later
+    // assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
 
     let b = unsafe  {
         hash_memory_region(KERNEL.mb_lh_hh_offset() + KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)

@@ -1,7 +1,9 @@
-use crate::{memory::{AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}, serial_print, serial_println};
+use crate::{memory::{pages::PageAllocator, AddrOps, MemoryError, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM}, serial_print, serial_println};
 use core::{alloc::{GlobalAlloc, Layout}, cmp::max, ptr::{addr_of, eq as ptr_eq, NonNull}};
 use crate::memory::pages::page_table::page_table_entry::EntryFlags;
 use spin::Mutex;
+
+// TODO: this could probably use an 'initialized' flag
 
 struct FreedBlock {
     size: usize,
@@ -33,17 +35,19 @@ pub static HEAP_ALLOCATOR: SimpleHeapAllocator = SimpleHeapAllocator(Mutex::new(
 }));
 
 impl SimpleHeapAllocator {
+    /// Initialized the heap with `heap_page_size` pages.
+    /// 
     /// # Safety
     /// 
     /// Can only be called once or the allocator might get into an inconsistent state.  
     /// However, it must be called as the allocator expects it.
-    pub unsafe fn init(&self, heap_start: VirtualAddress, heap_size: usize) -> Result<(), MemoryError> {
-        assert!(heap_start.is_multiple_of(FRAME_PAGE_SIZE));
-        assert!(heap_size.is_multiple_of(FRAME_PAGE_SIZE));
+    pub unsafe fn init(&self, heap_page_size: usize) -> Result<(), MemoryError> {
+        assert!(heap_page_size > 0);
 
         let allocator = &mut *self.0.lock();
+        let heap_start = MEMORY_SUBSYSTEM.page_allocator().allocate_contiguous(heap_page_size, false)?.addr();
         allocator.heap_start = heap_start;
-        allocator.heap_size  = heap_size;
+        allocator.heap_size  = heap_page_size * FRAME_PAGE_SIZE;
         allocator.next_block = heap_start;
 
         // we are going to lazily allocate the required frames (for now we allocate just the first one)
