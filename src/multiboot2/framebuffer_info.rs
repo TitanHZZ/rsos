@@ -87,6 +87,7 @@ impl FrameBufferInfo {
     }
 
     pub fn put_pixel(&self, x: u32, y: u32, color: FrameBufferColor) {
+        // TODO: this should, obviously, not be an assert
         assert!(self.framebuffer_bpp == 24);
 
         let pixel_addr = self.get_phy_addr() + (x * self.framebuffer_width + y * self.framebuffer_pitch) as usize;
@@ -94,10 +95,13 @@ impl FrameBufferInfo {
 
         serial_println!("color info: {:#?}", color_info);
 
-        let pixel = unsafe { &mut *(pixel_addr as *mut [u8; 3]) };
-        pixel[0] = color.b; // blue
-        pixel[1] = color.g; // green
-        pixel[2] = color.r; // red
+        // ((1 << tagfb->framebuffer_blue_mask_size) - 1) << tagfb->framebuffer_blue_field_position
+        let pixel = pixel_addr as *mut u8;
+        unsafe {
+            pixel.byte_offset((color_info.framebuffer_red_mask_size / 8).into()).write_volatile(color.r);   // red
+            pixel.byte_offset((color_info.framebuffer_green_mask_size / 8).into()).write_volatile(color.g); // green
+            pixel.byte_offset((color_info.framebuffer_blue_mask_size / 8).into()).write_volatile(color.b);  // blue
+        }
     }
 }
 

@@ -23,12 +23,12 @@ extern crate alloc;
 
 use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
-use rsos::{multiboot2::{acpi_new_rsdp::AcpiNewRsdp, efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::memory::{FRAME_PAGE_SIZE, pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
+use rsos::{multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext}};
 use rsos::memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags};
+use rsos::memory::{pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use core::{arch::asm, panic::PanicInfo, slice};
 use rsos::{log, memory};
