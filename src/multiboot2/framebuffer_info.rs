@@ -1,4 +1,3 @@
-use crate::{memory::PhysicalAddress, serial_println};
 use super::{tag_trait::MbTag, MbTagHeader, TagType};
 
 #[repr(u8)]
@@ -11,7 +10,7 @@ pub enum FrameBufferType {
 }
 
 #[derive(Debug)]
-pub enum FrameBufferError {
+pub enum FrameBufferInfoError {
     UnknownFrameBufferType,
 }
 
@@ -31,77 +30,49 @@ struct ColorInfoIndexedColor {
 }
 
 #[repr(C)]
-#[derive(Debug)]
-struct ColorInfoDirectRGBColor {
-    framebuffer_red_field_position: u8,
-    framebuffer_red_mask_size: u8,
-    framebuffer_green_field_position: u8,
-    framebuffer_green_mask_size: u8,
-    framebuffer_blue_field_position: u8,
-    framebuffer_blue_mask_size: u8,
+#[derive(Debug, Clone, Copy)]
+pub struct ColorInfoDirectRGBColor {
+    pub red_field_position: u8,
+    pub red_mask_size: u8,
+    pub green_field_position: u8,
+    pub green_mask_size: u8,
+    pub blue_field_position: u8,
+    pub blue_mask_size: u8,
 }
 
 #[repr(C)]
 #[derive(ptr_meta::Pointee)]
 pub struct FrameBufferInfo {
     header: MbTagHeader,
-    framebuffer_addr: u64, // physical address
-    framebuffer_pitch: u32,
-    framebuffer_width: u32,
-    framebuffer_height: u32,
-    framebuffer_bpp: u8,
+    pub phy_addr: u64,
+    pub pitch: u32,
+    pub width: u32,
+    pub height: u32,
+    pub bpp: u8,
     framebuffer_type: u8,
-    reserved: u8,
+    reserved: u16,
     color_info: [u8], // depends on framebuffer_type
 }
 
-pub struct FrameBufferColor {
-    r: u8,
-    g: u8,
-    b: u8,
-}
-
-impl FrameBufferColor {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        FrameBufferColor { r, g, b }
-    }
-}
-
 impl FrameBufferInfo {
-    pub fn get_type(&self) -> Result<FrameBufferType, FrameBufferError> {
+    /// Get the framebuffer type.
+    pub fn get_type(&self) -> Result<FrameBufferType, FrameBufferInfoError> {
         match self.framebuffer_type {
             0 => Ok(FrameBufferType::IndexedColor),
             1 => Ok(FrameBufferType::DirectRGBColor),
             2 => Ok(FrameBufferType::EGAText),
-            _ => Err(FrameBufferError::UnknownFrameBufferType),
+            _ => Err(FrameBufferInfoError::UnknownFrameBufferType),
         }
     }
 
-    pub fn get_phy_addr(&self) -> PhysicalAddress {
-        self.framebuffer_addr as PhysicalAddress
-    }
-
-    fn get_color_info(&self) -> &ColorInfoDirectRGBColor {
+    /// Get the RGB color information.
+    /// 
+    /// Panics
+    /// 
+    /// If the [framebuffer type](FrameBufferInfo::get_type()) is not [FrameBufferType::DirectRGBColor].
+    pub fn get_color_info(&self) -> &ColorInfoDirectRGBColor {
         assert!(self.get_type().unwrap() == FrameBufferType::DirectRGBColor);
         unsafe { &*(self.color_info.as_ptr() as *const ColorInfoDirectRGBColor) }
-    }
-
-    pub fn put_pixel(&self, x: u32, y: u32, color: FrameBufferColor) {
-        // TODO: this should, obviously, not be an assert
-        assert!(self.framebuffer_bpp == 24);
-
-        let pixel_addr = self.get_phy_addr() + (x * self.framebuffer_width + y * self.framebuffer_pitch) as usize;
-        let color_info = self.get_color_info();
-
-        serial_println!("color info: {:#?}", color_info);
-
-        // ((1 << tagfb->framebuffer_blue_mask_size) - 1) << tagfb->framebuffer_blue_field_position
-        let pixel = pixel_addr as *mut u8;
-        unsafe {
-            pixel.byte_offset((color_info.framebuffer_red_mask_size / 8).into()).write_volatile(color.r);   // red
-            pixel.byte_offset((color_info.framebuffer_green_mask_size / 8).into()).write_volatile(color.g); // green
-            pixel.byte_offset((color_info.framebuffer_blue_mask_size / 8).into()).write_volatile(color.b);  // blue
-        }
     }
 }
 

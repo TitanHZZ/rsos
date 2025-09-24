@@ -21,11 +21,11 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{framebuffer::{FrameBufferColor, Framebuffer}, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, PhysicalAddress, VirtualAddress, MEMORY_SUBSYSTEM}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_print, serial_println};
-use rsos::multiboot2::{MbBootInfo, framebuffer_info::{FrameBufferColor, FrameBufferInfo}, memory_map::MemoryMap};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::{multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
+use rsos::multiboot2::{MbBootInfo, framebuffer_info::FrameBufferInfo, memory_map::MemoryMap};
 use rsos::memory::{pages::paging::{inactive_paging_context::InactivePagingContext}};
 use rsos::memory::{frames::Frame, pages::page_table::page_table_entry::EntryFlags};
 use rsos::memory::{pages::Page, simple_heap_allocator::HEAP_ALLOCATOR};
@@ -158,13 +158,16 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
     serial_println!("Heap allocator initialized.");
 
-    let mb_info = KERNEL.mb_info();
-    let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
-    let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
-    serial_println!("Framebuffer type: {:#?}", fb_type);
+    // let mb_info = KERNEL.mb_info();
+    // let framebuffer = mb_info.get_tag::<FrameBufferInfo>().expect("Framebuffer tag is required");
+    // let fb_type = framebuffer.get_type().expect("Framebuffer type is unknown");
+    // serial_println!("Framebuffer type: {:#?}", fb_type);
 
-    MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.get_phy_addr()), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
+    // MEMORY_SUBSYSTEM.active_paging_context().identity_map(Frame::from_phy_addr(framebuffer.phy_addr as PhysicalAddress), EntryFlags::PRESENT | EntryFlags::WRITABLE | EntryFlags::NO_EXECUTE).unwrap();
+    // framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
+    let framebuffer = Framebuffer::new().expect("Could not build the framebuffer");
     framebuffer.put_pixel(0, 0, FrameBufferColor::new(255, 255, 255));
+    framebuffer.put_pixel(1279, 719, FrameBufferColor::new(255, 255, 255));
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
