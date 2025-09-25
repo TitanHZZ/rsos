@@ -7,10 +7,10 @@
 #![reexport_test_harness_main = "test_main"]
 
 pub mod data_structures;
-pub mod framebuffer;
-pub mod multiboot2;
 // pub mod vga_buffer;
+pub mod multiboot2;
 pub mod interrupts;
+pub mod graphics;
 pub mod io_port;
 pub mod memory;
 pub mod serial;

@@ -1,8 +1,8 @@
-use crate::memory::frames::Frame;
-use crate::memory::pages::page_table::page_table_entry::EntryFlags;
 use crate::multiboot2::framebuffer_info::{ColorInfoDirectRGBColor, FrameBufferInfo, FrameBufferInfoError, FrameBufferType};
 use crate::memory::{AddrOps, MemoryError, PhysicalAddress, VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
+use crate::memory::pages::page_table::page_table_entry::EntryFlags;
 use crate::memory::pages::{Page, PageAllocator};
+use crate::memory::frames::Frame;
 use crate::kernel::KERNEL;
 
 pub struct Framebuffer {
@@ -59,7 +59,7 @@ impl Framebuffer {
 
         Ok(Framebuffer {
             phy_addr: framebuffer.phy_addr as PhysicalAddress,
-            vir_addr: vir_addr,
+            vir_addr,
             pitch: framebuffer.pitch,
             width: framebuffer.width,
             height: framebuffer.height,
