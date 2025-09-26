@@ -5,24 +5,24 @@ use crate::memory::pages::{Page, PageAllocator};
 use crate::memory::frames::Frame;
 use crate::kernel::KERNEL;
 
-pub struct Framebuffer {
+pub(in crate::graphics) struct Framebuffer {
     // addrs
     phy_addr: PhysicalAddress,
-    vir_addr: VirtualAddress,
+    pub(in crate::graphics) vir_addr: VirtualAddress,
 
     // screen 'configs'
-    pitch: u32,
-    width: u32,
-    height: u32,
-    bpp: u8,
-    pixel_width: u32, // pixel size in bytes
+    pub(in crate::graphics) pitch: u32,
+    pub(in crate::graphics) width: u32,
+    pub(in crate::graphics) height: u32,
+    pub(in crate::graphics) bpp: u8,
+    pub(in crate::graphics) pixel_width: u32, // pixel size in bytes
 
     // color 'configs'
-    color_info: ColorInfoDirectRGBColor,
+    pub(in crate::graphics) color_info: ColorInfoDirectRGBColor,
 }
 
 #[derive(Debug)]
-pub enum FrameBufferError {
+pub(in crate::graphics) enum FrameBufferError {
     WrongFrameBufferType,
     Non8BitFramebuffer,
     FrameBufferTagDoesNotExist,
@@ -32,7 +32,7 @@ pub enum FrameBufferError {
 
 // TODO: it would make sense to check where the framebuffer lives in memory
 impl Framebuffer {
-    pub fn new() -> Result<Self, FrameBufferError> {
+    pub(in crate::graphics) fn new() -> Result<Self, FrameBufferError> {
         let mb_info = KERNEL.mb_info();
         let framebuffer = mb_info.get_tag::<FrameBufferInfo>().ok_or(FrameBufferError::FrameBufferTagDoesNotExist)?;
 
@@ -68,21 +68,12 @@ impl Framebuffer {
             color_info: *color_info,
         })
     }
-
-    pub fn put_pixel(&self, x: u32, y: u32, color: FrameBufferColor) {
-        let pixel = (self.vir_addr + (x * self.pixel_width + y * self.pitch) as usize) as *mut u8;
-        unsafe {
-            pixel.byte_offset((self.color_info.red_field_position   / 8).into()).write_volatile(color.r); // red
-            pixel.byte_offset((self.color_info.green_field_position / 8).into()).write_volatile(color.g); // green
-            pixel.byte_offset((self.color_info.blue_field_position  / 8).into()).write_volatile(color.b); // blue
-        }
-    }
 }
 
 pub struct FrameBufferColor {
-    r: u8,
-    g: u8,
-    b: u8,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
 }
 
 impl FrameBufferColor {
