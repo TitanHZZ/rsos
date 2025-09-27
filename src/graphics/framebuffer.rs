@@ -22,7 +22,7 @@ pub(in crate::graphics) struct Framebuffer {
 }
 
 #[derive(Debug)]
-pub(in crate::graphics) enum FrameBufferError {
+pub enum FrameBufferError {
     WrongFrameBufferType,
     Non8BitFramebuffer,
     FrameBufferTagDoesNotExist,
@@ -77,7 +77,7 @@ pub struct FrameBufferColor {
 }
 
 impl FrameBufferColor {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
         FrameBufferColor { r, g, b }
     }
 }
