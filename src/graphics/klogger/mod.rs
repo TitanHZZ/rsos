@@ -1,7 +1,7 @@
 mod font_renderer;
 mod painter;
 
-use crate::graphics::{framebuffer::{FrameBufferError, Framebuffer}, klogger::font_renderer::FontRenderer};
+use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError, Framebuffer}, klogger::font_renderer::FontRenderer};
 
 pub struct KLogger<'a> {
     fb: Framebuffer,
@@ -17,11 +17,14 @@ impl<'a> KLogger<'a> {
     }
 
     pub fn log(&self, string: &str) {
-        self.fr.draw_char(&self.fb, string.as_bytes(), 0, 0);
+        let color = FrameBufferColor::new(255, 255, 255);
+        let mut buf = [0u8; 4]; // enough for any UTF-8 character
 
-        // // let scale = 1;
-        // for (idx, chr) in string.bytes().enumerate() {
-        //     self.fr.draw_char(&self.fb, chr, idx as u32 * 8, 0);
-        // }
+        for (i, c) in string.chars().enumerate() {
+            let bytes = c.encode_utf8(&mut buf).as_bytes();
+
+            // TODO: this should take in consideration the actual size of the font in pixels
+            self.fr.draw_char(&self.fb, bytes, (i * 8) as _, 0, color);
+        }
     }
 }

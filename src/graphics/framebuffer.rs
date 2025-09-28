@@ -70,6 +70,7 @@ impl Framebuffer {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct FrameBufferColor {
     pub r: u8,
     pub g: u8,
