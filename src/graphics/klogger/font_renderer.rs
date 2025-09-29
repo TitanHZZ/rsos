@@ -1,8 +1,10 @@
-use crate::{graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::painter::KLoggerPainter}};
+use crate::{graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::painter::KLoggerPainter}, serial_println};
 
 // https://docs.rs/spleen-font/latest/spleen_font/index.html
 
-pub const FONT: &[u8] = include_bytes!("Lat2-Terminus16.psfu");
+// const FONT: &[u8] = include_bytes!("fonts/Lat2-Terminus16.psfu");
+// const FONT: &[u8] = include_bytes!("fonts/ter-212n.psf");
+const FONT: &[u8] = include_bytes!("fonts/spleen-12x24.psfu");
 
 #[repr(C)]
 struct Psf2Header {
@@ -23,6 +25,12 @@ struct Psf2Font<'a> {
     unicode_mappings: &'a[u8],
 }
 
+enum UnicodeTableDecodeState {
+    Invalid,
+    SingleEntries,
+    MultipleEntries,
+}
+
 // TODO: this should return proper errors
 impl<'a> Psf2Font<'a> {
     pub fn from_bytes(data: &'a [u8]) -> Option<Self> {
@@ -33,6 +41,7 @@ impl<'a> Psf2Font<'a> {
         // TODO: it should be possible to parse PSF1 fonts with this same PSF2 font parser (just need header adjustments i think)
         let header = unsafe { &*(data.as_ptr() as *const Psf2Header) };
         if header.magic != 0x864ab572 {
+            serial_println!("invalid font header magic: {:#x}", header.magic);
             return None;
         }
 
@@ -92,6 +101,40 @@ impl<'a> Psf2Font<'a> {
         const START_SEQ: u8 = 0xFE;
         const END_REC: u8 = 0xFF;
 
+        // let mut state = UnicodeTableDecodeState::SingleEntries;
+        // for (i, entry) in self.unicode_mappings.split(|e| *e == END_REC).enumerate() {
+        //     while p < entry.len() {
+        //         match entry[p] {
+        //             START_SEQ => {
+        //                 state = UnicodeTableDecodeState::MultipleEntries;
+        //                 p += 1;
+        //             },
+        //             END_REC => {
+        //                 state = UnicodeTableDecodeState::SingleEntries;
+        //                 p = 0;
+        //             },
+        //             b => {
+        //                 match state {
+        //                     UnicodeTableDecodeState::SingleEntries => {
+        //                         let mut n = Psf2Font::next_utf8_len(b)?;
+        //                         while p + n < entry.len() && !matches!(entry[p + n], START_SEQ) && &entry[p..(p + n)] != chr {
+        //                             p += n;
+        //                             n = Psf2Font::next_utf8_len(b)?;
+        //                         }
+        //                         if &entry[p..(p + n)] == chr {
+        //                             return Some(i as u32);
+        //                         }
+        //                     },
+        //                     _ => return None,
+        //                 }
+        //             },
+        //         }
+        //     }
+        // }
+
+
+
+
         // parse the UTF-8 mappings
         while p < self.unicode_mappings.len() {
             // check for double 0xFF (end of the unicode mappings)
@@ -99,6 +142,7 @@ impl<'a> Psf2Font<'a> {
                 return None;
             }
 
+            // parse each unicode mappings entry
             loop {
                 match self.unicode_mappings[p] {
                     START_SEQ => p += 1,
@@ -144,10 +188,15 @@ pub(in crate::graphics::klogger) struct FontRenderer<'a> {
 }
 
 impl<'a> FontRenderer<'a> {
+    // TODO: this should not "crash" with an invalid font
     pub(in crate::graphics::klogger) fn new() -> Self {
         Self {
             font: Psf2Font::from_bytes(FONT).expect("Invalid PSF font"),
         }
+    }
+
+    pub(in crate::graphics::klogger) fn pixel_width(&self) -> u32 {
+        self.font.header.width
     }
 
     pub(in crate::graphics::klogger) fn draw_char(&self, fb: &Framebuffer, chr: &[u8], xpos: u32, ypos: u32, color: FrameBufferColor) {

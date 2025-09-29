@@ -169,7 +169,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // framebuffer.put_pixel(1279, 719, FrameBufferColor::new(255, 255, 255));
 
     let klogger = KLogger::new().expect("well, ...");
-    klogger.log("a€b");
+    klogger.log("éç");
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved

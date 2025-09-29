@@ -24,7 +24,7 @@ impl<'a> KLogger<'a> {
             let bytes = c.encode_utf8(&mut buf).as_bytes();
 
             // TODO: this should take in consideration the actual size of the font in pixels
-            self.fr.draw_char(&self.fb, bytes, (i * 8) as _, 0, color);
+            self.fr.draw_char(&self.fb, bytes, i as u32 * self.fr.pixel_width(), 0, color);
         }
     }
 }
