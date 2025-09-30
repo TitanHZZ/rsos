@@ -1,5 +1,6 @@
 mod font_renderer;
 mod painter;
+mod psf;
 
 use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError, Framebuffer}, klogger::font_renderer::FontRenderer};
 
