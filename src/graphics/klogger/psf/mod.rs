@@ -8,24 +8,39 @@ use crate::graphics::klogger::psf::{psf1::Psf1Font, psf2::Psf2Font};
 // - https://en.wikipedia.org/wiki/PC_Screen_Font
 // - http://justsolve.archiveteam.org/wiki/PC_Screen_Font
 
+#[derive(Debug)]
+pub(super) enum PsfError {
+    MalformedHeader,
+    MalformedUnicodeMappingTable,
+    MalformedGlyphsTable,
+    WrongMagicValue,
+    UnsupportedVersion,
+}
+
 enum PsfType<'a> {
     Type1(Psf1Font<'a>),
     Type2(Psf2Font<'a>),
 }
 
-pub(super) struct PSF<'a>(PsfType<'a>);
+pub(super) struct Psf<'a>(PsfType<'a>);
 
-impl<'a> PSF<'a> {
-    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Self {
-        if let Ok(font) = Psf2Font::from_bytes(font_bytes) {
-            return Self(PsfType::Type2(font));
-        }
+impl<'a> Psf<'a> {
+    /// Creates a Pc Screen Font (PSF) from `font_bytes`.
+    /// 
+    /// In case the provided `font_bytes` cannot be parsed as either PSF1 or PSF2,
+    /// their parsing errors will be returned in order PSF1 and then PSF2.
+    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Result<Self, (PsfError, PsfError)> {
+        let psf1_err = match Psf1Font::from_bytes(font_bytes) {
+            Ok(font) => return Ok(Self(PsfType::Type1(font))),
+            Err(psf1_err) => psf1_err,
+        };
 
-        if let Ok(font) = Psf1Font::from_bytes(font_bytes) {
-            return Self(PsfType::Type1(font));
-        }
+        let psf2_err = match Psf2Font::from_bytes(font_bytes) {
+            Ok(font) => return Ok(Self(PsfType::Type2(font))),
+            Err(psf2_err) => psf2_err,
+        };
 
-        todo!()
+        Err((psf1_err, psf2_err))
     }
 
     pub(super) fn get_glyph(&self, chr: &[u8]) -> Option<&[u8]> {

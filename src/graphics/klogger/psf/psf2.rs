@@ -1,3 +1,4 @@
+use crate::graphics::klogger::psf::PsfError;
 
 #[repr(C)]
 struct Psf2Header {
@@ -23,46 +24,37 @@ enum UnicodeTableDecodeState {
     MultipleEntries,
 }
 
-#[derive(Debug)]
-pub(super) enum Psf2FontError {
-    MalformedHeader,
-    MalformedUnicodeMappingTable,
-    MalformedGlyphsTable,
-    WrongMagicValue,
-    UnsupportedVersion,
-}
-
 impl<'a> Psf2Font<'a> {
-    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Result<Self, Psf2FontError> {
+    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Result<Self, PsfError> {
         if font_bytes.len() < size_of::<Psf2Header>() {
-            return Err(Psf2FontError::MalformedHeader);
+            return Err(PsfError::MalformedHeader);
         }
 
         let header = unsafe { &*(font_bytes.as_ptr() as *const Psf2Header) };
         if header.magic != 0x864ab572 {
-            return Err(Psf2FontError::WrongMagicValue);
+            return Err(PsfError::WrongMagicValue);
         }
 
         // only version 0 is unsupported (as it is the only one that exists, for now)
         if header.version != 0 {
-            return Err(Psf2FontError::UnsupportedVersion);
+            return Err(PsfError::UnsupportedVersion);
         }
 
         let glyphs_offset  = header.headersize as usize;
         let glyphs_size    = header.numglyph as usize * header.bytesperglyph as usize;
         let unicode_offset = glyphs_offset + glyphs_size;
 
-        let (glyphs, unicode_mappings) = if (header.flags & 0x1) == 1 {
+        let (glyphs, unicode_mappings) = if (header.flags & 0x1) != 0 {
             // the unicode mapping table must have positive size
             if unicode_offset >= font_bytes.len() {
-                return Err(Psf2FontError::MalformedUnicodeMappingTable);
+                return Err(PsfError::MalformedUnicodeMappingTable);
             }
 
             (&font_bytes[glyphs_offset..unicode_offset], &font_bytes[unicode_offset..])
         } else {
             // sanity check the bitmap glyphs size
             if (glyphs_offset + glyphs_size) > font_bytes.len() {
-                return Err(Psf2FontError::MalformedGlyphsTable);
+                return Err(PsfError::MalformedGlyphsTable);
             }
 
             (&font_bytes[glyphs_offset..glyphs_offset + glyphs_size], &font_bytes[0..0])
@@ -103,11 +95,10 @@ impl<'a> Psf2Font<'a> {
     }
 
     fn scan_unicode_table(&self, chr: &[u8]) -> Option<u32> {
-        let mut p: usize = 0;
-
         const START_SEQ: u8 = 0xFE;
         const END_REC: u8 = 0xFF;
 
+        let mut p: usize = 0;
         let mut state = UnicodeTableDecodeState::SingleEntries;
         for (i, mapping_entry) in self.unicode_mappings.split(|e| *e == END_REC).enumerate() {
             while p < mapping_entry.len() {

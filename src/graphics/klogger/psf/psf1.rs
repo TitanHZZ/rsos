@@ -1,3 +1,4 @@
+use crate::graphics::klogger::psf::PsfError;
 
 #[repr(C)]
 struct Psf1Header {
@@ -11,28 +12,18 @@ pub(super) struct Psf1Font<'a> {
     header: &'a Psf1Header,
     glyphs: &'a [u8],
     unicode_mappings: &'a[u8],
-
     numglyph: u32,
 }
 
-#[derive(Debug)]
-pub(super) enum Psf1FontError {
-    MalformedHeader,
-    MalformedUnicodeMappingTable,
-    MalformedGlyphsTable,
-    WrongMagicValue,
-    UnsupportedVersion,
-}
-
 impl<'a> Psf1Font<'a> {
-    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Result<Self, Psf1FontError> {
+    pub(super) fn from_bytes(font_bytes: &'a [u8]) -> Result<Self, PsfError> {
         if font_bytes.len() < size_of::<Psf1Header>() {
-            return Err(Psf1FontError::MalformedHeader)
+            return Err(PsfError::MalformedHeader)
         }
 
         let header = unsafe { &*(font_bytes.as_ptr() as *const Psf1Header) };
         if header.magic != 0x0436 {
-            return Err(Psf1FontError::WrongMagicValue);
+            return Err(PsfError::WrongMagicValue);
         }
 
         // check if the font contains 512 glyphs or just 256
@@ -46,17 +37,17 @@ impl<'a> Psf1Font<'a> {
         let glyphs_size    = numglyph * header.charsize as usize;
         let unicode_offset = glyphs_offset + glyphs_size;
 
-        let (glyphs, unicode_mappings) = if (header.mode & 0x2) == 1 {
+        let (glyphs, unicode_mappings) = if (header.mode & 0x2) != 0 {
             // the unicode mapping table must have positive size
             if unicode_offset >= font_bytes.len() - 1 {
-                return Err(Psf1FontError::MalformedUnicodeMappingTable);
+                return Err(PsfError::MalformedUnicodeMappingTable);
             }
 
             (&font_bytes[glyphs_offset..unicode_offset], &font_bytes[unicode_offset..])
         } else {
             // sanity check the bitmap glyphs size
             if (glyphs_offset + glyphs_size) > font_bytes.len() {
-                return Err(Psf1FontError::MalformedGlyphsTable);
+                return Err(PsfError::MalformedGlyphsTable);
             }
 
             (&font_bytes[glyphs_offset..glyphs_offset + glyphs_size], &font_bytes[0..0])
