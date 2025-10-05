@@ -43,9 +43,9 @@ impl<'a> Psf<'a> {
         Err((psf1_err, psf2_err))
     }
 
-    pub(super) fn get_glyph(&self, chr: &[u8]) -> Option<&[u8]> {
+    pub(super) fn get_glyph(&self, chr: char) -> Option<&[u8]> {
         match self.0 {
-            PsfType::Type1(ref font) => todo!(),
+            PsfType::Type1(ref font) => font.get_glyph(chr),
             PsfType::Type2(ref font) => font.get_glyph(chr),
         }
     }

@@ -147,13 +147,16 @@ impl<'a> Psf2Font<'a> {
         None
     }
 
-    pub(super) fn get_glyph(&self, chr: &[u8]) -> Option<&[u8]> {
+    pub(super) fn get_glyph(&self, chr: char) -> Option<&[u8]> {
+        let mut buf = [0u8; 4]; // enough for any UTF-8 character
+        let bytes = chr.encode_utf8(&mut buf).as_bytes();
+
         // check if the character is simple ASCII
-        if chr.len() == 1 && chr[0] <= 0x7f {
-            return self.get_glyph_by_idx(chr[0] as u32);
+        if bytes.len() == 1 && bytes[0] <= 0x7f {
+            return self.get_glyph_by_idx(bytes[0] as u32);
         }
 
-        if let Some(idx) = self.scan_unicode_table(chr) {
+        if let Some(idx) = self.scan_unicode_table(bytes) {
             return self.get_glyph_by_idx(idx);
         }
 
