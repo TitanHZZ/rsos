@@ -3,6 +3,9 @@ mod psf2;
 
 use crate::graphics::klogger::psf::{psf1::Psf1Font, psf2::Psf2Font};
 
+// TODO: what about the multiple, sequential, entries in the unicode table for the PSF1/2 fonts that match to a single glyph??
+//       do i have to worry about that??
+
 // Useful Resources:
 // - https://docs.rs/spleen-font/latest/spleen_font/index.html
 // - https://en.wikipedia.org/wiki/PC_Screen_Font
