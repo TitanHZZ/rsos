@@ -12,7 +12,7 @@ use crate::graphics::klogger::psf::{psf1::Psf1Font, psf2::Psf2Font};
 // - http://justsolve.archiveteam.org/wiki/PC_Screen_Font
 
 #[derive(Debug)]
-pub(super) enum PsfError {
+pub enum PsfError {
     MalformedHeader,
     MalformedUnicodeMappingTable,
     MalformedGlyphsTable,

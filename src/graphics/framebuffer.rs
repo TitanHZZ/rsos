@@ -5,6 +5,7 @@ use crate::memory::pages::{Page, PageAllocator};
 use crate::memory::frames::Frame;
 use crate::kernel::KERNEL;
 
+#[allow(unused)]
 pub(in crate::graphics) struct Framebuffer {
     // addrs
     phy_addr: PhysicalAddress,

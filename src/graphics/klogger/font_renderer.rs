@@ -1,4 +1,4 @@
-use crate::graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::{painter::KLoggerPainter, psf::Psf}};
+use crate::graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::{painter::KLoggerPainter, psf::{Psf, PsfError}}};
 
 const FONT: &[u8] = include_bytes!("fonts/spleen-8x16.psfu");
 
@@ -6,10 +6,14 @@ pub(in crate::graphics::klogger) struct FontRenderer<'a> {
     font: Psf<'a>,
 }
 
+#[derive(Debug)]
+pub enum FontError {
+    PsfErrs((PsfError, PsfError)),
+}
+
 impl<'a> FontRenderer<'a> {
-    // TODO: this should not "crash" with an invalid font
-    pub(in crate::graphics::klogger) fn new() -> Self {
-        Self { font: Psf::from_bytes(FONT).expect("Could not parse font") }
+    pub(in crate::graphics::klogger) fn new() -> Result<Self, FontError> {
+        Ok(Self { font: Psf::from_bytes(FONT).map_err(FontError::PsfErrs)? })
     }
 
     pub(in crate::graphics::klogger) fn pixel_width(&self) -> u32 {
