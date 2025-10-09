@@ -4,6 +4,8 @@ mod psf;
 
 use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError, Framebuffer}, klogger::font_renderer::{FontError, FontRenderer}};
 
+// TODO: this should actually support proper "text printing" like the VGA buffer did
+
 pub struct KLogger<'a> {
     fb: Framebuffer,
     fr: FontRenderer<'a>,
