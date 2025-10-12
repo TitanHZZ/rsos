@@ -9,13 +9,18 @@ use crate::kernel::KERNEL;
 pub(in crate::graphics) struct Framebuffer {
     // addrs
     phy_addr: PhysicalAddress,
-    pub(in crate::graphics) vir_addr: VirtualAddress,
+    vir_addr: VirtualAddress,
 
     // screen 'configs'
+    /// How many bytes of VRAM you should skip to go one pixel down.
     pub(in crate::graphics) pitch: u32,
+    /// How many pixels you have on a horizontal line.
     pub(in crate::graphics) width: u32,
+    /// How many horizontal lines of pixels are present.
     pub(in crate::graphics) height: u32,
+    /// How many bits each pixel takes.
     pub(in crate::graphics) bpp: u8,
+    /// How many bytes of VRAM you should skip to go one pixel right.
     pub(in crate::graphics) pixel_width: u32, // pixel size in bytes
 
     // color 'configs'
@@ -68,6 +73,20 @@ impl Framebuffer {
             pixel_width: (framebuffer.bpp / 8).into(),
             color_info: *color_info,
         })
+    }
+
+    /// Returns a raw pointer to the framebuffer's bytes.
+    /// 
+    /// The caller must ensure correct use to avoid invalid and dangling pointers.
+    pub(in crate::graphics) fn as_ptr(&self) -> *const u8 {
+        self.vir_addr as *const u8
+    }
+
+    /// Returns an unsafe mutable pointer to the framebuffer's bytes.
+    /// 
+    /// The caller must ensure correct use to avoid invalid and dangling pointers.
+    pub(in crate::graphics) fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.vir_addr as *mut u8
     }
 }
 

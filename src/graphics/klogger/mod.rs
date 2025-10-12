@@ -3,11 +3,10 @@ mod painter;
 mod psf;
 
 use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError, Framebuffer}, klogger::font_renderer::{FontError, FontRenderer}};
-
-// TODO: this should actually support proper "text printing" like the VGA buffer did
+use core::fmt::{self, Write};
 
 pub struct KLogger<'a> {
-    fb: Framebuffer,
+    // fb: Framebuffer,
     fr: FontRenderer<'a>,
 }
 
@@ -20,15 +19,14 @@ pub enum KLoggerError {
 impl<'a> KLogger<'a> {
     pub fn new() -> Result<Self, KLoggerError> {
         Ok(Self {
-            fb: Framebuffer::new().map_err(KLoggerError::FrameBufferErr)?,
-            fr: FontRenderer::new().map_err(KLoggerError::FontErr)?,
+            fr: FontRenderer::new(
+                FrameBufferColor::new(255, 255, 255),
+                Framebuffer::new().map_err(KLoggerError::FrameBufferErr)?
+            ).map_err(KLoggerError::FontErr)?,
         })
     }
 
-    pub fn log(&self, string: &str) {
-        let color = FrameBufferColor::new(255, 255, 255);
-        for (i, chr) in string.chars().enumerate() {
-            self.fr.draw_char(&self.fb, chr, i as u32 * self.fr.pixel_width(), 0, color);
-        }
+    pub fn log(&mut self, s: &str) -> fmt::Result {
+        self.fr.write_str(s)
     }
 }
