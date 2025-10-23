@@ -2,11 +2,10 @@ mod font_renderer;
 mod painter;
 mod psf;
 
-use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError, Framebuffer}, klogger::font_renderer::{FontError, FontRenderer}};
+use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError}, klogger::font_renderer::{FontError, FontRenderer}};
 use core::fmt::{self, Write};
 
 pub struct KLogger<'a> {
-    // fb: Framebuffer,
     fr: FontRenderer<'a>,
 }
 
@@ -21,7 +20,6 @@ impl<'a> KLogger<'a> {
         Ok(Self {
             fr: FontRenderer::new(
                 FrameBufferColor::new(255, 255, 255),
-                Framebuffer::new().map_err(KLoggerError::FrameBufferErr)?
             ).map_err(KLoggerError::FontErr)?,
         })
     }
