@@ -1,7 +1,7 @@
 pub mod klogger;
 mod framebuffer;
 
-use crate::graphics::framebuffer::Framebuffer;
+use crate::graphics::{framebuffer::Framebuffer, klogger::KLogger};
 use core::cell::LazyCell;
 use spin::Mutex;
 
@@ -13,3 +13,5 @@ use spin::Mutex;
 static FRAMEBUFFER: Mutex<LazyCell<Framebuffer>> = Mutex::new(LazyCell::new(||
     Framebuffer::new().expect("Could not initialize the framebuffer")
 ));
+
+pub static KLOGGER: KLogger = KLogger::new();

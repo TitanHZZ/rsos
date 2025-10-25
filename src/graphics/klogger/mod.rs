@@ -2,12 +2,11 @@ mod font_renderer;
 mod painter;
 mod psf;
 
-use crate::graphics::{framebuffer::{FrameBufferColor, FrameBufferError}, klogger::font_renderer::{FontError, FontRenderer}};
+use crate::{assert_called_once, graphics::{framebuffer::{FrameBufferColor, FrameBufferError}, klogger::font_renderer::{FontError, FontRenderer}}};
 use core::fmt::{self, Write};
+use spin::Mutex;
 
-pub struct KLogger<'a> {
-    fr: FontRenderer<'a>,
-}
+pub struct KLogger<'a>(Mutex<Option<FontRenderer<'a>>>);
 
 #[derive(Debug)]
 pub enum KLoggerError {
@@ -16,15 +15,39 @@ pub enum KLoggerError {
 }
 
 impl<'a> KLogger<'a> {
-    pub fn new() -> Result<Self, KLoggerError> {
-        Ok(Self {
-            fr: FontRenderer::new(
-                FrameBufferColor::new(255, 255, 255),
-            ).map_err(KLoggerError::FontErr)?,
-        })
+    /// Creates a new **KLogger** that needs to be [initialized](KLogger::init()).
+    pub(in crate::graphics) const fn new() -> Self {
+        KLogger(Mutex::new(None))
     }
 
-    pub fn log(&mut self, s: &str) -> fmt::Result {
-        self.fr.write_str(s)
+    /// Initializes this simple Kernel logger.
+    /// 
+    /// # Safety
+    /// 
+    /// - **Must** be called *after* the higher half remapping is completed and *after* the [HEAP_ALLOCATOR](crate::memory::simple_heap_allocator::HEAP_ALLOCATOR) is initialized.
+    /// 
+    /// Failure to follow the rules may result in data corruption.
+    /// 
+    /// # Panics
+    /// 
+    /// If called more than once.
+    pub unsafe fn init(&self) -> Result<(), KLoggerError> {
+        assert_called_once!("Cannot call KLogger::init() more than once");
+        let klogger = &mut *self.0.lock();
+        assert!(klogger.is_none());
+
+        *klogger = Some(FontRenderer::new(FrameBufferColor::new(255, 255, 255)).map_err(KLoggerError::FontErr)?);
+        Ok(())
+    }
+
+    /// Print `str` to the screen.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](KLogger::init()).
+    pub fn log(&self, s: &str) -> fmt::Result {
+        let klogger = &mut *self.0.lock();
+        assert!(klogger.is_some());
+        klogger.as_mut().unwrap().write_str(s)
     }
 }
