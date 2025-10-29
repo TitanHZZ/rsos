@@ -22,6 +22,8 @@ impl<'a> KLogger<'a> {
 
     /// Initializes this simple Kernel logger.
     /// 
+    /// Default color is pure white.
+    /// 
     /// # Safety
     /// 
     /// - **Must** be called *after* the higher half remapping is completed and *after* the [HEAP_ALLOCATOR](crate::memory::simple_heap_allocator::HEAP_ALLOCATOR) is initialized.
@@ -46,8 +48,27 @@ impl<'a> KLogger<'a> {
     /// 
     /// If called before [initialization](KLogger::init()).
     pub fn log(&self, s: &str) -> fmt::Result {
-        let klogger = &mut *self.0.lock();
-        assert!(klogger.is_some());
-        klogger.as_mut().unwrap().write_str(s)
+        self.0.lock().as_mut().unwrap().write_str(s)
+    }
+
+    pub fn log_colored(&self, r: u8, g: u8, b: u8, s: &str) -> fmt::Result {
+        let fr = &mut *self.0.lock();
+        let fr = fr.as_mut().unwrap();
+
+        let original_color = fr.color();
+        fr.set_color(FrameBufferColor::new(r, g, b));
+        fr.write_str(s)?;
+        fr.set_color(original_color);
+
+        Ok(())
+    }
+
+    /// Set the text color.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](KLogger::init()).
+    pub fn set_color(&self, r: u8, g: u8, b: u8) {
+        self.0.lock().as_mut().unwrap().set_color(FrameBufferColor::new(r, g, b));
     }
 }

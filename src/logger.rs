@@ -1,4 +1,3 @@
-// use crate::{print, println, vga_buffer::Color};
 use core::fmt;
 
 // TODO: fix this (use the framebuffer)

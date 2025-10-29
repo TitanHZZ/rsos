@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{graphics::KLOGGER, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TssStackNumber, TSS, TSS_SIZE}}, kernel::KERNEL, memory::{frames::FrameAllocator, pages::PageAllocator, VirtualAddress, MEMORY_SUBSYSTEM}};
+use rsos::{graphics::KLOGGER, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TSS, TSS_SIZE, TssStackNumber}}, kernel::KERNEL, memory::{MEMORY_SUBSYSTEM, VirtualAddress, frames::FrameAllocator, pages::PageAllocator}, print};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_println};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::{multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
@@ -157,8 +157,12 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
     serial_println!("Heap allocator initialized.");
 
-    unsafe { KLOGGER.init() }.expect("Could not initialize the simple Kernel logger");
+    unsafe { KLOGGER.init() }.expect("Could not initialize the Kernel logger");
+    serial_println!("Kernel logger initialized.");
     let _ = KLOGGER.log("aéiçb");
+
+    // println!(255, 255, 255, "sadsad {}", 10);
+    // println!(FrameBufferColor::new(255, 255, 255), "sadsad {}", 10);
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
