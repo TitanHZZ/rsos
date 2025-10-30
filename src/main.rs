@@ -21,7 +21,7 @@
 
 extern crate alloc;
 
-use rsos::{graphics::KLOGGER, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TSS, TSS_SIZE, TssStackNumber}}, kernel::KERNEL, memory::{MEMORY_SUBSYSTEM, VirtualAddress, frames::FrameAllocator, pages::PageAllocator}, print};
+use rsos::{graphics::KLOGGER, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}, tss::{TSS, TSS_SIZE, TssStackNumber}}, kernel::KERNEL, memory::{MEMORY_SUBSYSTEM, VirtualAddress, frames::FrameAllocator, pages::PageAllocator}};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_println};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::{multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
@@ -81,7 +81,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping with some higher half mappings
-    log!(ok, "Rust kernel code started.");
+    // log!(ok, "Rust kernel code started.");
 
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
     print_mem_status(&mb_info);
@@ -100,14 +100,14 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // initialize the frame allocator
     unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
-    log!(ok, "Frame allocator initialized.");
+    // log!(ok, "Frame allocator initialized.");
 
     // initialize the first stage page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
-    log!(ok, "First stage page allocator initialized.");
+    // log!(ok, "First stage page allocator initialized.");
 
     // get the current paging context and create a new (empty) one
-    log!(ok, "Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
+    // log!(ok, "Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
     { // this scope makes sure that the inactive context does not get used again
         let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
         let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
@@ -130,8 +130,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
 
-    log!(ok, "Higher half remapping completed.");
-    log!(ok, "Stack guard page created.");
+    // log!(ok, "Higher half remapping completed.");
+    // log!(ok, "Stack guard page created.");
 
     // use the new higher half mapped multiboot2
     let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
@@ -159,10 +159,10 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     unsafe { KLOGGER.init() }.expect("Could not initialize the Kernel logger");
     serial_println!("Kernel logger initialized.");
-    let _ = KLOGGER.log("aéiçb");
 
-    // println!(255, 255, 255, "sadsad {}", 10);
-    // println!(FrameBufferColor::new(255, 255, 255), "sadsad {}", 10);
+    log!(ok, "Kernel logger initialized.");
+    log!(warn, "Kernel logger initialized.");
+    log!(failed, "Kernel logger initialized.");
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved

@@ -1,7 +1,7 @@
 use crate::graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::{painter::KLoggerPainter, psf::{Psf, PsfError}}, FRAMEBUFFER};
 use core::{fmt, ptr::copy};
 
-const FONT: &[u8] = include_bytes!("fonts/spleen-8x16.psfu");
+const FONT: &[u8] = include_bytes!("fonts/Lat2-Terminus16.psfu");
 const TAB_SIZE: usize = 4;
 
 pub(in crate::graphics::klogger) struct FontRenderer<'a> {
@@ -78,7 +78,7 @@ impl<'a> fmt::Write for FontRenderer<'a> {
             match chr {
                 '\n' => {
                     self.column = 0;
-                    self.row += 1;
+                    self.row += self.font.pixel_height() as usize;
                 }
                 '\t' => {
                     // calculate how many spaces it needs to print

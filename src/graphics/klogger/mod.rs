@@ -51,6 +51,13 @@ impl<'a> KLogger<'a> {
         self.0.lock().as_mut().unwrap().write_str(s)
     }
 
+    /// Same as [log()](KLogger::log()) but with color support.
+    /// 
+    /// The color will be restored to the previous value.
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](KLogger::init()).
     pub fn log_colored(&self, r: u8, g: u8, b: u8, s: &str) -> fmt::Result {
         let fr = &mut *self.0.lock();
         let fr = fr.as_mut().unwrap();
@@ -58,6 +65,25 @@ impl<'a> KLogger<'a> {
         let original_color = fr.color();
         fr.set_color(FrameBufferColor::new(r, g, b));
         fr.write_str(s)?;
+        fr.set_color(original_color);
+
+        Ok(())
+    }
+
+    /// Allows for the use of Rusts format macros.
+    /// 
+    /// Same as [log_colored()](KLogger::log_colored()).
+    /// 
+    /// # Panics
+    /// 
+    /// If called before [initialization](KLogger::init()).
+    pub fn write_fmt_colored(&self, r: u8, g: u8, b: u8, args: fmt::Arguments<'_>) -> fmt::Result {
+        let fr = &mut *self.0.lock();
+        let fr = fr.as_mut().unwrap();
+
+        let original_color = fr.color();
+        fr.set_color(FrameBufferColor::new(r, g, b));
+        fr.write_fmt(args)?;
         fr.set_color(original_color);
 
         Ok(())

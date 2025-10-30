@@ -1,29 +1,28 @@
+use crate::{kprint, kprintln};
 use core::fmt;
-
-// TODO: fix this (use the framebuffer)
 
 pub struct LOGGER;
 
 impl LOGGER {
-    pub fn failed(_fmt: fmt::Arguments) {
-        // // [FAILED]
-        // print!(Color::White,    Color::Black, "[");
-        // print!(Color::LightRed, Color::Black, "FAILED");
-        // println!(Color::White,  Color::Black, "] {}", fmt);
+    pub fn failed(fmt: fmt::Arguments) {
+        // [FAILED]
+        kprint!("[");
+        kprint!(255, 0, 0, "FAILED");
+        kprintln!("] {}", fmt);
     }
 
-    pub fn warn(_fmt: fmt::Arguments) {
-        // // [ WARN ]
-        // print!(Color::White,   Color::Black, "[");
-        // print!(Color::Yellow,  Color::Black, " WARN ");
-        // println!(Color::White, Color::Black, "] {}", fmt);
+    pub fn warn(fmt: fmt::Arguments) {
+        // [ WARN ]
+        kprint!("[");
+        kprint!(255, 255, 0, " WARN ");
+        kprintln!("] {}", fmt);
     }
 
-    pub fn ok(_fmt: fmt::Arguments) {
-        // // [  OK  ]
-        // print!(Color::White,      Color::Black, "[");
-        // print!(Color::LightGreen, Color::Black, "  OK  ");
-        // println!(Color::White,    Color::Black, "] {}", fmt);
+    pub fn ok(fmt: fmt::Arguments) {
+        // [  OK  ]
+        kprint!("[");
+        kprint!(0, 255, 0, "  OK  ");
+        kprintln!("] {}", fmt);
     }
 }
 

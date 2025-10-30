@@ -1,5 +1,5 @@
 mod serial;
-mod print;
+mod kprint;
 
 /// Asserts that a function has only been called once at runtime.
 /// 

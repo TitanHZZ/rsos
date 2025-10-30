@@ -2,7 +2,7 @@ mod graphics_renderer;
 mod framebuffer;
 pub mod klogger;
 
-use crate::graphics::{framebuffer::Framebuffer, graphics_renderer::GraphicsRenderer, klogger::KLogger};
+use crate::graphics::{framebuffer::Framebuffer, klogger::KLogger};
 use core::cell::LazyCell;
 use spin::Mutex;
 

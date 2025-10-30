@@ -1,4 +1,6 @@
-use crate::{assert_called_once, graphics::{Framebuffer, framebuffer::FrameBufferError, klogger::KLogger}};
+#![allow(dead_code)] // TEMPORARY
+
+use crate::{assert_called_once, graphics::{Framebuffer, framebuffer::FrameBufferError}};
 use spin::Mutex;
 
 // TODO: this would allow me to have a video system as well
