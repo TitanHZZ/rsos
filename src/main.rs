@@ -157,7 +157,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
     serial_println!("Heap allocator initialized.");
 
-    unsafe { KLOGGER.init() }.expect("Could not initialize the Kernel logger");
+    unsafe { KLOGGER.init(255, 255, 255, 1) }.expect("Could not initialize the Kernel logger");
     serial_println!("Kernel logger initialized.");
 
     log!(ok, "Kernel logger initialized.");

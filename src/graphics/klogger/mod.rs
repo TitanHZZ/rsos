@@ -33,12 +33,12 @@ impl<'a> KLogger<'a> {
     /// # Panics
     /// 
     /// If called more than once.
-    pub unsafe fn init(&self) -> Result<(), KLoggerError> {
+    pub unsafe fn init(&self, r: u8, g: u8, b: u8, scale: usize) -> Result<(), KLoggerError> {
         assert_called_once!("Cannot call KLogger::init() more than once");
         let klogger = &mut *self.0.lock();
         assert!(klogger.is_none());
 
-        *klogger = Some(FontRenderer::new(FrameBufferColor::new(255, 255, 255)).map_err(KLoggerError::FontErr)?);
+        *klogger = Some(FontRenderer::new(FrameBufferColor::new(r, g, b), scale).map_err(KLoggerError::FontErr)?);
         Ok(())
     }
 

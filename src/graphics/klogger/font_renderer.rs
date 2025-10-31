@@ -1,12 +1,15 @@
 use crate::graphics::{framebuffer::{FrameBufferColor, Framebuffer}, klogger::{painter::KLoggerPainter, psf::{Psf, PsfError}}, FRAMEBUFFER};
 use core::{fmt, ptr::copy};
 
-const FONT: &[u8] = include_bytes!("fonts/Lat2-Terminus16.psfu");
+// TODO: make this respect the font scale everywhere
+
+const FONT: &[u8] = include_bytes!("fonts/spleen-8x16.psfu");
 const TAB_SIZE: usize = 4;
 
 pub(in crate::graphics::klogger) struct FontRenderer<'a> {
     font: Psf<'a>,
     color: FrameBufferColor,
+    scale: usize,
     column: usize,
     row: usize,
 }
@@ -17,10 +20,11 @@ pub enum FontError {
 }
 
 impl<'a> FontRenderer<'a> {
-    pub(in crate::graphics::klogger) fn new(color: FrameBufferColor) -> Result<Self, FontError> {
+    pub(in crate::graphics::klogger) fn new(color: FrameBufferColor, scale: usize) -> Result<Self, FontError> {
         Ok(Self {
             font: Psf::from_bytes(FONT).map_err(FontError::PsfErrs)?,
             color,
+            scale,
             column: 0,
             row: 0,
         })
@@ -36,7 +40,11 @@ impl<'a> FontRenderer<'a> {
                 for xpos in 0..pixel_width {
                     let byte = glyph[ypos * bytes_per_row + (xpos / 8)];
                     if (byte >> (7 - (xpos % 8))) & 1 != 0 {
-                        KLoggerPainter::put_pixel(fb, x + xpos as u32, y + ypos as u32, self.color);
+                        for y_scale in 0..self.scale as u32 {
+                            for x_scale in 0..self.scale as u32 {
+                                KLoggerPainter::put_pixel(fb, (x + xpos as u32) * self.scale as u32 + x_scale, (y + ypos as u32) * self.scale as u32 + y_scale, self.color);
+                            }
+                        }
                     }
                 }
             }
