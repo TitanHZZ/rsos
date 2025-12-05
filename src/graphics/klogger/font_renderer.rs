@@ -3,7 +3,7 @@ use core::{fmt, ptr::copy};
 
 // TODO: make this respect the font scale everywhere
 
-const FONT: &[u8] = include_bytes!("fonts/spleen-8x16.psfu");
+const FONT: &[u8] = include_bytes!("fonts/spleen-12x24.psfu");
 const TAB_SIZE: usize = 4;
 
 pub(in crate::graphics::klogger) struct FontRenderer<'a> {

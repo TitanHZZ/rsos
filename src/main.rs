@@ -36,7 +36,7 @@ use alloc::boxed::Box;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    log!(failed, "Kernel Panic occurred!");
+    // log!(failed, "Kernel Panic occurred!");
     serial_println!("{}", info);
     rsos::hlt();
 }
@@ -81,7 +81,6 @@ fn print_mem_status(mb_info: &MbBootInfo) {
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // at this point, the cpu is running in 64 bit long mode
     // paging is enabled (including the NXE and WP bits) and we are using identity mapping with some higher half mappings
-    // log!(ok, "Rust kernel code started.");
 
     let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
     print_mem_status(&mb_info);
@@ -100,21 +99,22 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // initialize the frame allocator
     unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
-    // log!(ok, "Frame allocator initialized.");
+    serial_println!("Frame allocator initialized.");
 
     // initialize the first stage page allocator
     unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
-    // log!(ok, "First stage page allocator initialized.");
+    serial_println!("First stage page allocator initialized.");
 
-    // get the current paging context and create a new (empty) one
-    // log!(ok, "Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
-    { // this scope makes sure that the inactive context does not get used again
+    // this scope makes sure that the inactive context does not get used again
+    {
+        serial_println!("Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
         let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
         let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
 
         // remap (to the higher half) the kernel, the mb2 info and the frame allocator metadata
         // with the correct flags and permissions into the new paging context
         memory::remap(active_paging_context, inactive_paging).expect("Could not perform the higher half remapping");
+        serial_println!("Higher half remapping completed.");
 
         active_paging_context.switch(inactive_paging);
 
@@ -122,16 +122,13 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
         let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
         active_paging_context.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
-        serial_println!("Guard page addr: {:#x}", guard_page_addr.addr());
+        serial_println!("Stack guard page created at: {:#x}", guard_page_addr.addr());
     }
 
     // at this point, we are using a new paging context that maps the kernel, mb2 and frame allocator metadata to the higher half
     // the paging context created during the asm bootstrapping is now being used as stack for the kernel
     // except for the p4 table that is being used as a guard page
     // because of this, we now have just over 2MiB of stack
-
-    // log!(ok, "Higher half remapping completed.");
-    // log!(ok, "Stack guard page created.");
 
     // use the new higher half mapped multiboot2
     let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
@@ -160,9 +157,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { KLOGGER.init(255, 255, 255, 1) }.expect("Could not initialize the Kernel logger");
     serial_println!("Kernel logger initialized.");
 
+    // TODO: this should be initialized as soon as possible
     log!(ok, "Kernel logger initialized.");
-    log!(warn, "Kernel logger initialized.");
-    log!(failed, "Kernel logger initialized.");
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
