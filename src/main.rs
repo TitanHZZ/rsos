@@ -154,10 +154,10 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
     serial_println!("Heap allocator initialized.");
 
+    // TODO: this should be initialized as soon as possible
     unsafe { KLOGGER.init(255, 255, 255, 1) }.expect("Could not initialize the Kernel logger");
     serial_println!("Kernel logger initialized.");
 
-    // TODO: this should be initialized as soon as possible
     log!(ok, "Kernel logger initialized.");
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
