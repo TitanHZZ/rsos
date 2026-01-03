@@ -1,19 +1,16 @@
-// https://www.reddit.com/r/rust/comments/req4w2/everything_you_never_wanted_to_know_about_linker/
-// https://wiki.osdev.org/Higher_Half_x86_Bare_Bones
-// https://mcyoung.xyz/2021/06/01/linker-script/
-// https://wiki.osdev.org/Higher_Half_Kernel
-// https://medium.com/@connorstack/how-does-a-higher-half-kernel-work-107194e46a64
-// https://simonis.github.io/Memory/
-
-// Rust Docs problem tracking issue:
-// https://github.com/rust-lang/rust-analyzer/issues/20356#issue-3284255455
-
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
 #![feature(custom_test_frameworks)]
 #![test_runner(rsos::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+
+// https://www.reddit.com/r/rust/comments/req4w2/everything_you_never_wanted_to_know_about_linker/
+// https://wiki.osdev.org/Higher_Half_x86_Bare_Bones
+// https://mcyoung.xyz/2021/06/01/linker-script/
+// https://wiki.osdev.org/Higher_Half_Kernel
+// https://medium.com/@connorstack/how-does-a-higher-half-kernel-work-107194e46a64
+// https://simonis.github.io/Memory/
 
 // TODO: look into stack probes
 // TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests

@@ -6,7 +6,6 @@
 #![reexport_test_harness_main = "test_main"]
 
 pub mod data_structures;
-// pub mod vga_buffer;
 pub mod multiboot2;
 pub mod interrupts;
 pub mod graphics;

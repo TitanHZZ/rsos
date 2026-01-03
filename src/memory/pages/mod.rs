@@ -74,12 +74,12 @@ impl Page {
 /// 
 /// Implementors must adhere to the following rules:
 /// - The client **should** only be initialized after the [Frame Allocator](super::frames::FrameAllocator) is available, and it should, preferably, be static.
-/// - Frame allocations are allowed as well as the use of the [Paging Context](crate::globals::ACTIVE_PAGING_CTX) for metadata creation.
+/// - Frame allocations are allowed as well as the use of the paging context from the [memory subsystem](crate::memory::MEMORY_SUBSYSTEM) for metadata creation.
 /// - No more than one page allocator can be [initialized](PageAllocator::init) and used at the same time but, a two stage system is expected
 ///   where a temporary page allocator is created that then gives place to a permanent one.
 /// - The page allocator must ensure that the [kernel prohibited memory ranges](crate::kernel::Kernel::prohibited_memory_ranges) are **never** violated.
 /// - If a two stage system is used:
-///   - The temporary page allocator might or might not rely on [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED) for metadata but,
+///   - The temporary page allocator might or might not rely on [originally identity mapped](crate::kernel::Kernel::originally_identity_mapped) for metadata but,
 ///     the permanent allocator **must** not.
 ///   - The temporary allocator **must** assume that it will be used just until the higher half remapping is performed at what point the switch
 ///     to the permanent allocator will happen.

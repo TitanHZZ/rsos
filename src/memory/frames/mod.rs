@@ -26,11 +26,11 @@ impl Frame {
 /// Implementors must ensure that they adhere to these contracts:
 /// - The client **should** be created very early on, and it should, preferably, be static.
 /// - [init()](FrameAllocator::init) **must** be called very early on, before the higher half remapping and before performing any allocations.
-/// - The frame allocator must ensure that the [kernel prohibited memory ranges](Kernel::prohibited_memory_ranges) are **never** violated.
+/// - The frame allocator must ensure that the [kernel prohibited memory ranges](crate::kernel::Kernel::prohibited_memory_ranges) are **never** violated.
 /// - Only [valid RAM](crate::multiboot2::memory_map::MemoryMapEntries::usable_areas) can be used for metadata, if necessary.
 /// - If metadata is used, it will **need** to be remapped with [remap()](FrameAllocator::remap) as soon as the higher half remapping is completed.
 /// - No more than one frame allocator is ever expected to be initialized at the same time.
-/// - The allocator may rely on [ORIGINALLY_IDENTITY_MAPPED](crate::kernel::ORIGINALLY_IDENTITY_MAPPED) to safely create it's metadata.
+/// - The allocator may rely on [originally identity mapped](crate::kernel::Kernel::originally_identity_mapped) to safely create it's metadata.
 /// - The use of the [Page Allocator](crate::memory::pages::PageAllocator) is **prohibited** to ensure that no recursive state is ever reached.
 /// - The use of the [Paging Context](crate::memory::pages::paging::ActivePagingContext) is also **prohibited** to ensure that no recursive state is ever reached.
 /// 

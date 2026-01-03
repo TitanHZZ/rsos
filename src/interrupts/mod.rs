@@ -219,7 +219,8 @@ impl Default for InterruptDescriptorTable {
 }
 
 impl InterruptDescriptorTable {
-    /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new`].
+    #[allow(rustdoc::private_intra_doc_links)]
+    /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new()`].
     pub const fn new() -> Self {
         InterruptDescriptorTable {
             divide_error: InterruptDescriptor::new(),
