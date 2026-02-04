@@ -7,6 +7,7 @@ docs = "doc --no-deps"
 [unstable]
 build-std = ["core", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
+json-target-spec = true
 
 [target.'cfg(target_os = "none")']
 runner = "setup/runner.sh"
