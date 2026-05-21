@@ -16,7 +16,7 @@
     "code-model": "large",
     "pre-link-args": {
         "gcc": [
-            "-Wl,--script=setup/linker.ld",
+            "-Wl,--script=setup/linker.ld,--build-id=none",
             "-ffreestanding",
             "-O2",
             "-nostdlib",
