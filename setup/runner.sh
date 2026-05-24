@@ -48,12 +48,12 @@ if $TEST_MODE; then
     # cmd+=(-serial stdio)
 
     # hide qemu
-    cmd+=(-display none)
+    # cmd+=(-display none)
 else
     # set the appropriate grub timeout
     sed -i "s/GRUB_TIMEOUT/${GRUB_TIMEOUT_RELEASE}/g" target/isofiles/boot/grub/grub.cfg
 
-    # prevent qemu from shutting down forever in case of an OS crash
+    # prevent qemu from shutting down in case of an OS crash
     cmd+=(-no-shutdown)
 fi
 
