@@ -20,11 +20,18 @@ fi
 # https://wiki.osdev.org/UEFI#Emulation_with_QEMU_and_OVMF
 cmd=(
     qemu-system-x86_64 -enable-kvm -m 4G
-    -cdrom target/rsos.iso
+
+    # mount the ISO using a SATA controller
+    -drive id=cdrom,file=target/rsos.iso,format=raw,if=none
+    -device ahci,id=ahci
+    -device ide-cd,drive=cdrom,bus=ahci.0
+
+    # set the firmware (UEFI) to use (OVMF)
     -drive if=pflash,format=raw,unit=0,file=/usr/share/OVMF/OVMF_CODE.fd,readonly=on
     -drive if=pflash,format=raw,unit=1,file=/tmp/OVMF_VARS.fd
-    -net none
-    -no-reboot
+
+    -net none  # no networking
+    -no-reboot # QEMU will exit instead of rebooting in the case of an OS crash
 )
 
 # make a writable copy of OVMF_VARS.fd for UEFI support
@@ -48,7 +55,7 @@ if $TEST_MODE; then
     # cmd+=(-serial stdio)
 
     # hide qemu
-    # cmd+=(-display none)
+    cmd+=(-display none)
 else
     # set the appropriate grub timeout
     sed -i "s/GRUB_TIMEOUT/${GRUB_TIMEOUT_RELEASE}/g" target/isofiles/boot/grub/grub.cfg
