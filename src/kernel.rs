@@ -2,7 +2,7 @@ use crate::{multiboot2::{memory_map::{MemoryMap, MemoryMapEntryType}, MbBootInfo
 use crate::{memory::MemoryError, multiboot2::elf_symbols::{ElfSectionFlags, ElfSymbols, ElfSymbolsIter}};
 use crate::memory::{AddrOps, MemoryRange, VirtualAddress, FRAME_PAGE_SIZE};
 use spin::lock_api::{RwLock, RwLockReadGuard};
-use core::ops::Deref;
+use core::{ops::Deref, slice};
 
 // static Kernel asserts
 const _: () = assert!(Kernel::originally_identity_mapped().is_multiple_of(FRAME_PAGE_SIZE));
@@ -16,6 +16,7 @@ pub static KERNEL: Kernel = Kernel(RwLock::new(KernelInner {
     mb_start: 0,
     mb_end  : 0,
     initialized: false,
+    mb2_hash: [0; 32],
 }));
 
 struct KernelInner {
@@ -32,6 +33,9 @@ struct KernelInner {
     mb_end: usize,
 
     initialized: bool,
+
+    // used to check for memory corruption on the multiboot2 memory during the lower to higher half remapping
+    mb2_hash: [u8; 32],
 }
 
 pub struct Kernel(RwLock<KernelInner>);
@@ -74,7 +78,15 @@ impl KernelInner {
             mb_end,
 
             initialized: true,
+
+            mb2_hash: Self::hash_memory_region(mb_start, mb_end - mb_start + 1)
         }
+    }
+
+    fn hash_memory_region(ptr: VirtualAddress, len: usize) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(unsafe { slice::from_raw_parts(ptr as _, len) });
+        *hasher.finalize().as_bytes()
     }
 }
 
@@ -169,6 +181,8 @@ impl Kernel {
 
         Ok(())
     }
+
+    // TODO: write mb2 check
 
     /// All the memory ranges that **must be left untouched** meaning that these regions
     /// cannot be used for allocations in the physical (frame allocator) memory space.
