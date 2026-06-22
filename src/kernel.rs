@@ -83,6 +83,10 @@ impl KernelInner {
         }
     }
 
+    fn mb_lh_hh_offset(&self) -> usize {
+        (self.k_end + Kernel::k_lh_hh_offset() - self.mb_start).align_up(FRAME_PAGE_SIZE)
+    }
+
     fn hash_memory_region(ptr: VirtualAddress, len: usize) -> [u8; 32] {
         let mut hasher = blake3::Hasher::new();
         hasher.update(unsafe { slice::from_raw_parts(ptr as _, len) });
@@ -182,7 +186,17 @@ impl Kernel {
         Ok(())
     }
 
-    // TODO: write mb2 check
+    /// Asserts that (some) read only memory sections have not been corrupted.
+    /// 
+    /// # Panics
+    /// 
+    /// If the area(s) have been corrupted.
+    pub fn assert_memory_integrity(&self) { // TODO: this could check more memory areas
+        let inner = self.0.read();
+        assert!(inner.initialized);
+        let m = KernelInner::hash_memory_region(inner.mb_lh_hh_offset() + inner.mb_start, inner.mb_end - inner.mb_start + 1);
+        assert!(inner.mb2_hash == m);
+    }
 
     /// All the memory ranges that **must be left untouched** meaning that these regions
     /// cannot be used for allocations in the physical (frame allocator) memory space.
@@ -263,7 +277,7 @@ impl Kernel {
     pub fn mb_lh_hh_offset(&self) -> usize {
         let inner = &*self.0.read();
         assert!(inner.initialized);
-        (inner.k_end + Kernel::k_lh_hh_offset() - inner.mb_start).align_up(FRAME_PAGE_SIZE)
+        inner.mb_lh_hh_offset()
     }
 
     /// Get the start address for the frame allocator to use with higher half mappings.

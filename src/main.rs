@@ -17,17 +17,12 @@
 
 extern crate alloc;
 
-use rsos::memory::{pages::{paging::{inactive_paging_context::InactivePagingContext}, PageAllocator}, MEMORY_SUBSYSTEM, frames::FrameAllocator};
 use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_println};
-use rsos::{graphics::KLOGGER, interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::{multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated}, kernel::Kernel};
-use rsos::memory::{pages::Page, simple_heap_allocator::HEAP_ALLOCATOR, VirtualAddress};
-use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}, kernel::KERNEL};
+use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
+use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}, basic_initialization_process};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
-use rsos::multiboot2::{MbBootInfo, memory_map::MemoryMap};
-use core::{arch::asm, panic::PanicInfo, slice};
-use rsos::{log, memory};
+use core::{arch::asm, panic::PanicInfo};
 use alloc::boxed::Box;
 
 #[cfg(not(test))]
@@ -44,30 +39,27 @@ fn panic(info: &PanicInfo) -> ! {
     rsos::test_panic_handler(info);
 }
 
-fn print_mem_status(mb_info: &MbBootInfo) {
-    let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
-    let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
-
-    serial_println!("Memory areas:");
-    for entry in mem_map_entries {
-        serial_println!(
-            "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
-            entry.base_addr,
-            entry.length as f64 / 1024.0 / 1024.0,
-            entry.entry_type()
-        );
-    }
-
-    let total_memory: u64 = mem_map_entries.usable_areas()
-        .map(|entry| entry.length)
-        .sum();
-
-    serial_println!(
-        "Total (available) memory: {} bytes ({:.2} GB)",
-        total_memory,
-        total_memory as f64 / 1024.0 / 1024.0 / 1024.0
-    );
-}
+// fn print_mem_status(mb_info: &MbBootInfo) {
+//     let mem_map = mb_info.get_tag::<MemoryMap>().expect("Mem map tag is not present.");
+//     let mem_map_entries = mem_map.entries().expect("Only 64bit mem map entries are supported.");
+//     serial_println!("Memory areas:");
+//     for entry in mem_map_entries {
+//         serial_println!(
+//             "\tstart: 0x{:x}, length: {:.2} MB, type: {:?}",
+//             entry.base_addr,
+//             entry.length as f64 / 1024.0 / 1024.0,
+//             entry.entry_type()
+//         );
+//     }
+//     let total_memory: u64 = mem_map_entries.usable_areas()
+//         .map(|entry| entry.length)
+//         .sum();
+//     serial_println!(
+//         "Total (available) memory: {} bytes ({:.2} GB)",
+//         total_memory,
+//         total_memory as f64 / 1024.0 / 1024.0 / 1024.0
+//     );
+// }
 
 /// This is the Rust entry point into the OS.
 /// 
@@ -76,86 +68,7 @@ fn print_mem_status(mb_info: &MbBootInfo) {
 /// The caller must ensure that the function never gets called more than once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
-    // at this point, the cpu is running in 64 bit long mode
-    // paging is enabled (including the NXE and WP bits) and we are using identity mapping with some higher half mappings
-
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
-    print_mem_status(&mb_info);
-
-    // build the main Kernel structure
-    unsafe { KERNEL.init(mb_info) };
-    KERNEL.initial_checks().expect("The kernel/mb2 must be well placed and mapped");
-    serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", KERNEL.mb_start() + KERNEL.mb_lh_hh_offset(), KERNEL.mb_end() + KERNEL.mb_lh_hh_offset());
-
-    let a = unsafe  {
-        hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
-    };
-
-    // EFI boot services are not supported
-    assert!(KERNEL.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
-
-    // initialize the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
-    serial_println!("Frame allocator initialized.");
-
-    // initialize the first stage page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
-    serial_println!("First stage page allocator initialized.");
-
-    // this scope makes sure that the inactive context does not get used again
-    {
-        serial_println!("Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
-        let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
-        let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
-
-        // remap (to the higher half) the kernel, the mb2 info and the frame allocator metadata
-        // with the correct flags and permissions into the new paging context
-        memory::remap(active_paging_context, inactive_paging).expect("Could not perform the higher half remapping");
-        serial_println!("Higher half remapping completed.");
-
-        active_paging_context.switch(inactive_paging);
-
-        // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
-        // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
-        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
-        active_paging_context.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
-        serial_println!("Stack guard page created at: {:#x}", guard_page_addr.addr());
-    }
-
-    // at this point, we are using a new paging context that maps the kernel, mb2 and frame allocator metadata to the higher half
-    // the paging context created during the asm bootstrapping is now being used as stack for the kernel
-    // except for the p4 table that is being used as a guard page
-    // because of this, we now have just over 2MiB of stack
-
-    // use the new higher half mapped multiboot2
-    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
-
-    // rebuild the main Kernel structure (with the new multiboot2)
-    unsafe { KERNEL.rebuild(mb_info) };
-    serial_println!("Main kernel structure rebuilt.");
-
-    // fix the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() }.expect("Could not remap the frame allocator");
-    serial_println!("Frame allocator remapped.");
-
-    // switch to the permanent page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().switch() };
-    serial_println!("Page allocator switch performed.");
-
-    // initialize the second stage page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
-    serial_println!("Second stage page allocator initialized.");
-
-    // set up the heap allocator
-    unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
-    serial_println!("Heap allocator initialized.");
-
-    // TODO: this should be initialized as soon as possible
-    unsafe { KLOGGER.init(255, 255, 255, 1) }.expect("Could not initialize the Kernel logger");
-    serial_println!("Kernel logger initialized.");
-
-    log!(ok, "Kernel logger initialized.");
+    unsafe { basic_initialization_process(mb_boot_info_phy_addr) }
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
@@ -200,25 +113,11 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // // to be used later
     // assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
 
-    let b = unsafe  {
-        hash_memory_region(KERNEL.mb_lh_hh_offset() + KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
-    };
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
-
     #[cfg(test)]
     test_main();
 
     serial_println!("Hello, World!");
     rsos::hlt();
-}
-
-// TODO: this should probably be part of the kernel so we could check integrity at any point
-unsafe fn hash_memory_region(ptr: VirtualAddress, len: usize) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(unsafe { slice::from_raw_parts(ptr as _, len) });
-    *hasher.finalize().as_bytes()
 }
 
 extern "x86-interrupt" fn breakpoint_handler(args: InterruptArgs) {

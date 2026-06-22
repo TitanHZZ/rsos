@@ -6,15 +6,10 @@
 
 extern crate alloc;
 
-use rsos::memory::frames::FrameAllocator;
-use rsos::memory::pages::paging::inactive_paging_context::InactivePagingContext;
-use rsos::multiboot2::{efi_boot_services_not_terminated::EfiBootServicesNotTerminated, MbBootInfo};
-use rsos::memory::{pages::Page, simple_heap_allocator::HEAP_ALLOCATOR, MEMORY_SUBSYSTEM, VirtualAddress};
-use rsos::interrupts::tss::TSS;
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{panic::PanicInfo, slice};
-use rsos::{memory, kernel::{Kernel, KERNEL}};
-use rsos::memory::pages::PageAllocator;
+use rsos::basic_initialization_process;
+use rsos::interrupts::tss::TSS;
+use core::{panic::PanicInfo};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -31,83 +26,12 @@ struct Aligned16(u64);
 /// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
-
-    // build the main Kernel structure
-    unsafe { KERNEL.init(mb_info) };
-    KERNEL.initial_checks().expect("The kernel/mb2 must be well placed and mapped");
-
-    let a = unsafe  {
-        hash_memory_region(KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
-    };
-
-    // EFI boot services are not supported
-    assert!(KERNEL.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
-
-    // initialize the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
-
-    // initialize the first stage page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
-
-    // this scope makes sure that the inactive context does not get used again
-    {
-        let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
-        let inactive_paging = &mut InactivePagingContext::new(active_paging_context).unwrap();
-
-        // remap (to the higher half) the kernel, the mb2 info and the frame allocator metadata
-        // with the correct flags and permissions into the new paging context
-        memory::remap(active_paging_context, inactive_paging).expect("Could not perform the higher half remapping");
-
-        active_paging_context.switch(inactive_paging);
-
-        // this creates the guard page for the kernel stack (the unwrap is fine as we know that the addr is valid)
-        // the frame itself is not deallocated so that it does not cause any problems by being in the middle of kernel memory
-        let guard_page_addr = Page::from_virt_addr(inactive_paging.p4_frame().addr() + Kernel::k_lh_hh_offset()).unwrap();
-        active_paging_context.unmap_page(guard_page_addr, false).expect("Could not unmap a page for the kernel stack guard page");
-    }
-
-    // at this point, we are using a new paging context that maps the kernel, mb2 and frame allocator metadata to the higher half
-    // the paging context created during the asm bootstrapping is now being used as stack for the kernel
-    // except for the p4 table that is being used as a guard page
-    // because of this, we now have just over 2MiB of stack
-
-    // use the new higher half mapped multiboot2
-    let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + KERNEL.mb_lh_hh_offset()) as *const u8;
-    let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
-
-    // rebuild the main Kernel structure (with the new multiboot2)
-    unsafe { KERNEL.rebuild(mb_info) };
-
-    // fix the frame allocator
-    unsafe { MEMORY_SUBSYSTEM.frame_allocator().remap() }.expect("Could not remap the frame allocator");
-
-    // switch to the permanent page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().switch() };
-
-    // initialize the second stage page allocator
-    unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the second stage page allocator");
-
-    // set up the heap allocator
-    unsafe { HEAP_ALLOCATOR.init(25) }.expect("Could not initialize the heap allocator");
-
-    let b = unsafe  {
-        hash_memory_region(KERNEL.mb_lh_hh_offset() + KERNEL.mb_start(), KERNEL.mb_end() - KERNEL.mb_start() + 1)
-    };
-
-    // if this fails, the mb2 memory got corrupted
-    assert!(a == b);
+    unsafe { basic_initialization_process(mb_boot_info_phy_addr) }
 
     #[cfg(test)]
     test_main();
 
     rsos::hlt();
-}
-
-unsafe fn hash_memory_region(ptr: VirtualAddress, len: usize) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(unsafe { slice::from_raw_parts(ptr as _, len) });
-    *hasher.finalize().as_bytes()
 }
 
 #[test_case]
