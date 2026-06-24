@@ -104,6 +104,8 @@ impl KernelInner {
     /// 
     /// If called before [initialization](Kernel::init()).
     pub fn initial_checks(&self) -> Result<(), MemoryError> {
+        assert!(self.initialized);
+
         let mem_map_entries = self.mb_info.as_ref().unwrap().get_tag::<MemoryMap>()
             .ok_or(MemoryError::MemoryMapMbTagDoesNotExist)?
             .entries().map_err(MemoryError::MemoryMapErr)?;
@@ -147,39 +149,25 @@ impl KernelInner {
 }
 
 impl Kernel {
-    /// Initialize the Kernel main structure.
-    /// 
-    /// # Safety
-    /// 
-    /// - **Must** be done *before* anything gets higher half remapped.
-    /// 
-    /// Failure to follow the rules will result in data corruption.
-    /// 
-    /// # Panics
-    /// 
-    /// If called more than once.
-    pub unsafe fn init(&self, mb_info: MbBootInfo) {
-        assert_called_once!("Cannot call Kernel::init() more than once");
-        *self.0.write() = KernelInner::new(mb_info);
-    }
-
     // TODO: document this
     // TODO: make the errors as enums??
-    // TODO: remove the use of all "KERNEL"
-    pub unsafe fn init2(&self, mb_boot_info_phy_addr: *const u8) {
-        let mut inner = self.0.write();
-        assert_called_once!("Cannot call Kernel::init2() more than once");
-        assert!(!inner.initialized);
+    // TODO: explain what exactly gets initialized
+    pub unsafe fn init(&self, mb_boot_info_phy_addr: *const u8) {
+        {
+            let mut inner = self.0.write();
+            assert_called_once!("Cannot call Kernel::init2() more than once");
+            assert!(!inner.initialized);
 
-        // build the main Kernel structure
-        let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
-        *inner = KernelInner::new(mb_info);
+            // build the main Kernel structure
+            let mb_info = unsafe { MbBootInfo::new(mb_boot_info_phy_addr) }.expect("Invalid multiboot2 data");
+            *inner = KernelInner::new(mb_info);
 
-        inner.initial_checks().expect("The kernel/mb2 must be well placed and mapped");
-        serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", inner.mb_start + inner.mb_lh_hh_offset(), inner.mb_end + inner.mb_lh_hh_offset());
+            inner.initial_checks().expect("The kernel/mb2 must be well placed and mapped");
+            serial_println!("mb start     (higher half): {:#x}, mb end:     {:#x}", inner.mb_start + inner.mb_lh_hh_offset(), inner.mb_end + inner.mb_lh_hh_offset());
 
-        // EFI boot services are not supported
-        assert!(inner.mb_info().get_tag::<EfiBootServicesNotTerminated>().is_none());
+            // EFI boot services are not supported
+            assert!(inner.mb_info.as_ref().unwrap().get_tag::<EfiBootServicesNotTerminated>().is_none());
+        }
 
         // initialize the frame allocator
         unsafe { MEMORY_SUBSYSTEM.frame_allocator().init() }.expect("Could not initialize the frame allocator");
@@ -189,7 +177,6 @@ impl Kernel {
         unsafe { MEMORY_SUBSYSTEM.page_allocator().init() }.expect("Could not initialize the first stage page allocator");
         serial_println!("First stage page allocator initialized.");
 
-        // this scope makes sure that the inactive context does not get used again
         {
             serial_println!("Remapping the kernel, multiboot2 info and the frame allocator metadata to the higher half.");
             let active_paging_context = MEMORY_SUBSYSTEM.active_paging_context();
@@ -214,12 +201,16 @@ impl Kernel {
         // except for the p4 table that is being used as a guard page
         // because of this, we now have just over 2MiB of stack
 
-        // use the new higher half mapped multiboot2
-        let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + inner.mb_lh_hh_offset()) as *const u8;
-        let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
+        {
+            let mut inner = self.0.write();
 
-        // fix the multiboot2 info in the main Kernel structure
-        inner.mb_info = Some(mb_info);
+            // use the new higher half mapped multiboot2
+            let mb_boot_info_virt_addr = (mb_boot_info_phy_addr as VirtualAddress + inner.mb_lh_hh_offset()) as *const u8;
+            let mb_info = unsafe { MbBootInfo::new(mb_boot_info_virt_addr) }.expect("Invalid higher half multiboot2 data");
+
+            // fix the multiboot2 info in the main Kernel structure
+            inner.mb_info = Some(mb_info);
+        }
 
         serial_println!("Main kernel structure rebuilt.");
 
@@ -244,41 +235,11 @@ impl Kernel {
         serial_println!("Kernel logger initialized.");
 
         // assert memory integrity
+        let inner = self.0.read();
         let m = KernelInner::hash_memory_region(inner.mb_lh_hh_offset() + inner.mb_start, inner.mb_end - inner.mb_start + 1);
         assert!(inner.mb2_hash == m);
         log!(ok, "Kernel logger initialized.");
     }
-
-    // /// Rebuilds the main kernel structure with the new, higher half, multiboot2 information structure.
-    // /// 
-    // /// # Safety
-    // /// 
-    // /// - **Must** be called right after remapping to the higher half and rebuilding the multiboot2 structure but before anything else is done.
-    // /// 
-    // /// Failure to follow the rules will result in data corruption.
-    // /// 
-    // /// # Panics
-    // /// 
-    // /// - If called more than once.
-    // /// - If called before [initialization](Kernel::init()).
-    // pub unsafe fn rebuild(&self, mb_info: MbBootInfo) {
-    //     let mut inner = self.0.write();
-    //     assert_called_once!("Cannot call Kernel::rebuild() more than once");
-    //     assert!(inner.initialized);
-    //     inner.mb_info = Some(mb_info);
-    // }
-
-    // /// Asserts that (some) read only memory sections have not been corrupted.
-    // /// 
-    // /// # Panics
-    // /// 
-    // /// If the area(s) have been corrupted.
-    // pub fn assert_memory_integrity(&self) { // TODO: this could check more memory areas
-    //     let inner = self.0.read();
-    //     assert!(inner.initialized);
-    //     let m = KernelInner::hash_memory_region(inner.mb_lh_hh_offset() + inner.mb_start, inner.mb_end - inner.mb_start + 1);
-    //     assert!(inner.mb2_hash == m);
-    // }
 
     /// All the memory ranges that **must be left untouched** meaning that these regions
     /// cannot be used for allocations in the physical (frame allocator) memory space.

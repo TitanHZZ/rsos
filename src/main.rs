@@ -17,11 +17,11 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::gdt::{NormalDescAccessByteArgs, NormalDescAccessByte, SegmentDescriptor, SegmentFlags}, serial_println};
+use rsos::{interrupts::gdt::{NormalDescAccessByte, NormalDescAccessByteArgs, SegmentDescriptor, SegmentFlags}, kernel::KERNEL, serial_println};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
-use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}, basic_initialization_process};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
+use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}};
 use core::{arch::asm, panic::PanicInfo};
 use alloc::boxed::Box;
 
@@ -68,7 +68,7 @@ fn panic(info: &PanicInfo) -> ! {
 /// The caller must ensure that the function never gets called more than once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
-    unsafe { basic_initialization_process(mb_boot_info_phy_addr) }
+    unsafe { KERNEL.init(mb_boot_info_phy_addr) }
 
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved

@@ -7,8 +7,7 @@
 extern crate alloc;
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use rsos::basic_initialization_process;
-use rsos::interrupts::tss::TSS;
+use rsos::{interrupts::tss::TSS, kernel::KERNEL};
 use core::{panic::PanicInfo};
 
 #[panic_handler]
@@ -26,7 +25,7 @@ struct Aligned16(u64);
 /// This function may only be called once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
-    unsafe { basic_initialization_process(mb_boot_info_phy_addr) }
+    unsafe { KERNEL.init(mb_boot_info_phy_addr) }
 
     #[cfg(test)]
     test_main();
