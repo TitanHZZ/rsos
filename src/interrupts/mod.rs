@@ -1,3 +1,5 @@
+extern crate alloc;
+
 // https://wiki.osdev.org/Interrupt_Descriptor_Table
 // https://wiki.osdev.org/Interrupts_Tutorial
 pub mod tss;
@@ -5,8 +7,9 @@ pub mod gdt;
 
 use crate::{io_port::IoPort, memory::VirtualAddress};
 use core::{marker::PhantomData, arch::asm};
-use bitflags::bitflags;
 use tss::TssStackNumber;
+use bitflags::bitflags;
+use alloc::boxed::Box;
 
 /// # Safety
 /// 
@@ -212,17 +215,11 @@ pub struct InterruptDescriptorTable {
     interrupt                       : [InterruptDescriptor<IntFunc>; 224],   // external interrupts (PIC/APIC)
 }
 
-impl Default for InterruptDescriptorTable {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl InterruptDescriptorTable {
     #[allow(rustdoc::private_intra_doc_links)]
     /// Creates a new `InterruptDescriptorTable` where every entry is comes from [`InterruptDescriptor::new()`].
-    pub const fn new() -> Self {
-        InterruptDescriptorTable {
+    pub fn new() -> Box<Self> {
+        Box::new(InterruptDescriptorTable {
             divide_error: InterruptDescriptor::new(),
             debug_exception: InterruptDescriptor::new(),
             non_maskable_interrupt: InterruptDescriptor::new(),
@@ -247,7 +244,7 @@ impl InterruptDescriptorTable {
             control_protection_exception: InterruptDescriptor::new(),
             reserved_for_future_use: [InterruptDescriptor::new(); 10], // reserved
             interrupt: [InterruptDescriptor::new(); 224], // external interrupts (PIC/APIC)
-        }
+        })
     }
 
     /// Loads `idt` as the current IDT.

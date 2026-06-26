@@ -73,6 +73,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
     //       this needs to be solved
 
+    // TODO: should these descriptors be in the heap??
+
     let mut code_seg = NormalSegmentDescriptor::new();
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
     code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
@@ -80,18 +82,19 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     let mut tss_seg = SystemSegmentDescriptor::new();
     tss_seg.set_access_byte(SystemDescAccessByteArgs::new(SystemDescAccessByte::PRESENT, SystemDescAccessByteType::TssAvailable64bit));
 
-    let mut tss = Box::new(TSS::new());
+    let mut tss = TSS::new();
     tss.new_stack(TssStackNumber::TssStack1, 4, true).expect("Could not create an interrupt stack");
-    tss_seg.set_base(Box::leak(tss));
+
+    tss_seg.set_base(tss);
     tss_seg.set_limit(TSS_SIZE);
 
     // the unwraps() *should* be fine as we know that the gdt as space left for these 2 descriptors
-    let mut gdt = Box::new(GDT::new());
+    let mut gdt = GDT::new();
     let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
     let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
 
     // set up the IDT
-    let mut idt = Box::new(InterruptDescriptorTable::new());
+    let mut idt = InterruptDescriptorTable::new();
     idt.breakpoint.set_fn(breakpoint_handler);
     idt.double_fault.set_fn(double_fault_handler);
     idt.double_fault.set_ist(TssStackNumber::TssStack1);

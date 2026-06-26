@@ -1,7 +1,10 @@
+extern crate alloc;
+
 // https://wiki.osdev.org/Global_Descriptor_Table
 // https://wiki.osdev.org/GDT_Tutorial
 use crate::memory::VirtualAddress;
 use bitflags::bitflags;
+use alloc::boxed::Box;
 use core::{arch::asm};
 use super::tss::TSS;
 
@@ -155,7 +158,7 @@ pub trait SegmentDescriptor {
     type SegmentDescriptorArgs;
 
     fn set_limit(&mut self, limit: u32);
-    fn set_base(&mut self, tss: &'static TSS);
+    fn set_base(&mut self, tss: Box<TSS>);
     fn set_access_byte(&mut self, args: Self::SegmentDescriptorArgs);
     fn set_flags(&mut self, flags: SegmentFlags);
 }
@@ -169,8 +172,9 @@ impl SegmentDescriptor for NormalSegmentDescriptor {
     }
 
     #[allow(clippy::identity_op)]
-    fn set_base(&mut self, tss: &'static TSS) {
-        let base = tss as *const TSS as VirtualAddress;
+    fn set_base(&mut self, tss: Box<TSS>) {
+        // TODO: is leaking fine since we still have the addr and the descriptor now owns the data??
+        let base = Box::leak(tss) as *const TSS as VirtualAddress;
         self.base_0 = ((base >> 00) & 0x0000_FFFF) as u16;
         self.base_1 = ((base >> 16) & 0x0000_00FF) as u8;
         self.base_2 = ((base >> 24) & 0x0000_00FF) as u8;
@@ -192,8 +196,8 @@ impl SegmentDescriptor for SystemSegmentDescriptor {
         self.normal_desc.set_limit(limit);
     }
 
-    fn set_base(&mut self, tss: &'static TSS) {
-        let base = tss as *const TSS as VirtualAddress;
+    fn set_base(&mut self, tss: Box<TSS>) {
+        let base = &*tss as *const TSS as VirtualAddress;
         self.normal_desc.set_base(tss);
         self.base_3 = ((base >> 32) & 0xFFFF_FFFF) as u32;
     }
@@ -248,20 +252,14 @@ pub enum GdtError {
     NotEnoughGdtSpace,
 }
 
-impl Default for GDT {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl GDT {
     /// Creates a new GDT with just a null descriptor,
-    pub fn new() -> Self {
-        GDT {
+    pub fn new() -> Box<Self> {
+        Box::new(GDT {
             descriptors: [0; 7],
             normal_desc_count: 1,
             system_desc_count: 0,
-        }
+        })
     }
 
     /// Adds `desc` to the GDT and returs a SegmentSelector that points to the newly added descriptor.

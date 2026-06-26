@@ -16,11 +16,8 @@ pub mod logger;
 pub mod kernel;
 pub mod macros;
 
-use crate::memory::{MEMORY_SUBSYSTEM, VirtualAddress, frames::FrameAllocator, simple_heap_allocator::HEAP_ALLOCATOR};
-use crate::memory::pages::{Page, PageAllocator, paging::inactive_paging_context::InactivePagingContext};
-use crate::multiboot2::{MbBootInfo, efi_boot_services_not_terminated::EfiBootServicesNotTerminated};
-use crate::{graphics::KLOGGER, io_port::IoPort, kernel::{KERNEL, Kernel}};
 use core::{panic::PanicInfo, arch::{global_asm, asm}};
+use crate::io_port::IoPort;
 
 // add all the necessary asm set up and boot code (some of this code could probably be ported to Rust)
 global_asm!(include_str!("boot.asm"), options(att_syntax));

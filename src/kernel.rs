@@ -153,9 +153,10 @@ impl Kernel {
     // TODO: make the errors as enums??
     // TODO: explain what exactly gets initialized
     pub unsafe fn init(&self, mb_boot_info_phy_addr: *const u8) {
+        assert_called_once!("Cannot call Kernel::init() more than once");
+
         {
             let mut inner = self.0.write();
-            assert_called_once!("Cannot call Kernel::init2() more than once");
             assert!(!inner.initialized);
 
             // build the main Kernel structure

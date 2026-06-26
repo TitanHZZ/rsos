@@ -1,10 +1,14 @@
+extern crate alloc;
+
 // https://wiki.osdev.org/Task_State_Segment
 use crate::memory::{pages::{page_table::page_table_entry::EntryFlags, Page, PageAllocator}, MemoryError};
 use crate::memory::{VirtualAddress, FRAME_PAGE_SIZE, MEMORY_SUBSYSTEM};
 use super::gdt::SegmentSelector;
+use alloc::boxed::Box;
 use core::arch::asm;
 
 // https://wiki.osdev.org/Task_State_Segment#Long_Mode
+/// In Long Mode, the TSS is used to store the Interrupt Stack Table. 
 #[repr(C, packed)]
 pub struct TSS {
     reserved_0: u32,
@@ -27,12 +31,6 @@ pub struct TSS {
 // the TSS always has a constant size
 pub const TSS_SIZE: u32 = 0x68;
 
-impl Default for TSS {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Clone, Copy)]
 pub enum TssStackNumber {
     TssStack1 = 0,
@@ -52,8 +50,8 @@ pub enum TssError {
 
 impl TSS {
     /// Creates a new, completly zeroed out, TSS struct.
-    pub const fn new() -> Self {
-        TSS {
+    pub fn new() -> Box<Self> {
+        Box::new(TSS {
             reserved_0: 0,
             rsp0: 0,
             rsp1: 0,
@@ -67,9 +65,10 @@ impl TSS {
             iopb: 0,
 
             previous_stack: [(0, false); 7],
-        }
+        })
     }
 
+    // TODO: what about safety?? this could replace a stack being currently used!
     /// Allocates a new stack on the heap to be used for interrupts with `page_count` pages and an optional guard page with some notes:
     /// - `page_count` needs to be at least 1 or `Err(TssError::PageCountIsZero)` will be returned.
     /// - the guard page is not part of the `page_count` meaning that if a page guard is used, the real page count allocated will be page_count + 1
