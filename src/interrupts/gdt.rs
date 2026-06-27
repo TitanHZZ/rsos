@@ -8,35 +8,6 @@ use alloc::boxed::Box;
 use core::{arch::asm};
 use super::tss::TSS;
 
-/// Reloads all segment registers: cs, ss, ds, es, fs and gs.
-/// 
-/// The cs register will have the value of `code_sel` and the rest of the registers will be set to 0.
-/// 
-/// # Safety
-/// 
-/// The caller must ensure that `code_sel` is a valid segment selector and that the GDT is valid and correctly loaded.
-// https://wiki.osdev.org/GDT_Tutorial#Long_Mode_2
-pub unsafe fn reload_seg_regs(code_sel: SegmentSelector) {
-    unsafe {
-        asm!(
-            "push {sel}",             // Push code segment to stack, 0x08 is a stand-in for your code segment
-            "lea {tmp}, [13f + rip]", // Load address of the label `13` into `reg`
-            "push {tmp}",             // Push this value to the stack
-            "retfq",                  // Perform a far return, RETFQ or LRETQ depending on syntax
-            "13:",
-            // Reload data segment registers
-            "mov rax, 0", // 0x10 is a stand-in for your data segment
-            "mov ss, rax",
-            "mov ds, rax",
-            "mov es, rax",
-            "mov fs, rax",
-            "mov gs, rax",
-            sel = in(reg) code_sel.as_u16() as u64,
-            tmp = lateout(reg) _,
-        );
-    }
-}
-
 bitflags! {
     #[repr(C)]
     pub struct NormalDescAccessByte: u8 {
@@ -315,21 +286,52 @@ impl GDT {
         }
     }
 
-    /// Loads `slf` as the current GDT.
+    // TODO: does this need to check if any descriptors were added??
+    /// Loads the current GDT.
     /// 
     /// This does not reload segment registers altough it is necessary to do so with `reload_seg_regs()`.
     /// 
     /// # Safety
     /// 
-    /// The caller must ensure that `slf` is valid.
-    pub unsafe fn load(slf: &'static Self) {
+    /// The caller must ensure that `self` is valid.
+    pub unsafe fn load(self: Box<Self>) {
         let gdtr = GDTR {
-            size: ((slf.normal_desc_count + slf.system_desc_count * 2) * 8 - 1) as u16,
-            offset: slf as *const GDT as u64,
+            size: ((self.normal_desc_count + self.system_desc_count * 2) * 8 - 1) as u16,
+            offset: Box::leak(self) as *const GDT as u64,
         };
 
         unsafe {
             asm!("lgdt [{}]", in(reg) &gdtr, options(nostack, preserves_flags));
+        }
+    }
+
+    // TODO: should this be done right in *load()*? although i think the tss must be loaded first
+    /// Reloads all segment registers: cs, ss, ds, es, fs and gs.
+    /// 
+    /// The cs register will have the value of `code_sel` and the rest of the registers will be set to 0.
+    /// 
+    /// # Safety
+    /// 
+    /// The caller must ensure that `code_sel` is a valid segment selector and that the GDT is valid and correctly loaded.
+    // https://wiki.osdev.org/GDT_Tutorial#Long_Mode_2
+    pub unsafe fn reload_seg_regs(code_sel: SegmentSelector) {
+        unsafe {
+            asm!(
+                "push {sel}",             // Push code segment to stack, 0x08 is a stand-in for your code segment
+                "lea {tmp}, [13f + rip]", // Load address of the label `13` into `reg`
+                "push {tmp}",             // Push this value to the stack
+                "retfq",                  // Perform a far return, RETFQ or LRETQ depending on syntax
+                "13:",
+                // Reload data segment registers
+                "mov rax, 0", // 0x10 is a stand-in for your data segment
+                "mov ss, rax",
+                "mov ds, rax",
+                "mov es, rax",
+                "mov fs, rax",
+                "mov gs, rax",
+                sel = in(reg) code_sel.as_u16() as u64,
+                tmp = lateout(reg) _,
+            );
         }
     }
 }

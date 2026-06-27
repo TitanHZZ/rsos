@@ -19,7 +19,7 @@ extern crate alloc;
 
 use rsos::{interrupts::gdt::{NormalDescAccessByte, NormalDescAccessByteArgs, SegmentDescriptor, SegmentFlags}, kernel::KERNEL, serial_println};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
-use rsos::{interrupts::{self, gdt::{self, Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
+use rsos::{interrupts::{self, gdt::{Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}};
 use core::{arch::asm, panic::PanicInfo};
@@ -101,9 +101,9 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     interrupts::disable_pics();
     unsafe {
-        GDT::load(Box::leak(gdt));
+        gdt.load();
         TSS::load(tss_seg_sel);
-        gdt::reload_seg_regs(code_seg_sel);
+        GDT::reload_seg_regs(code_seg_sel);
         InterruptDescriptorTable::load(Box::leak(idt));
         interrupts::enable_interrupts();
     }
