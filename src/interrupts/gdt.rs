@@ -67,15 +67,13 @@ pub struct SystemSegmentDescriptor {
     reserved: u32,
 }
 
-impl Default for NormalSegmentDescriptor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl NormalSegmentDescriptor {
     /// Creates a completly zeroed out `NormalSegmentDescriptor`.
-    pub const fn new() -> Self {
+    pub fn new() -> Box<Self> {
+        Box::new(Self::new_unboxed())
+    }
+
+    fn new_unboxed() -> Self {
         NormalSegmentDescriptor {
             limit_0: 0,
             base_0: 0,
@@ -87,20 +85,14 @@ impl NormalSegmentDescriptor {
     }
 }
 
-impl Default for SystemSegmentDescriptor {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl SystemSegmentDescriptor {
     /// Creates a completly zeroed out `SystemSegmentDescriptor`.
-    pub const fn new() -> Self {
-        SystemSegmentDescriptor {
-            normal_desc: NormalSegmentDescriptor::new(),
+    pub fn new() -> Box<Self> {
+        Box::new(SystemSegmentDescriptor {
+            normal_desc: NormalSegmentDescriptor::new_unboxed(),
             base_3: 0,
             reserved: 0,
-        }
+        })
     }
 }
 
@@ -183,9 +175,9 @@ impl SegmentDescriptor for SystemSegmentDescriptor {
     }
 }
 
-pub enum Descriptor<'a> {
-    NormalDescriptor(&'a NormalSegmentDescriptor),
-    SystemDescriptor(&'a SystemSegmentDescriptor),
+pub enum Descriptor {
+    NormalDescriptor(Box<NormalSegmentDescriptor>),
+    SystemDescriptor(Box<SystemSegmentDescriptor>),
 }
 
 #[repr(C)]
@@ -237,6 +229,8 @@ impl GDT {
     pub fn new_descriptor(&mut self, desc: Descriptor) -> Result<SegmentSelector, GdtError> {
         match desc {
             Descriptor::NormalDescriptor(n_desc) => {
+                let n_desc = Box::leak(n_desc);
+
                 // make sure that the max limit is not violated
                 if self.normal_desc_count >= 5 {
                     return Err(GdtError::NotEnoughGdtSpace);
@@ -259,6 +253,8 @@ impl GDT {
                 })
             },
             Descriptor::SystemDescriptor(s_desc) => {
+                let s_desc = Box::leak(s_desc);
+
                 // make sure that the max limit id not violated
                 if self.system_desc_count >= 1 {
                     return Err(GdtError::NotEnoughGdtSpace);

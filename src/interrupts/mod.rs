@@ -247,19 +247,18 @@ impl InterruptDescriptorTable {
         })
     }
 
-    /// Loads `idt` as the current IDT.
+    /// Loads `self` as the current IDT.
     /// 
     /// This does not enable/disable interrupts.
     /// 
     /// # Safety
     /// 
-    /// The caller must ensure that `idt` is a valid IDT and interrupts **should** be
+    /// The caller must ensure that `self` is a valid IDT and interrupts **should** be
     /// disabled before loading the IDT and enabled again afterwards.  
-    /// The IDT also needs to live for the duration of it's use so, `'static`.
-    pub unsafe fn load(idt: &'static Self) {
+    pub unsafe fn load(self: Box<InterruptDescriptorTable>) {
         let idtr = IdtR {
             size: (size_of::<InterruptDescriptorTable>() - 1) as u16,
-            addr: idt as *const InterruptDescriptorTable as VirtualAddress,
+            addr: Box::leak(self) as *const InterruptDescriptorTable as VirtualAddress,
         };
 
         unsafe {

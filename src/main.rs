@@ -23,7 +23,6 @@ use rsos::{interrupts::{self, gdt::{Descriptor, NormalSegmentDescriptor, SystemS
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
 use rsos::{interrupts::tss::{TSS, TSS_SIZE, TssStackNumber}};
 use core::{arch::asm, panic::PanicInfo};
-use alloc::boxed::Box;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -70,11 +69,6 @@ fn panic(info: &PanicInfo) -> ! {
 pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     unsafe { KERNEL.init(mb_boot_info_phy_addr) }
 
-    // TODO: all these Box::leak will cause large memory usage if these tables keep being replaced and the previous memory is not deallocated
-    //       this needs to be solved
-
-    // TODO: should these descriptors be in the heap??
-
     let mut code_seg = NormalSegmentDescriptor::new();
     code_seg.set_flags(SegmentFlags::LONG_MODE_CODE);
     code_seg.set_access_byte(NormalDescAccessByteArgs::new(NormalDescAccessByte::EXECUTABLE | NormalDescAccessByte::PRESENT | NormalDescAccessByte::IS_CODE_OR_DATA));
@@ -90,8 +84,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // the unwraps() *should* be fine as we know that the gdt as space left for these 2 descriptors
     let mut gdt = GDT::new();
-    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(&code_seg)).unwrap();
-    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(&tss_seg)).unwrap();
+    let code_seg_sel = gdt.new_descriptor(Descriptor::NormalDescriptor(code_seg)).unwrap();
+    let tss_seg_sel = gdt.new_descriptor(Descriptor::SystemDescriptor(tss_seg)).unwrap();
 
     // set up the IDT
     let mut idt = InterruptDescriptorTable::new();
@@ -104,7 +98,7 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
         gdt.load();
         TSS::load(tss_seg_sel);
         GDT::reload_seg_regs(code_seg_sel);
-        InterruptDescriptorTable::load(Box::leak(idt));
+        idt.load();
         interrupts::enable_interrupts();
     }
 
