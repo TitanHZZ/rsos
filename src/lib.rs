@@ -9,6 +9,7 @@ pub mod data_structures;
 pub mod multiboot2;
 pub mod interrupts;
 pub mod graphics;
+pub mod drivers;
 pub mod io_port;
 pub mod memory;
 pub mod serial;

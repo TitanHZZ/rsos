@@ -8,7 +8,7 @@ const TAB_SIZE: usize = 4;
 
 pub(in crate::graphics::klogger) struct FontRenderer<'a> {
     font: Psf<'a>,
-    color: FrameBufferColor,
+    pub(in crate::graphics::klogger) color: FrameBufferColor,
     scale: usize,
     column: usize,
     row: usize,
@@ -49,15 +49,6 @@ impl<'a> FontRenderer<'a> {
                 }
             }
         }
-    }
-
-    // TODO: do these fns really need to exist??
-    pub(in crate::graphics::klogger) fn set_color(&mut self, color: FrameBufferColor) {
-        self.color = color;
-    }
-
-    pub(in crate::graphics::klogger) fn color(&self) -> FrameBufferColor {
-        self.color
     }
 }
 

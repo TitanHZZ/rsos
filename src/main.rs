@@ -13,7 +13,6 @@
 // https://simonis.github.io/Memory/
 
 // TODO: look into stack probes
-// TODO: the majority of this code could be put into lib.rs to minimize boilerplate in tests
 
 extern crate alloc;
 

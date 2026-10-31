@@ -62,10 +62,10 @@ impl<'a> KLogger<'a> {
         let fr = &mut *self.0.lock();
         let fr = fr.as_mut().unwrap();
 
-        let original_color = fr.color();
-        fr.set_color(FrameBufferColor::new(r, g, b));
+        let original_color = fr.color;
+        fr.color = FrameBufferColor::new(r, g, b);
         fr.write_str(s)?;
-        fr.set_color(original_color);
+        fr.color = original_color;
 
         Ok(())
     }
@@ -81,10 +81,10 @@ impl<'a> KLogger<'a> {
         let fr = &mut *self.0.lock();
         let fr = fr.as_mut().unwrap();
 
-        let original_color = fr.color();
-        fr.set_color(FrameBufferColor::new(r, g, b));
+        let original_color = fr.color;
+        fr.color = FrameBufferColor::new(r, g, b);
         fr.write_fmt(args)?;
-        fr.set_color(original_color);
+        fr.color = original_color;
 
         Ok(())
     }
@@ -95,6 +95,6 @@ impl<'a> KLogger<'a> {
     /// 
     /// If called before [initialization](KLogger::init()).
     pub fn set_color(&self, r: u8, g: u8, b: u8) {
-        self.0.lock().as_mut().unwrap().set_color(FrameBufferColor::new(r, g, b));
+        self.0.lock().as_mut().unwrap().color = FrameBufferColor::new(r, g, b);
     }
 }
