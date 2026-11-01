@@ -1,1 +1,1 @@
-mod i8042;
+pub mod i8042;

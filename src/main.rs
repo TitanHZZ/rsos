@@ -16,7 +16,7 @@
 
 extern crate alloc;
 
-use rsos::{interrupts::gdt::{NormalDescAccessByte, NormalDescAccessByteArgs, SegmentDescriptor, SegmentFlags}, kernel::KERNEL, serial_println};
+use rsos::{drivers::i8042::i8042_init, interrupts::gdt::{NormalDescAccessByte, NormalDescAccessByteArgs, SegmentDescriptor, SegmentFlags}, kernel::KERNEL, serial_println};
 use rsos::interrupts::gdt::{SystemDescAccessByteArgs, SystemDescAccessByte, SystemDescAccessByteType, GDT};
 use rsos::{interrupts::{self, gdt::{Descriptor, NormalSegmentDescriptor, SystemSegmentDescriptor}}};
 use rsos::{interrupts::{InterruptArgs, InterruptDescriptorTable}};
@@ -108,6 +108,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // // to be used later
     // assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
+
+    i8042_init();
 
     #[cfg(test)]
     test_main();

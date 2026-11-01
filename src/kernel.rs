@@ -234,12 +234,13 @@ impl Kernel {
         // TODO: this should be initialized as soon as possible
         unsafe { KLOGGER.init(255, 255, 255, 1) }.expect("Could not initialize the Kernel logger");
         serial_println!("Kernel logger initialized.");
+        log!(ok, "Kernel logger initialized.");
 
         // assert memory integrity
         let inner = self.0.read();
         let m = KernelInner::hash_memory_region(inner.mb_lh_hh_offset() + inner.mb_start, inner.mb_end - inner.mb_start + 1);
         assert!(inner.mb2_hash == m);
-        log!(ok, "Kernel logger initialized.");
+        log!(ok, "Memory integrity tests passed!");
     }
 
     /// All the memory ranges that **must be left untouched** meaning that these regions
