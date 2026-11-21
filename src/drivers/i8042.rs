@@ -19,6 +19,20 @@ bitflags! {
     }
 }
 
+#[derive(Debug)]
+pub enum I8042Error {
+    NoData,
+    ControllerSelfTestFailed,
+}
+
+// TODO: what about a controller command enum??
+
+// TODO: this should not be here
+/// 1 - 4 microseconds of delay
+fn io_wait() {
+    IoPort::write_u8(0x80, 0);
+}
+
 fn get_status_register_flags() -> StatusRegisterFlags {
     StatusRegisterFlags::from_bits_truncate(IoPort::read_u8(STATUS_COMMAND_REGISTER))
 }
@@ -32,10 +46,23 @@ fn send_controller_command(command: u8) {
     IoPort::write_u8(STATUS_COMMAND_REGISTER, command);
 }
 
-fn get_data() -> u8 {
-    // wait for data in the ouput buffer
-    while !get_status_register_flags().contains(StatusRegisterFlags::OUTPUT_BUFFER_FULL) {}
-    IoPort::read_u8(DATA_PORT)
+fn get_data() -> Result<u8, I8042Error> {
+    for _ in 0..1_000_000 {
+        // wait for data in the ouput buffer
+        if get_status_register_flags().contains(StatusRegisterFlags::OUTPUT_BUFFER_FULL) {
+            return Ok(IoPort::read_u8(DATA_PORT));
+        }
+
+        // add some delay
+        io_wait();
+    }
+
+    Err(I8042Error::NoData)
+}
+
+fn send_controller_command_with_ret(command: u8) -> Result<u8, I8042Error> {
+    send_controller_command(command);
+    get_data()
 }
 
 fn send_data(data: u8) {
@@ -43,74 +70,118 @@ fn send_data(data: u8) {
     IoPort::write_u8(DATA_PORT, data);
 }
 
+fn send_controller_command_with_data(command: u8, data: u8) {
+    send_controller_command(command);
+    send_data(data);
+}
+
 // TODO: what about PS/2 device detection instead o just assuming that they exist??
-// TODO: fix bit shifts
-pub fn i8042_init() {
+pub fn i8042_init() -> Result<(), I8042Error> {
     log!(ok, "Initializing PS/2 driver.");
-    let mut is_dual: bool = false;
+    let (has_first_port, has_second_port) = {
+        let mut is_dual: bool = false;
 
-    // disable devices
-    send_controller_command(0xAD); // disable channel 1
-    send_controller_command(0xA7); // disable channel 2
+        // --- disable devices --- //
+        send_controller_command(0xAD); // disable channel 1
+        send_controller_command(0xA7); // disable channel 2
 
-    // flush the output buffer
-    while get_status_register_flags().contains(StatusRegisterFlags::OUTPUT_BUFFER_FULL) {
-        IoPort::read_u8(DATA_PORT);
+        // --- flush the output buffer --- //
+        while get_status_register_flags().contains(StatusRegisterFlags::OUTPUT_BUFFER_FULL) {
+            IoPort::read_u8(DATA_PORT);
+        }
+
+        // --- set the controller configuration byte --- //
+        // clear bits 0, 4 and 6
+        let new_controller_config = send_controller_command_with_ret(0x20)? & 0b10101110;
+        send_controller_command_with_data(0x60, new_controller_config);
+
+        // --- controller self test --- //
+        if send_controller_command_with_ret(0xAA)? != 0x55 {
+            return Err(I8042Error::ControllerSelfTestFailed);
+        }
+
+        log!(ok, "PS/2 controller self test passed!");
+        // TODO: what about ps/2 controller resets?
+
+        // --- check for dual channel controllers --- //
+        send_controller_command(0xA8);
+        if send_controller_command_with_ret(0x20)? & 0b00100000 == 0 {
+            is_dual = true;
+            log!(ok, "PS/2 controller is dual channel");
+
+            // disable second ps/2 port (channel 2)
+            send_controller_command(0xA7);
+
+            // disable IRQs and enable clock for port 2 (clear bits 1 and 5)
+            let new_controller_config = send_controller_command_with_ret(0x20)? & 0b11011101;
+            send_controller_command_with_data(0x60, new_controller_config);
+        }
+
+        // interface tests
+        let first_port_broken = send_controller_command_with_ret(0xAB)? != 0x00;
+        let second_port_broken = match is_dual {
+            true => send_controller_command_with_ret(0xA9)? != 0x00,
+            false => true
+        };
+
+        (first_port_broken, is_dual && !second_port_broken)
+    };
+
+    // --- enable devices --- //
+    let mut new_controller_config_options: u8 = 0b00000000;
+
+    // enable first port
+    if has_first_port {
+        send_controller_command(0xAE);
+        new_controller_config_options |= 0b00000001; //  set bit 0 (for the first port)
     }
 
-    // set the controller configuration byte
-    send_controller_command(0x20);
-    let new_controller_configuration = get_data() & 0b01110101; // clear bits 0, 4 and 6
-    send_controller_command(0x60);
-    send_data(new_controller_configuration);
-
-    // controller self test
-    send_controller_command(0xAA);
-    if get_data() != 0x55 {
-        log!(failed, "PS/2 controller self test failed!");
-        return;
+    // enable second port
+    if has_second_port {
+        send_controller_command(0xA8);
+        new_controller_config_options |= 0b00000010; //  set bit 1 (for the second port)
     }
 
-    log!(ok, "PS/2 controller self test passed!");
-    // TODO: what about ps/2 controller resets?
+    // enable interrupts for the available ports
+    let new_controller_config = send_controller_command_with_ret(0x20)? | new_controller_config_options;
+    send_controller_command_with_data(0x60, new_controller_config);
 
-    // check for dual channel controllers
-    send_controller_command(0xA8);
-    send_controller_command(0x20);
-    if get_data() & 0b000001000 == 0 {
-        is_dual = true;
-        log!(ok, "PS/2 controller is dual channel");
-
-        // disable second ps/2 port (channel 2)
-        send_controller_command(0xA7);
-
-        // disable IRQs and enable clock for port 2
-        send_controller_command(0x20);
-        let new_controller_configuration = get_data() & 0b10111011; // clear bits 1 and 5
-        send_controller_command(0x60);
-        send_data(new_controller_configuration);
-    }
-
-    // TODO: make sure that i keep track of working ports
-    // interface tests
-    send_controller_command(0xAB);
-    if get_data() != 0x00 {
-        log!(ok, "First PS/2 port is broken");
-    }
-
-    if is_dual {
-        send_controller_command(0xA9);
-        if get_data() != 0x00 {
-            log!(ok, "Second PS/2 port is broken");
+    // --- reset devices --- //
+    if has_first_port {
+        send_data(0xFF);
+        let data = get_data()?;
+        if data == 0xFA {
+            if get_data()? != 0xAA {
+                log!(warn, "Cannot use device on first PS/2 port")
+            }
+        } else if data == 0xAA {
+            if get_data()? != 0xFA {
+                log!(warn, "Cannot use device on first PS/2 port")
+            }
+        } else {
+            log!(warn, "Cannot use device on first PS/2 port")
         }
     }
 
-    // enable devices
-    send_controller_command(0xAE); // enable first port
-    if is_dual {
-        send_controller_command(0xA8); // enable second port
+    // TODO: same for port 2 (sequence of commands is a bit more complicated)
+
+    // get device type
+    send_data(0xF5);
+    if get_data()? != 0xFA {
+        log!(warn, "Could not get device type")
     }
 
-    send_controller_command(0x20);
-    let new_controller_configuration = get_data() & 0b01111111; // clear bit 0
+    send_data(0xF2);
+    if get_data()? != 0xFA {
+        log!(warn, "Could not get device type")
+    }
+
+    log!(ok, "{:#04X}", get_data()?);
+
+    // send_data(0xF4);
+    // if get_data() != 0xFA {
+    //     log!(warn, "Could not get device type")
+    // }
+
+    Ok(())
 }
