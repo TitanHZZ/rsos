@@ -92,6 +92,8 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
     idt.double_fault.set_fn(double_fault_handler);
     idt.double_fault.set_ist(TssStackNumber::TssStack1);
 
+    log!(ok, "{:?}", i8042_init());
+
     interrupts::disable_pics();
     unsafe {
         gdt.load();
@@ -108,8 +110,6 @@ pub unsafe extern "C" fn main(mb_boot_info_phy_addr: *const u8) -> ! {
 
     // // to be used later
     // assert!(mb_info.get_tag::<AcpiNewRsdp>().is_some());
-
-    log!(ok, "{:?}", i8042_init());
 
     #[cfg(test)]
     test_main();
